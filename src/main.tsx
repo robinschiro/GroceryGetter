@@ -1,0 +1,498 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Check, Database, RefreshCw, Send, Settings, Shuffle, Trash2 } from "lucide-react";
+import "./styles.css";
+
+type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
+
+type Recipe = {
+  id: number;
+  name: string;
+  category: RecipeCategory;
+  servings: number | null;
+  notes: string;
+  ingredients: RecipeIngredient[];
+};
+
+type RecipeIngredient = {
+  id?: number;
+  text: string;
+  quantity: string;
+  unit: string;
+  item: string;
+};
+
+type Menu = {
+  id: number;
+  name: string;
+  mealCount: number;
+  status: string;
+  items: MenuItem[];
+};
+
+type MenuItem = {
+  id: number;
+  mealNumber: number;
+  slot: RecipeCategory;
+  recipeId: number;
+  recipeName: string;
+};
+
+type ShoppingListItem = {
+  id: number;
+  text: string;
+  quantity: string;
+  unit: string;
+  item: string;
+  sourceRecipeNames: string;
+  approved: number;
+};
+
+const categories: Array<{ value: RecipeCategory; label: string }> = [
+  { value: "entree", label: "Entree" },
+  { value: "vegetable_side", label: "Vegetable side" },
+  { value: "starch_side", label: "Starch side" }
+];
+
+const emptyIngredient = (): RecipeIngredient => ({
+  text: "",
+  quantity: "",
+  unit: "",
+  item: ""
+});
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...init
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+function App() {
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
+  const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
+  const [mealCount, setMealCount] = useState(5);
+  const [message, setMessage] = useState("");
+  const [preferStoreBrands, setPreferStoreBrands] = useState(true);
+
+  async function loadRecipes() {
+    setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
+  }
+
+  async function loadSettings() {
+    const settings = await api<Record<string, string>>("/api/settings");
+    setPreferStoreBrands(settings.preferStoreBrands === "true");
+  }
+
+  useEffect(() => {
+    void loadRecipes();
+    void loadSettings();
+  }, []);
+
+  async function generateMenu() {
+    setMessage("");
+    const created = await api<{ id: number }>("/api/menus/generate", {
+      method: "POST",
+      body: JSON.stringify({ mealCount })
+    });
+    const menu = await api<Menu>(`/api/menus/${created.id}`);
+    setActiveMenu(menu);
+    setShoppingList([]);
+  }
+
+  async function loadMenu(id: number) {
+    setActiveMenu(await api<Menu>(`/api/menus/${id}`));
+  }
+
+  async function updateMenuItem(menuItemId: number, recipeId: number) {
+    await api(`/api/menu-items/${menuItemId}`, {
+      method: "PUT",
+      body: JSON.stringify({ recipeId })
+    });
+    if (activeMenu) {
+      await loadMenu(activeMenu.id);
+      setShoppingList([]);
+    }
+  }
+
+  async function aggregateIngredients() {
+    if (!activeMenu) return;
+    await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
+    setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
+  }
+
+  async function saveShoppingItem(item: ShoppingListItem) {
+    await api(`/api/shopping-list-items/${item.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...item, approved: Boolean(item.approved) })
+    });
+  }
+
+  async function submitToQfc() {
+    if (!activeMenu) return;
+    const result = await api<{ submittedItemCount: number; message: string }>(
+      `/api/menus/${activeMenu.id}/submit-to-qfc`,
+      { method: "POST" }
+    );
+    setMessage(`${result.message} ${result.submittedItemCount} approved items were prepared.`);
+  }
+
+  async function updateStoreBrandPreference(next: boolean) {
+    setPreferStoreBrands(next);
+    await api("/api/settings/preferStoreBrands", {
+      method: "PUT",
+      body: JSON.stringify({ value: String(next) })
+    });
+  }
+
+  const recipeCounts = useMemo(
+    () =>
+      categories.map((category) => ({
+        ...category,
+        count: recipes.filter((recipe) => recipe.category === category.value).length
+      })),
+    [recipes]
+  );
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div>
+          <h1>Grocery Helper</h1>
+          <p>Plan from structured recipes, review the ingredients, then send approved items to QFC.</p>
+        </div>
+        <div className="sidebar-stats">
+          {recipeCounts.map((category) => (
+            <div key={category.value}>
+              <span>{category.label}</span>
+              <strong>{category.count}</strong>
+            </div>
+          ))}
+        </div>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={preferStoreBrands}
+            onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
+          />
+          <span>Prefer QFC/Kroger store brands</span>
+        </label>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar">
+          <div>
+            <span className="eyebrow">Local desktop app</span>
+            <h2>Weekly Menu Workflow</h2>
+          </div>
+          <button className="icon-button" onClick={() => void loadRecipes()} aria-label="Refresh recipes">
+            <RefreshCw size={18} />
+          </button>
+        </header>
+
+        <div className="grid two-columns">
+          <RecipeAdmin recipes={recipes} onSaved={loadRecipes} />
+          <MenuBuilder
+            recipes={recipes}
+            mealCount={mealCount}
+            setMealCount={setMealCount}
+            activeMenu={activeMenu}
+            generateMenu={generateMenu}
+            updateMenuItem={updateMenuItem}
+            aggregateIngredients={aggregateIngredients}
+          />
+        </div>
+
+        <ShoppingListReview
+          items={shoppingList}
+          setItems={setShoppingList}
+          saveItem={saveShoppingItem}
+          submitToQfc={submitToQfc}
+          message={message}
+        />
+      </section>
+    </main>
+  );
+}
+
+function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState<RecipeCategory>("entree");
+  const [servings, setServings] = useState("");
+  const [notes, setNotes] = useState("");
+  const [ingredients, setIngredients] = useState<RecipeIngredient[]>([emptyIngredient()]);
+  const [error, setError] = useState("");
+
+  function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
+    setIngredients((current) => current.map((ingredient, i) => (i === index ? { ...ingredient, ...patch } : ingredient)));
+  }
+
+  async function saveRecipe() {
+    setError("");
+    try {
+      await api("/api/recipes", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          category,
+          servings: servings ? Number(servings) : null,
+          notes,
+          ingredients: ingredients.filter((ingredient) => ingredient.text.trim() && ingredient.item.trim())
+        })
+      });
+      setName("");
+      setCategory("entree");
+      setServings("");
+      setNotes("");
+      setIngredients([emptyIngredient()]);
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save recipe.");
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <Database size={18} />
+        <h3>Recipe Admin</h3>
+      </div>
+
+      <div className="form-grid">
+        <label>
+          Name
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Lemon chicken" />
+        </label>
+        <label>
+          Category
+          <select value={category} onChange={(event) => setCategory(event.target.value as RecipeCategory)}>
+            {categories.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Servings
+          <input value={servings} onChange={(event) => setServings(event.target.value)} inputMode="numeric" />
+        </label>
+      </div>
+
+      <label>
+        Notes
+        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+      </label>
+
+      <div className="ingredient-editor">
+        <div className="subhead">Ingredients</div>
+        {ingredients.map((ingredient, index) => (
+          <div className="ingredient-row" key={index}>
+            <input
+              value={ingredient.quantity}
+              onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
+              placeholder="2"
+            />
+            <input
+              value={ingredient.unit}
+              onChange={(event) => updateIngredient(index, { unit: event.target.value })}
+              placeholder="cups"
+            />
+            <input
+              value={ingredient.item}
+              onChange={(event) => updateIngredient(index, { item: event.target.value })}
+              placeholder="rice"
+            />
+            <input
+              value={ingredient.text}
+              onChange={(event) => updateIngredient(index, { text: event.target.value })}
+              placeholder="2 cups rice"
+            />
+            <button
+              className="icon-button"
+              onClick={() => setIngredients((current) => current.filter((_, i) => i !== index))}
+              aria-label="Remove ingredient"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        <button className="secondary" onClick={() => setIngredients((current) => [...current, emptyIngredient()])}>
+          Add ingredient
+        </button>
+      </div>
+
+      {error ? <div className="error">{error}</div> : null}
+
+      <div className="panel-actions">
+        <button onClick={() => void saveRecipe()}>
+          <Check size={17} />
+          Save recipe
+        </button>
+      </div>
+
+      <div className="recipe-list">
+        {recipes.slice(0, 8).map((recipe) => (
+          <div key={recipe.id} className="recipe-list-item">
+            <strong>{recipe.name}</strong>
+            <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MenuBuilder({
+  recipes,
+  mealCount,
+  setMealCount,
+  activeMenu,
+  generateMenu,
+  updateMenuItem,
+  aggregateIngredients
+}: {
+  recipes: Recipe[];
+  mealCount: number;
+  setMealCount: (value: number) => void;
+  activeMenu: Menu | null;
+  generateMenu: () => Promise<void>;
+  updateMenuItem: (menuItemId: number, recipeId: number) => Promise<void>;
+  aggregateIngredients: () => Promise<void>;
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <Shuffle size={18} />
+        <h3>Menu Builder</h3>
+      </div>
+
+      <div className="menu-controls">
+        <label>
+          Meals
+          <input
+            type="number"
+            min={1}
+            max={14}
+            value={mealCount}
+            onChange={(event) => setMealCount(Number(event.target.value))}
+          />
+        </label>
+        <button onClick={() => void generateMenu()}>
+          <Shuffle size={17} />
+          Generate
+        </button>
+      </div>
+
+      {activeMenu ? (
+        <div className="menu-table">
+          {Array.from({ length: activeMenu.mealCount }, (_, index) => index + 1).map((mealNumber) => (
+            <div className="meal-block" key={mealNumber}>
+              <strong>Meal {mealNumber}</strong>
+              {categories.map((category) => {
+                const item = activeMenu.items.find(
+                  (menuItem) => menuItem.mealNumber === mealNumber && menuItem.slot === category.value
+                );
+                return (
+                  <label key={category.value}>
+                    {category.label}
+                    <select
+                      value={item?.recipeId ?? ""}
+                      onChange={(event) => item && void updateMenuItem(item.id, Number(event.target.value))}
+                    >
+                      {recipes
+                        .filter((recipe) => recipe.category === category.value)
+                        .map((recipe) => (
+                          <option key={recipe.id} value={recipe.id}>
+                            {recipe.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                );
+              })}
+            </div>
+          ))}
+          <button onClick={() => void aggregateIngredients()}>
+            <Settings size={17} />
+            Aggregate ingredients
+          </button>
+        </div>
+      ) : (
+        <div className="empty-state">Add recipes in all three categories, then generate a weekly menu.</div>
+      )}
+    </section>
+  );
+}
+
+function ShoppingListReview({
+  items,
+  setItems,
+  saveItem,
+  submitToQfc,
+  message
+}: {
+  items: ShoppingListItem[];
+  setItems: (items: ShoppingListItem[]) => void;
+  saveItem: (item: ShoppingListItem) => Promise<void>;
+  submitToQfc: () => Promise<void>;
+  message: string;
+}) {
+  function patchItem(id: number, patch: Partial<ShoppingListItem>) {
+    setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  return (
+    <section className="panel full-width">
+      <div className="panel-heading">
+        <Check size={18} />
+        <h3>Ingredient Review</h3>
+      </div>
+
+      {items.length ? (
+        <>
+          <div className="shopping-table">
+            {items.map((item) => (
+              <div className="shopping-row" key={item.id}>
+                <label className="compact-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.approved)}
+                    onChange={(event) => patchItem(item.id, { approved: event.target.checked ? 1 : 0 })}
+                    onBlur={() => void saveItem(item)}
+                  />
+                </label>
+                <input value={item.quantity} onChange={(event) => patchItem(item.id, { quantity: event.target.value })} />
+                <input value={item.unit} onChange={(event) => patchItem(item.id, { unit: event.target.value })} />
+                <input value={item.item} onChange={(event) => patchItem(item.id, { item: event.target.value })} />
+                <input value={item.text} onChange={(event) => patchItem(item.id, { text: event.target.value })} />
+                <span>{item.sourceRecipeNames}</span>
+                <button className="secondary" onClick={() => void saveItem(item)}>
+                  Save
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="panel-actions">
+            <button onClick={() => void submitToQfc()}>
+              <Send size={17} />
+              Send approved items to QFC
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="empty-state">Aggregate a menu to review its grocery list.</div>
+      )}
+
+      {message ? <div className="success">{message}</div> : null}
+    </section>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);

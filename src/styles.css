@@ -1,0 +1,304 @@
+:root {
+  color: #1b1f24;
+  background: #f3f4f1;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  align-items: center;
+  background: #315b53;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+button.secondary {
+  background: #dce5e0;
+  color: #18332e;
+}
+
+.icon-button {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 0;
+  width: 36px;
+}
+
+input,
+select,
+textarea {
+  background: #fff;
+  border: 1px solid #c9d1cc;
+  border-radius: 6px;
+  color: #1b1f24;
+  min-height: 36px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+label {
+  color: #52615c;
+  display: grid;
+  font-size: 0.82rem;
+  gap: 6px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #1f2b28;
+  color: #f4f7f5;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 28px 24px;
+}
+
+.sidebar h1 {
+  font-size: 1.7rem;
+  letter-spacing: 0;
+  margin: 0 0 10px;
+}
+
+.sidebar p {
+  color: #c9d6d1;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.sidebar-stats {
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar-stats div {
+  align-items: center;
+  border-bottom: 1px solid #42504c;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.toggle-row {
+  align-items: center;
+  color: #e8eeeb;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px 1fr;
+}
+
+.toggle-row input,
+.compact-checkbox input {
+  min-height: auto;
+  padding: 0;
+  width: auto;
+}
+
+.workspace {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.topbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.topbar h2 {
+  font-size: 1.6rem;
+  margin: 4px 0 0;
+}
+
+.eyebrow {
+  color: #71817b;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.grid {
+  display: grid;
+  gap: 18px;
+}
+
+.two-columns {
+  grid-template-columns: minmax(420px, 0.95fr) minmax(420px, 1.05fr);
+}
+
+.panel {
+  background: #fbfcfa;
+  border: 1px solid #d8dfdb;
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.full-width {
+  min-width: 0;
+}
+
+.panel-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.panel-heading h3 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.form-grid,
+.menu-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 150px 110px;
+}
+
+.ingredient-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.subhead {
+  color: #52615c;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.ingredient-row {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 64px 88px 1fr 1.5fr 36px;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.recipe-list {
+  border-top: 1px solid #d8dfdb;
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.recipe-list-item {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.recipe-list-item span {
+  color: #66746f;
+  font-size: 0.82rem;
+}
+
+.menu-controls {
+  grid-template-columns: 120px 150px;
+}
+
+.menu-table {
+  display: grid;
+  gap: 12px;
+}
+
+.meal-block {
+  border-top: 1px solid #d8dfdb;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 72px repeat(3, minmax(0, 1fr));
+  padding-top: 12px;
+}
+
+.shopping-table {
+  display: grid;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.shopping-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 22px 70px 86px minmax(140px, 1fr) minmax(180px, 1.2fr) minmax(180px, 1fr) 70px;
+  min-width: 960px;
+}
+
+.shopping-row span {
+  color: #66746f;
+  font-size: 0.82rem;
+}
+
+.empty-state,
+.error,
+.success {
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.empty-state {
+  background: #eef2ef;
+  color: #52615c;
+}
+
+.error {
+  background: #ffe9e4;
+  color: #9d2f1d;
+}
+
+.success {
+  background: #e3f2e9;
+  color: #24543a;
+}
+
+@media (max-width: 1100px) {
+  .app-shell,
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding: 22px;
+  }
+
+  .meal-block,
+  .form-grid,
+  .ingredient-row {
+    grid-template-columns: 1fr;
+  }
+}
