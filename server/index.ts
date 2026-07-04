@@ -1,12 +1,30 @@
 import express from "express";
 import { initializeDb, insert, queryAll, queryOne, run, saveDb, transaction } from "./db.js";
-import { submitToQfcCart } from "./qfcAdapter.js";
+import {
+  createCustomerAuthorizationUrl,
+  exchangeCustomerAuthorizationCode,
+  getQfcApiStatus,
+  refreshCustomerToken,
+  saveQfcApiSettings,
+  searchLocations,
+  searchProducts,
+  submitToQfcCart
+} from "./qfcAdapter.js";
 import type { Recipe, RecipeInput } from "./types.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const port = 5174;
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function getRecipe(id: number): Recipe | null {
   const recipe = queryOne("SELECT id, name, category, servings, notes FROM recipes WHERE id = ?", [id]) as
@@ -173,6 +191,108 @@ app.put("/api/settings/:key", (req, res) => {
   );
   saveDb();
   res.json({ key: req.params.key, value });
+});
+
+app.get("/api/qfc/status", (_req, res) => {
+  res.json(getQfcApiStatus());
+});
+
+app.put("/api/qfc/settings", (req, res) => {
+  res.json(saveQfcApiSettings({
+    clientId: req.body.clientId,
+    clientSecret: req.body.clientSecret,
+    locationId: req.body.locationId,
+    serviceScopes: req.body.serviceScopes,
+    customerScopes: req.body.customerScopes,
+    redirectUri: req.body.redirectUri
+  }));
+});
+
+app.post("/api/qfc/oauth/start", (_req, res) => {
+  try {
+    res.json(createCustomerAuthorizationUrl());
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to start customer OAuth." });
+  }
+});
+
+app.get("/api/qfc/oauth/callback", async (req, res) => {
+  try {
+    const error = req.query.error ? String(req.query.error) : "";
+    if (error) {
+      const description = req.query.error_description ? String(req.query.error_description) : error;
+      res.status(400).send(`<!doctype html>
+        <html><body>
+          <h1>QFC authorization failed</h1>
+          <p>${escapeHtml(description)}</p>
+          <p>You can close this tab and try again from Grocery Helper.</p>
+        </body></html>`);
+      return;
+    }
+
+    const code = String(req.query.code ?? "");
+    const state = String(req.query.state ?? "");
+    if (!code) {
+      res.status(400).send(`<!doctype html>
+        <html><body>
+          <h1>QFC authorization failed</h1>
+          <p>Kroger did not include an authorization code.</p>
+        </body></html>`);
+      return;
+    }
+
+    await exchangeCustomerAuthorizationCode({ code, state });
+    res.send(`<!doctype html>
+      <html><body>
+        <h1>QFC authorization complete</h1>
+        <p>Grocery Helper has stored the customer OAuth token locally. You can close this tab and return to the app.</p>
+      </body></html>`);
+  } catch (error) {
+    res.status(400).send(`<!doctype html>
+      <html><body>
+        <h1>QFC authorization failed</h1>
+        <p>${escapeHtml(error instanceof Error ? error.message : "Unable to complete customer OAuth.")}</p>
+      </body></html>`);
+  }
+});
+
+app.post("/api/qfc/oauth/refresh", async (_req, res) => {
+  try {
+    res.json(await refreshCustomerToken());
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to refresh customer token." });
+  }
+});
+
+app.get("/api/qfc/locations", async (req, res) => {
+  try {
+    const query = String(req.query.query ?? "");
+    const limit = Number(req.query.limit ?? 10);
+    if (!query.trim()) {
+      res.status(400).json({ error: "A location search query is required." });
+      return;
+    }
+
+    res.json(await searchLocations(query, limit));
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search locations." });
+  }
+});
+
+app.get("/api/qfc/products", async (req, res) => {
+  try {
+    const term = String(req.query.term ?? "");
+    const limit = Number(req.query.limit ?? 10);
+    const locationId = req.query.locationId ? String(req.query.locationId) : undefined;
+    if (!term.trim()) {
+      res.status(400).json({ error: "A product search term is required." });
+      return;
+    }
+
+    res.json(await searchProducts(term, { locationId, limit }));
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search products." });
+  }
 });
 
 app.post("/api/menus/generate", (req, res) => {

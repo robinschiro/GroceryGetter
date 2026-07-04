@@ -206,6 +206,8 @@ label {
 
 .panel-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -264,6 +266,79 @@ label {
   font-size: 0.82rem;
 }
 
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-strip span {
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.status-good {
+  background: #dcefe5;
+  color: #24543a;
+}
+
+.status-muted {
+  background: #edf0ee;
+  color: #66746f;
+}
+
+.qfc-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wide-field {
+  grid-column: span 2;
+}
+
+.qfc-tools {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tool-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 140px;
+}
+
+.result-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.result-row,
+.product-row {
+  background: #f3f6f4;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  color: #1b1f24;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: auto;
+  padding: 10px;
+  text-align: left;
+}
+
+.result-row span,
+.product-row span {
+  color: #66746f;
+  font-size: 0.82rem;
+}
+
 .empty-state,
 .error,
 .success {
@@ -298,7 +373,17 @@ label {
 
   .meal-block,
   .form-grid,
+  .qfc-grid,
+  .qfc-tools,
   .ingredient-row {
     grid-template-columns: 1fr;
+  }
+
+  .tool-row {
+    grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: auto;
   }
 }

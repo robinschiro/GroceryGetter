@@ -48,6 +48,42 @@ type ShoppingListItem = {
   approved: number;
 };
 
+type QfcStatus = {
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  locationId: string;
+  hasCustomerAccessToken: boolean;
+  hasCustomerRefreshToken: boolean;
+  customerTokenExpiresAt: number;
+  customerTokenExpired: boolean;
+  redirectUri: string;
+  serviceScopes: string;
+  customerScopes: string;
+};
+
+type QfcLocation = {
+  locationId: string;
+  name: string;
+  chain?: string;
+  address?: {
+    addressLine1?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  };
+};
+
+type ProductCandidate = {
+  productId: string;
+  upc: string;
+  description: string;
+  brand: string;
+  size: string;
+  stockLevel: string;
+  price: number | null;
+  isStoreBrand: boolean;
+};
+
 const categories: Array<{ value: RecipeCategory; label: string }> = [
   { value: "entree", label: "Entree" },
   { value: "vegetable_side", label: "Vegetable side" },
@@ -80,6 +116,7 @@ function App() {
   const [mealCount, setMealCount] = useState(5);
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
+  const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
 
   async function loadRecipes() {
     setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
@@ -88,6 +125,7 @@ function App() {
   async function loadSettings() {
     const settings = await api<Record<string, string>>("/api/settings");
     setPreferStoreBrands(settings.preferStoreBrands === "true");
+    setQfcStatus(await api<QfcStatus>("/api/qfc/status"));
   }
 
   useEffect(() => {
@@ -136,11 +174,11 @@ function App() {
 
   async function submitToQfc() {
     if (!activeMenu) return;
-    const result = await api<{ submittedItemCount: number; message: string }>(
+    const result = await api<{ submittedItemCount: number; message: string; skipped?: unknown[] }>(
       `/api/menus/${activeMenu.id}/submit-to-qfc`,
       { method: "POST" }
     );
-    setMessage(`${result.message} ${result.submittedItemCount} approved items were prepared.`);
+    setMessage(result.message);
   }
 
   async function updateStoreBrandPreference(next: boolean) {
@@ -209,6 +247,8 @@ function App() {
           />
         </div>
 
+        <QfcApiPanel status={qfcStatus} reloadStatus={loadSettings} />
+
         <ShoppingListReview
           items={shoppingList}
           setItems={setShoppingList}
@@ -218,6 +258,203 @@ function App() {
         />
       </section>
     </main>
+  );
+}
+
+function QfcApiPanel({
+  status,
+  reloadStatus
+}: {
+  status: QfcStatus | null;
+  reloadStatus: () => Promise<void>;
+}) {
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [serviceScopes, setServiceScopes] = useState("product.compact");
+  const [customerScopes, setCustomerScopes] = useState("cart.basic:write");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locations, setLocations] = useState<QfcLocation[]>([]);
+  const [productTerm, setProductTerm] = useState("");
+  const [products, setProducts] = useState<ProductCandidate[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!status) return;
+    setLocationId(status.locationId);
+    setServiceScopes(status.serviceScopes);
+    setCustomerScopes(status.customerScopes);
+    setRedirectUri(status.redirectUri);
+  }, [status]);
+
+  async function saveSettings() {
+    setError("");
+    try {
+      await api("/api/qfc/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          clientId: clientId.trim() || undefined,
+          clientSecret: clientSecret.trim() || undefined,
+          locationId,
+          serviceScopes,
+          customerScopes,
+          redirectUri
+        })
+      });
+      setClientSecret("");
+      await reloadStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save QFC settings.");
+    }
+  }
+
+  async function startCustomerOAuth() {
+    setError("");
+    try {
+      const result = await api<{ authorizationUrl: string }>("/api/qfc/oauth/start", { method: "POST" });
+      window.open(result.authorizationUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start customer OAuth.");
+    }
+  }
+
+  async function refreshCustomerOAuth() {
+    setError("");
+    try {
+      await api("/api/qfc/oauth/refresh", { method: "POST" });
+      await reloadStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refresh customer OAuth.");
+    }
+  }
+
+  async function findLocations() {
+    setError("");
+    try {
+      setLocations(await api<QfcLocation[]>(`/api/qfc/locations?query=${encodeURIComponent(locationQuery)}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to search locations.");
+    }
+  }
+
+  async function findProducts() {
+    setError("");
+    try {
+      const params = new URLSearchParams({ term: productTerm });
+      if (locationId) params.set("locationId", locationId);
+      setProducts(await api<ProductCandidate[]>(`/api/qfc/products?${params.toString()}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to search products.");
+    }
+  }
+
+  return (
+    <section className="panel full-width">
+      <div className="panel-heading">
+        <Settings size={18} />
+        <h3>QFC API Setup</h3>
+      </div>
+
+      <div className="status-strip">
+        <span className={status?.hasClientId ? "status-good" : "status-muted"}>Client ID</span>
+        <span className={status?.hasClientSecret ? "status-good" : "status-muted"}>Client secret</span>
+        <span className={status?.locationId ? "status-good" : "status-muted"}>Location</span>
+        <span className={status?.hasCustomerAccessToken ? "status-good" : "status-muted"}>Customer OAuth</span>
+        <span className={status?.hasCustomerRefreshToken ? "status-good" : "status-muted"}>Refresh token</span>
+      </div>
+
+      <div className="qfc-grid">
+        <label>
+          Client ID
+          <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
+        </label>
+        <label>
+          Client secret
+          <input
+            value={clientSecret}
+            onChange={(event) => setClientSecret(event.target.value)}
+            placeholder={status?.hasClientSecret ? "Already saved" : ""}
+            type="password"
+          />
+        </label>
+        <label>
+          Location ID
+          <input value={locationId} onChange={(event) => setLocationId(event.target.value)} />
+        </label>
+        <label>
+          Service scopes
+          <input value={serviceScopes} onChange={(event) => setServiceScopes(event.target.value)} />
+        </label>
+        <label>
+          Customer scopes
+          <input value={customerScopes} onChange={(event) => setCustomerScopes(event.target.value)} />
+        </label>
+        <label className="wide-field">
+          Redirect URI
+          <input value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
+        </label>
+      </div>
+
+      <div className="panel-actions">
+        <button className="secondary" onClick={() => void reloadStatus()}>
+          <RefreshCw size={17} />
+          Refresh status
+        </button>
+        <button className="secondary" onClick={() => void refreshCustomerOAuth()}>
+          <RefreshCw size={17} />
+          Refresh OAuth
+        </button>
+        <button onClick={() => void startCustomerOAuth()}>
+          <Send size={17} />
+          Start customer OAuth
+        </button>
+        <button onClick={() => void saveSettings()}>
+          <Check size={17} />
+          Save QFC settings
+        </button>
+      </div>
+
+      <div className="qfc-tools">
+        <div>
+          <div className="tool-row">
+            <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Search locations by ZIP" />
+            <button className="secondary" onClick={() => void findLocations()}>Find locations</button>
+          </div>
+          <div className="result-list">
+            {locations.map((location) => (
+              <button
+                className="result-row"
+                key={location.locationId}
+                onClick={() => setLocationId(location.locationId)}
+              >
+                <strong>{location.name}</strong>
+                <span>{location.locationId}</span>
+                <span>{[location.address?.addressLine1, location.address?.city, location.address?.state].filter(Boolean).join(", ")}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="tool-row">
+            <input value={productTerm} onChange={(event) => setProductTerm(event.target.value)} placeholder="Search products" />
+            <button className="secondary" onClick={() => void findProducts()}>Find products</button>
+          </div>
+          <div className="result-list">
+            {products.map((product) => (
+              <div className="product-row" key={`${product.productId}-${product.upc}`}>
+                <strong>{product.description}</strong>
+                <span>{[product.brand, product.size, product.stockLevel].filter(Boolean).join(" / ")}</span>
+                <span>{product.price === null ? "" : `$${product.price.toFixed(2)}`}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {error ? <div className="error">{error}</div> : null}
+    </section>
   );
 }
 
