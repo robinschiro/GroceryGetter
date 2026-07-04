@@ -2,7 +2,7 @@
 
 Source checked: 2026-07-03.
 
-This project currently builds an approved shopping list and sends it through `server/qfcAdapter.ts`, which is still stubbed. The relevant Kroger docs are the public API docs for OAuth, Locations, Products, and Cart.
+This project builds an approved shopping list and sends it through `server/qfcAdapter.ts`. The adapter now performs service-to-service auth, customer OAuth, location search, product search, product selection, and cart mutation. The relevant Kroger docs are the public API docs for OAuth, Locations, Products, and Cart.
 
 ## Relevant Public APIs
 
@@ -35,7 +35,9 @@ Use Kroger OAuth2 tokens against Kroger API requests.
 - Service-to-service auth is the right default for Locations and Products.
 - Customer authorization is required before writing to a customer's cart.
 - Store credentials and tokens server-side only. Do not expose the client secret through Vite/client code.
-- Expected settings to add locally: `clientId`, encrypted or local-only `clientSecret`, selected `locationId`, and customer refresh/access token metadata once the customer auth flow is implemented.
+- The implemented local settings are `krogerClientId`, `krogerClientSecret`, `krogerLocationId`, `krogerServiceScopes`, `krogerCustomerScopes`, and `krogerRedirectUri`.
+- Customer OAuth stores `krogerCustomerOAuthState`, `krogerCustomerAccessToken`, `krogerCustomerRefreshToken`, `krogerCustomerTokenExpiresAt`, `krogerCustomerGrantedScopes`, and `krogerCustomerTokenType`.
+- The default redirect URI is `http://127.0.0.1:5174/api/qfc/oauth/callback`.
 
 ## Locations
 
@@ -46,7 +48,7 @@ Use the Location API to resolve a nearby or user-selected QFC store.
 - The docs note the default radius is 10 miles; widen `filter.radiusInMiles` if increasing the limit.
 - Store the selected `locationId` in app settings so product matching can use it.
 
-Likely implementation use:
+Implemented app flow:
 
 1. Search locations by zip/address/lat-long.
 2. Let the user select the desired QFC/Kroger location.
@@ -62,16 +64,18 @@ Use Product API to turn a shopping-list item into a product candidate.
 - The docs warn fuzzy search ordering can change between requests.
 - Include `filter.locationId` to get local price, fulfillment booleans, aisle locations, and inventory `stockLevel`.
 - The docs define inventory values as `HIGH`, `LOW`, and `TEMPORARILY_OUT_OF_STOCK`.
-- Store-brand matching should prefer QFC/Kroger/Simple Truth/Private Selection when a reasonable match exists.
+- Store-brand matching prefers QFC/Kroger/Simple Truth/Private Selection when the `preferStoreBrands` setting is enabled.
 
-Likely matching fields to persist per shopping-list item:
+The implemented matching step currently returns transient product candidates with:
 
 - `productId`
-- UPC or cart-add identifier from the product response
+- UPC
 - product description/brand/size
-- selected quantity
-- price/fulfillment/stock snapshot
-- match confidence or manual override flag
+- stock level
+- price
+- store-brand flag
+
+Product selections are not persisted on shopping-list rows yet. The current submit path searches by each approved row's `item` text, chooses one candidate, and submits that UPC directly.
 
 ## Cart
 
@@ -79,19 +83,45 @@ Use Cart API only after customer auth is complete.
 
 - Public Cart API rate limit from catalog docs: 5,000 calls per day.
 - Public Cart API description says it adds an item to an authenticated customer's cart.
-- Because the current project promise is "Send approved items to QFC", the cart adapter should submit only approved shopping-list rows and should never checkout/place an order.
+- The adapter submits only approved shopping-list rows and never checks out or places an order.
+- If Kroger credentials are missing, `submitToQfcCart` returns a stub-mode message and does not call Kroger.
+- If customer OAuth is missing, product/location APIs can still work, but cart mutation returns a stub-mode message.
+- When customer OAuth is present, the adapter matches approved rows, adds one `PICKUP` cart unit per matched UPC through `PUT https://api.kroger.com/v1/cart/add`, and reports matched, skipped, and submitted counts.
 
-Implementation note: the OpenAPI document endpoint required authentication, so verify the exact public cart-add request body from the logged-in developer docs before coding the final cart call. Build the adapter so the product matching layer returns the product/cart identifier and the cart layer only handles authenticated submission.
+Current cart-add request body:
 
-## Suggested Adapter Boundary
+```json
+{
+  "items": [
+    {
+      "upc": "product upc",
+      "quantity": 1,
+      "modality": "PICKUP"
+    }
+  ]
+}
+```
 
-Keep `server/qfcAdapter.ts` split into small steps:
+Implementation note: the OpenAPI document endpoint required authentication when these notes were first written. If cart add starts failing against Kroger, verify the exact public cart-add request body from the logged-in developer docs.
+
+## Current Adapter Boundary
+
+`server/qfcAdapter.ts` is split into these steps:
 
 1. `getServiceToken()` for Products/Locations.
-2. `getCustomerToken()` for Cart.
+2. `getCustomerAccessToken()` and `refreshCustomerToken()` for Cart.
 3. `searchProducts(item, locationId)` returning ranked candidates.
-4. `chooseCandidate(candidates, preferStoreBrands)` using store-brand and availability rules.
-5. `addToCart(candidate, quantity)` using customer auth.
+4. `chooseProductCandidate(candidates)` using store-brand and availability rules.
+5. `addMatchedItemsToCart(matches)` using customer auth.
 6. `submitToQfcCart(items)` orchestration with a result that reports matched, skipped, and submitted items.
 
 This keeps product matching testable without requiring a live customer session.
+
+## Remaining Cart Work
+
+Cart mutation is implemented, but it still needs product-review polish before it should be trusted for a full real grocery run:
+
+1. Add a product matching review screen before submission.
+2. Persist selected product/cart identifiers for each approved shopping-list row.
+3. Let the user choose package/cart quantities instead of always sending quantity `1`.
+4. Improve unit display and package conversion.

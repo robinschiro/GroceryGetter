@@ -1,6 +1,6 @@
 # QFC/Kroger API Setup
 
-This app now has a Kroger API adapter boundary for public service-to-service APIs.
+This app has a Kroger API adapter boundary for service-to-service APIs, customer OAuth, product matching, and cart mutation.
 
 ## Implemented
 
@@ -12,6 +12,7 @@ This app now has a Kroger API adapter boundary for public service-to-service API
 - Handles the local OAuth callback at `http://127.0.0.1:5174/api/qfc/oauth/callback`.
 - Exchanges authorization codes and refresh tokens through `POST https://api.kroger.com/v1/connect/oauth2/token`.
 - Adds matched approved items through `PUT https://api.kroger.com/v1/cart/add`.
+- Falls back to a non-mutating response when credentials or customer OAuth are not configured.
 
 ## Local API Endpoints
 
@@ -37,6 +38,15 @@ The UI writes these server-side settings:
 The current default service scope is `product.compact`.
 The current default customer scope is `cart.basic:write`.
 
+The database also stores customer OAuth state and token metadata after authorization:
+
+- `krogerCustomerOAuthState`
+- `krogerCustomerAccessToken`
+- `krogerCustomerRefreshToken`
+- `krogerCustomerTokenExpiresAt`
+- `krogerCustomerGrantedScopes`
+- `krogerCustomerTokenType`
+
 ## Customer OAuth
 
 Register this redirect URI in the Kroger developer app:
@@ -53,6 +63,7 @@ The app stores customer tokens server-side only:
 - `krogerCustomerRefreshToken`
 - `krogerCustomerTokenExpiresAt`
 - `krogerCustomerGrantedScopes`
+- `krogerCustomerTokenType`
 
 ## Cart Submission
 
@@ -64,6 +75,7 @@ Current cart submission behavior:
 - Adds one cart unit per approved grocery row.
 - Uses `PICKUP` as the cart modality.
 - Reports matched, skipped, and submitted counts.
+- Returns stub-mode messages instead of mutating the cart when Kroger credentials or customer OAuth are missing.
 
 The current add-to-cart payload is:
 
