@@ -1,5 +1,8 @@
 node_modules/
 dist/
+.cache/
+.npm-cache/
+.pnpm-home/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal

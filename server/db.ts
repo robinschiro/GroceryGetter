@@ -6,7 +6,8 @@ export type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
 
 const dataDir = path.join(process.cwd(), "data");
 fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, "grocery-helper.sqlite");
+const dbPath = path.join(dataDir, "grocery-getter.sqlite");
+const legacyDbPath = path.join(dataDir, "grocery-helper.sqlite");
 
 let SQL: SqlJsStatic;
 export let db: Database;
@@ -15,6 +16,9 @@ export type Row = Record<string, string | number | null>;
 
 export async function initializeDb() {
   SQL = await initSqlJs();
+  if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
+    fs.renameSync(legacyDbPath, dbPath);
+  }
   db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
   db.run("PRAGMA foreign_keys = ON");
 

@@ -225,7 +225,7 @@ app.get("/api/qfc/oauth/callback", async (req, res) => {
         <html><body>
           <h1>QFC authorization failed</h1>
           <p>${escapeHtml(description)}</p>
-          <p>You can close this tab and try again from Grocery Helper.</p>
+          <p>You can close this tab and try again from Grocery Getter.</p>
         </body></html>`);
       return;
     }
@@ -245,7 +245,7 @@ app.get("/api/qfc/oauth/callback", async (req, res) => {
     res.send(`<!doctype html>
       <html><body>
         <h1>QFC authorization complete</h1>
-        <p>Grocery Helper has stored the customer OAuth token locally. You can close this tab and return to the app.</p>
+        <p>Grocery Getter has stored the customer OAuth token locally. You can close this tab and return to the app.</p>
       </body></html>`);
   } catch (error) {
     res.status(400).send(`<!doctype html>
@@ -498,5 +498,5 @@ app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
 await initializeDb();
 
 app.listen(port, "127.0.0.1", () => {
-  console.log(`Grocery Helper API running on http://127.0.0.1:${port}`);
+  console.log(`Grocery Getter API running on http://127.0.0.1:${port}`);
 });

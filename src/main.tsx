@@ -202,7 +202,7 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div>
-          <h1>Grocery Helper</h1>
+          <h1>Grocery Getter</h1>
           <p>Plan from structured recipes, review the ingredients, then send approved items to QFC.</p>
         </div>
         <div className="sidebar-stats">

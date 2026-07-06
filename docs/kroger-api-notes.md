@@ -1,4 +1,4 @@
-# Kroger API Notes for Grocery Helper
+# Kroger API Notes for Grocery Getter
 
 Source checked: 2026-07-03.
 
