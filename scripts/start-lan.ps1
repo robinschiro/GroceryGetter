@@ -1,10 +1,14 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$nodeBin = "C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin"
 $localBin = Join-Path $root "node_modules\.bin"
+$codexNodeBin = "C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin"
 
-$env:Path = "$nodeBin;$localBin;$env:Path"
+if (Test-Path $codexNodeBin) {
+  $env:Path = "$codexNodeBin;$localBin;$env:Path"
+} else {
+  $env:Path = "$localBin;$env:Path"
+}
 $env:NODE_OPTIONS = "--max-old-space-size=4096"
 
 Set-Location $root
@@ -26,7 +30,7 @@ Write-Host "Starting Grocery Getter from $root"
 Write-Host "Node: $(Get-Command node | Select-Object -ExpandProperty Source)"
 Write-Host "Local URL: http://localhost:5173/"
 if ($lanIp) {
-  Write-Host "LAN URL: http://$lanIp:5173/"
+  Write-Host "LAN URL: http://${lanIp}:5173/"
 }
 
 node .\node_modules\concurrently\dist\bin\concurrently.js `
