@@ -110,6 +110,14 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function isLoopbackHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function browserQfcCallbackUri() {
+  return `${window.location.origin}/api/qfc/oauth/callback`;
+}
+
 function App() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
@@ -295,7 +303,7 @@ function QfcApiPanel({
     setLocationId(status.locationId);
     setServiceScopes(status.serviceScopes);
     setCustomerScopes(status.customerScopes);
-    setRedirectUri(status.redirectUri);
+    setRedirectUri(isLoopbackHost(window.location.hostname) ? status.redirectUri : browserQfcCallbackUri());
   }, [status]);
 
   async function saveSettings() {
@@ -324,6 +332,16 @@ function QfcApiPanel({
   async function startCustomerOAuth() {
     setError("");
     try {
+      const nextRedirectUri = isLoopbackHost(window.location.hostname)
+        ? redirectUri.trim()
+        : browserQfcCallbackUri();
+      if (nextRedirectUri && nextRedirectUri !== status?.redirectUri) {
+        await api("/api/qfc/settings", {
+          method: "PUT",
+          body: JSON.stringify({ redirectUri: nextRedirectUri })
+        });
+        setRedirectUri(nextRedirectUri);
+      }
       const result = await api<{ authorizationUrl: string }>("/api/qfc/oauth/start", { method: "POST" });
       window.open(result.authorizationUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
