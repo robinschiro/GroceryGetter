@@ -165,6 +165,13 @@ function App() {
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
   }
 
+  async function clearAggregatedIngredients() {
+    if (!activeMenu) return;
+    await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
+    setShoppingList([]);
+    setMessage("");
+  }
+
   async function saveShoppingItem(item: ShoppingListItem) {
     await api(`/api/shopping-list-items/${item.id}`, {
       method: "PUT",
@@ -253,6 +260,7 @@ function App() {
           items={shoppingList}
           setItems={setShoppingList}
           saveItem={saveShoppingItem}
+          clearItems={clearAggregatedIngredients}
           submitToQfc={submitToQfc}
           message={message}
         />
@@ -672,12 +680,14 @@ function ShoppingListReview({
   items,
   setItems,
   saveItem,
+  clearItems,
   submitToQfc,
   message
 }: {
   items: ShoppingListItem[];
   setItems: (items: ShoppingListItem[]) => void;
   saveItem: (item: ShoppingListItem) => Promise<void>;
+  clearItems: () => Promise<void>;
   submitToQfc: () => Promise<void>;
   message: string;
 }) {
@@ -717,6 +727,10 @@ function ShoppingListReview({
             ))}
           </div>
           <div className="panel-actions">
+            <button className="secondary" onClick={() => void clearItems()}>
+              <Trash2 size={17} />
+              Clear aggregated ingredients
+            </button>
             <button onClick={() => void submitToQfc()}>
               <Send size={17} />
               Send approved items to QFC

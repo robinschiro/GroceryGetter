@@ -458,6 +458,12 @@ app.get("/api/menus/:id/shopping-list", (req, res) => {
   res.json(rows);
 });
 
+app.delete("/api/menus/:id/shopping-list", (req, res) => {
+  run("DELETE FROM shopping_list_items WHERE menu_id = ?", [req.params.id]);
+  saveDb();
+  res.json({ ok: true });
+});
+
 app.put("/api/shopping-list-items/:id", (req, res) => {
   run(
     `UPDATE shopping_list_items
