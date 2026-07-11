@@ -32,6 +32,13 @@
 - Preserve local secrets, OAuth tokens, and saved settings. Do not print credentials or write them into docs.
 - When touching QFC/Kroger behavior, review `docs/qfc-api-setup.md`, `docs/kroger-api-notes.md`, and `server/qfcAdapter.ts`.
 
+## User Shorthands
+- If the user sends exactly `c`, treat it as: review the current git diff, summarize the intended commit, then create a git commit with an appropriate message.
+- If the user sends exactly `cp`, treat it as: do everything for `c`, then push the resulting commit to the current branch.
+- Before committing, run the relevant verification for the touched files when practical.
+- Never include unrelated work in the commit. If unrelated changes are present, leave them unstaged and mention them.
+- Do not push if the commit fails, verification fails, or the branch/upstream state is unclear; explain the blocker instead.
+
 ## Verification
 - Run `npm run typecheck` for TypeScript-only changes.
 - Before attempting a Vite build in Codex, check whether the app is already running:
