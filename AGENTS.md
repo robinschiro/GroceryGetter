@@ -15,6 +15,15 @@
 - Build: `npm run build`
 - Preview production build: `npm run preview`
 
+## Codex Shell Environment
+- Do not assume `npm` or `node` are installed globally or available on `PATH` in the Codex PowerShell session.
+- Use the Codex-managed Node binary when running project tools: `C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`.
+- Prefer invoking local package binaries through that Node binary, for example:
+  - Typecheck: `& 'C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' .\node_modules\typescript\bin\tsc --noEmit`
+  - Vite: `& 'C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' .\node_modules\vite\bin\vite.js`
+  - TSX: `& 'C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' .\node_modules\tsx\dist\cli.mjs`
+- If a command needs `.cmd` shims, first prepend the managed Node directory to `PATH` for that PowerShell command.
+
 ## Development Notes
 - The API listens on `127.0.0.1:5174`; Vite serves the frontend on `127.0.0.1`.
 - Keep frontend requests relative to `/api/...` so Vite proxy behavior remains simple.
