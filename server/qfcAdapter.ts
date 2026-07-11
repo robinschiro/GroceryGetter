@@ -131,8 +131,10 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
 
 export function getQfcApiStatus() {
   const customerExpiresAt = Number(getSetting("krogerCustomerTokenExpiresAt") || 0);
+  const clientId = getSetting("krogerClientId");
   return {
-    hasClientId: Boolean(getSetting("krogerClientId")),
+    clientId,
+    hasClientId: Boolean(clientId),
     hasClientSecret: Boolean(getSetting("krogerClientSecret")),
     locationId: getSetting("krogerLocationId"),
     hasCustomerAccessToken: Boolean(getSetting("krogerCustomerAccessToken")),
@@ -153,12 +155,12 @@ export function saveQfcApiSettings(input: {
   customerScopes?: string;
   redirectUri?: string;
 }) {
-  if (input.clientId !== undefined) setSetting("krogerClientId", input.clientId);
-  if (input.clientSecret !== undefined) setSetting("krogerClientSecret", input.clientSecret);
-  if (input.locationId !== undefined) setSetting("krogerLocationId", input.locationId);
-  if (input.serviceScopes !== undefined) setSetting("krogerServiceScopes", input.serviceScopes);
-  if (input.customerScopes !== undefined) setSetting("krogerCustomerScopes", input.customerScopes);
-  if (input.redirectUri !== undefined) setSetting("krogerRedirectUri", input.redirectUri);
+  if (input.clientId !== undefined) setSetting("krogerClientId", input.clientId.trim());
+  if (input.clientSecret !== undefined) setSetting("krogerClientSecret", input.clientSecret.trim());
+  if (input.locationId !== undefined) setSetting("krogerLocationId", input.locationId.trim());
+  if (input.serviceScopes !== undefined) setSetting("krogerServiceScopes", input.serviceScopes.trim());
+  if (input.customerScopes !== undefined) setSetting("krogerCustomerScopes", input.customerScopes.trim());
+  if (input.redirectUri !== undefined) setSetting("krogerRedirectUri", input.redirectUri.trim());
   serviceToken = null;
   return getQfcApiStatus();
 }

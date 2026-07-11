@@ -49,6 +49,7 @@ type ShoppingListItem = {
 };
 
 type QfcStatus = {
+  clientId: string;
   hasClientId: boolean;
   hasClientSecret: boolean;
   locationId: string;
@@ -290,6 +291,7 @@ function QfcApiPanel({
 
   useEffect(() => {
     if (!status) return;
+    setClientId(status.clientId);
     setLocationId(status.locationId);
     setServiceScopes(status.serviceScopes);
     setCustomerScopes(status.customerScopes);
@@ -310,6 +312,8 @@ function QfcApiPanel({
           redirectUri
         })
       });
+      setClientId(clientId.trim());
+      setLocationId(locationId.trim());
       setClientSecret("");
       await reloadStatus();
     } catch (err) {
@@ -350,11 +354,24 @@ function QfcApiPanel({
     setError("");
     try {
       const params = new URLSearchParams({ term: productTerm });
-      if (locationId) params.set("locationId", locationId);
+      const trimmedLocationId = locationId.trim();
+      if (trimmedLocationId) {
+        params.set("locationId", trimmedLocationId);
+        await saveLocationId(trimmedLocationId);
+      }
       setProducts(await api<ProductCandidate[]>(`/api/qfc/products?${params.toString()}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to search products.");
     }
+  }
+
+  async function saveLocationId(nextLocationId: string) {
+    await api("/api/qfc/settings", {
+      method: "PUT",
+      body: JSON.stringify({ locationId: nextLocationId })
+    });
+    setLocationId(nextLocationId);
+    await reloadStatus();
   }
 
   return (
@@ -434,7 +451,7 @@ function QfcApiPanel({
               <button
                 className="result-row"
                 key={location.locationId}
-                onClick={() => setLocationId(location.locationId)}
+                onClick={() => void saveLocationId(location.locationId)}
               >
                 <strong>{location.name}</strong>
                 <span>{location.locationId}</span>
