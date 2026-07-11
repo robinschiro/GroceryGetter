@@ -34,5 +34,9 @@
 
 ## Verification
 - Run `npm run typecheck` for TypeScript-only changes.
+- Before attempting a Vite build in Codex, check whether the app is already running:
+  - Frontend: `Invoke-WebRequest -Uri http://127.0.0.1:5173 -UseBasicParsing -TimeoutSec 2`
+  - API: `Invoke-WebRequest -Uri http://127.0.0.1:5174/api/recipes -UseBasicParsing -TimeoutSec 2`
+- If both servers are already responding, prefer browser or endpoint verification against the running app instead of forcing a local build in the constrained Codex shell.
 - Run `npm run build` before finishing changes that affect runtime behavior or frontend code.
 - If changing API routes or persistence logic, exercise the affected endpoint or workflow when practical.
