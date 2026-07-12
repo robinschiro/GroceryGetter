@@ -6,13 +6,13 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "tsx watch server/index.ts",
-    "dev:web": "vite --host 127.0.0.1",
-    "build": "tsc && vite build",
+    "dev:web": "vite --host 127.0.0.1 --configLoader native",
+    "build": "tsc && vite build --configLoader native",
     "import:recipes": "tsx scripts/import-recipes.ts",
     "import:recipes:commit": "tsx scripts/import-recipes.ts --commit",
     "sync:recipes": "tsx scripts/import-recipes.ts --sync",
     "sync:recipes:commit": "tsx scripts/import-recipes.ts --sync --commit",
-    "preview": "vite preview --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1 --configLoader native",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -23,6 +23,7 @@
   - Vite: `& 'C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' .\node_modules\vite\bin\vite.js`
   - TSX: `& 'C:\Users\AI\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' .\node_modules\tsx\dist\cli.mjs`
 - If a command needs `.cmd` shims, first prepend the managed Node directory to `PATH` for that PowerShell command.
+- Use Vite's native config loader in Codex (`--configLoader native`). The default bundled config loader invokes esbuild while loading `vite.config.*`, and this sandbox can deny esbuild reads above the workspace.
 
 ## Development Notes
 - The API listens on `127.0.0.1:5174`; Vite serves the frontend on `127.0.0.1`.
