@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { initializeDb, insert, queryAll, queryOne, run, saveDb, transaction } from "./db.js";
 import {
   createCustomerAuthorizationUrl,
@@ -10,12 +11,34 @@ import {
   searchProducts,
   submitToQfcCart
 } from "./qfcAdapter.js";
+import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
 import type { Recipe, RecipeInput } from "./types.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const port = 5174;
+
+type QfcSubmitJob = {
+  id: string;
+  status: "running" | "complete" | "failed";
+  progress: CartSubmissionProgress;
+  result?: CartSubmissionResult;
+  error?: string;
+  createdAt: number;
+};
+
+const qfcSubmitJobs = new Map<string, QfcSubmitJob>();
+const qfcSubmitJobTtlMs = 15 * 60 * 1000;
+
+function pruneQfcSubmitJobs() {
+  const cutoff = Date.now() - qfcSubmitJobTtlMs;
+  for (const [jobId, job] of qfcSubmitJobs.entries()) {
+    if (job.createdAt < cutoff) {
+      qfcSubmitJobs.delete(jobId);
+    }
+  }
+}
 
 function escapeHtml(value: string) {
   return value
@@ -498,7 +521,57 @@ app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
       item: string;
     }>;
 
-  res.json(await submitToQfcCart(rows));
+  pruneQfcSubmitJobs();
+  const jobId = randomUUID();
+  const job: QfcSubmitJob = {
+    id: jobId,
+    status: "running",
+    progress: {
+      phase: "checking",
+      processedItems: 0,
+      totalItems: rows.length,
+      message: "Starting QFC cart submission..."
+    },
+    createdAt: Date.now()
+  };
+  qfcSubmitJobs.set(jobId, job);
+
+  void submitToQfcCart(rows, (progress) => {
+    job.progress = progress;
+  })
+    .then((result) => {
+      job.status = "complete";
+      job.result = result;
+      job.progress = {
+        phase: "complete",
+        processedItems: rows.length,
+        totalItems: rows.length,
+        message: result.message
+      };
+    })
+    .catch((error: unknown) => {
+      job.status = "failed";
+      job.error = error instanceof Error ? error.message : "QFC cart submission failed.";
+      job.progress = {
+        phase: "complete",
+        processedItems: rows.length,
+        totalItems: rows.length,
+        message: job.error
+      };
+    });
+
+  res.status(202).json({ jobId, ...job });
+});
+
+app.get("/api/qfc/submit-jobs/:jobId", (req, res) => {
+  pruneQfcSubmitJobs();
+  const job = qfcSubmitJobs.get(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "QFC submission job was not found." });
+    return;
+  }
+
+  res.json(job);
 });
 
 await initializeDb();

@@ -85,6 +85,25 @@ type ProductCandidate = {
   isStoreBrand: boolean;
 };
 
+type QfcSubmitProgress = {
+  phase: "checking" | "matching" | "adding" | "complete";
+  processedItems: number;
+  totalItems: number;
+  message: string;
+};
+
+type QfcSubmitJob = {
+  id: string;
+  status: "running" | "complete" | "failed";
+  progress: QfcSubmitProgress;
+  result?: {
+    submittedItemCount: number;
+    message: string;
+    skipped?: unknown[];
+  };
+  error?: string;
+};
+
 const categories: Array<{ value: RecipeCategory; label: string }> = [
   { value: "entree", label: "Entree" },
   { value: "vegetable_side", label: "Vegetable side" },
@@ -99,6 +118,8 @@ const emptyIngredient = (): RecipeIngredient => ({
 });
 
 const qfcCartUrl = "https://www.qfc.com/cart";
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -128,6 +149,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
+  const [qfcSubmitProgress, setQfcSubmitProgress] = useState<QfcSubmitProgress | null>(null);
 
   async function loadRecipes() {
     setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
@@ -192,11 +214,35 @@ function App() {
 
   async function submitToQfc() {
     if (!activeMenu) return;
-    const result = await api<{ submittedItemCount: number; message: string; skipped?: unknown[] }>(
-      `/api/menus/${activeMenu.id}/submit-to-qfc`,
-      { method: "POST" }
-    );
-    setMessage(result.message);
+    setMessage("");
+    setQfcSubmitProgress({
+      phase: "checking",
+      processedItems: 0,
+      totalItems: shoppingList.filter((item) => item.approved).length,
+      message: "Starting QFC cart submission..."
+    });
+
+    try {
+      const started = await api<QfcSubmitJob>(`/api/menus/${activeMenu.id}/submit-to-qfc`, { method: "POST" });
+      setQfcSubmitProgress(started.progress);
+
+      let job = started;
+      while (job.status === "running") {
+        await wait(600);
+        job = await api<QfcSubmitJob>(`/api/qfc/submit-jobs/${started.id}`);
+        setQfcSubmitProgress(job.progress);
+      }
+
+      if (job.status === "failed") {
+        throw new Error(job.error ?? "QFC cart submission failed.");
+      }
+
+      setMessage(job.result?.message ?? job.progress.message);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
+    } finally {
+      setQfcSubmitProgress(null);
+    }
   }
 
   function openQfcCartToClear() {
@@ -278,6 +324,7 @@ function App() {
           clearItems={clearAggregatedIngredients}
           submitToQfc={submitToQfc}
           openQfcCartToClear={openQfcCartToClear}
+          qfcSubmitProgress={qfcSubmitProgress}
           message={message}
         />
       </section>
@@ -725,6 +772,7 @@ function ShoppingListReview({
   clearItems,
   submitToQfc,
   openQfcCartToClear,
+  qfcSubmitProgress,
   message
 }: {
   items: ShoppingListItem[];
@@ -733,6 +781,7 @@ function ShoppingListReview({
   clearItems: () => Promise<void>;
   submitToQfc: () => Promise<void>;
   openQfcCartToClear: () => void;
+  qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
   function patchItem(id: number, patch: Partial<ShoppingListItem>) {
@@ -779,9 +828,9 @@ function ShoppingListReview({
               <ExternalLink size={17} />
               Open cart on QFC
             </button>
-            <button onClick={() => void submitToQfc()}>
+            <button onClick={() => void submitToQfc()} disabled={Boolean(qfcSubmitProgress)}>
               <Send size={17} />
-              Send approved items to QFC
+              {qfcSubmitProgress ? "Sending to QFC..." : "Send approved items to QFC"}
             </button>
           </div>
         </>
@@ -789,8 +838,36 @@ function ShoppingListReview({
         <div className="empty-state">Aggregate a menu to review its grocery list.</div>
       )}
 
+      {qfcSubmitProgress ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
       {message ? <div className="success">{message}</div> : null}
     </section>
+  );
+}
+
+function QfcSubmitProgressBar({ progress }: { progress: QfcSubmitProgress }) {
+  const fallbackByPhase = {
+    checking: 8,
+    matching: 20,
+    adding: 92,
+    complete: 100
+  };
+  const itemPercent = progress.totalItems
+    ? Math.round((progress.processedItems / progress.totalItems) * 80) + 10
+    : fallbackByPhase[progress.phase];
+  const percent = progress.phase === "complete"
+    ? 100
+    : Math.min(96, Math.max(fallbackByPhase[progress.phase], itemPercent));
+
+  return (
+    <div className="qfc-progress" role="status" aria-live="polite">
+      <div className="qfc-progress-meta">
+        <strong>{progress.message}</strong>
+        <span>{percent}%</span>
+      </div>
+      <div className="qfc-progress-track" aria-hidden="true">
+        <div className="qfc-progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
   );
 }
 

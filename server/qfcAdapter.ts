@@ -65,6 +65,15 @@ export type CartSubmissionResult = {
   skipped?: CartSubmissionSkip[];
 };
 
+export type CartSubmissionProgress = {
+  phase: "checking" | "matching" | "adding" | "complete";
+  processedItems: number;
+  totalItems: number;
+  message: string;
+};
+
+export type CartSubmissionProgressHandler = (progress: CartSubmissionProgress) => void;
+
 export type CartSubmissionMatch = {
   item: CartSubmissionItem;
   product: ProductCandidate;
@@ -385,14 +394,27 @@ function chooseProductCandidate(candidates: ProductCandidate[]) {
   return pool[0] ?? null;
 }
 
-async function matchCartItems(items: CartSubmissionItem[]) {
+async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubmissionProgressHandler) {
   const matched: CartSubmissionMatch[] = [];
   const skipped: CartSubmissionSkip[] = [];
 
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     const searchTerm = item.item.trim() || item.text.trim();
+    onProgress?.({
+      phase: "matching",
+      processedItems: index,
+      totalItems: items.length,
+      message: `Matching ${searchTerm || "item"} with QFC products...`
+    });
+
     if (!searchTerm) {
       skipped.push({ item, reason: "No searchable item text." });
+      onProgress?.({
+        phase: "matching",
+        processedItems: index + 1,
+        totalItems: items.length,
+        message: "Skipped an item with no searchable text."
+      });
       continue;
     }
 
@@ -411,6 +433,13 @@ async function matchCartItems(items: CartSubmissionItem[]) {
         reason: error instanceof Error ? error.message : "Product search failed."
       });
     }
+
+    onProgress?.({
+      phase: "matching",
+      processedItems: index + 1,
+      totalItems: items.length,
+      message: `Matched ${index + 1} of ${items.length} approved items.`
+    });
   }
 
   return { matched, skipped };
@@ -435,7 +464,17 @@ async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
   });
 }
 
-export async function submitToQfcCart(items: CartSubmissionItem[]): Promise<CartSubmissionResult> {
+export async function submitToQfcCart(
+  items: CartSubmissionItem[],
+  onProgress?: CartSubmissionProgressHandler
+): Promise<CartSubmissionResult> {
+  onProgress?.({
+    phase: "checking",
+    processedItems: 0,
+    totalItems: items.length,
+    message: "Checking QFC API settings..."
+  });
+
   const status = getQfcApiStatus();
   if (!status.hasClientId || !status.hasClientSecret) {
     return {
@@ -455,7 +494,7 @@ export async function submitToQfcCart(items: CartSubmissionItem[]): Promise<Cart
     };
   }
 
-  const { matched, skipped } = await matchCartItems(items);
+  const { matched, skipped } = await matchCartItems(items, onProgress);
   if (!matched.length) {
     return {
       mode: "api",
@@ -466,6 +505,13 @@ export async function submitToQfcCart(items: CartSubmissionItem[]): Promise<Cart
       skipped
     };
   }
+
+  onProgress?.({
+    phase: "adding",
+    processedItems: items.length,
+    totalItems: items.length,
+    message: `Adding ${matched.length} matched item${matched.length === 1 ? "" : "s"} to your QFC cart...`
+  });
 
   await addMatchedItemsToCart(matched);
 

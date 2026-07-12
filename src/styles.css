@@ -36,6 +36,11 @@ button {
   padding: 0 14px;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 button.secondary {
   background: #dce5e0;
   color: #18332e;
@@ -359,6 +364,47 @@ label {
 .success {
   background: #e3f2e9;
   color: #24543a;
+}
+
+.qfc-progress {
+  background: #eef2ef;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.qfc-progress-meta {
+  align-items: center;
+  color: #315b53;
+  display: flex;
+  font-size: 0.86rem;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.qfc-progress-meta strong {
+  font-weight: 700;
+}
+
+.qfc-progress-meta span {
+  color: #66746f;
+  flex: 0 0 auto;
+}
+
+.qfc-progress-track {
+  background: #d8dfdb;
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.qfc-progress-fill {
+  background: #315b53;
+  border-radius: inherit;
+  height: 100%;
+  transition: width 220ms ease;
 }
 
 @media (max-width: 1100px) {
