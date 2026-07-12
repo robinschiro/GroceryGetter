@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Check, Database, ExternalLink, RefreshCw, Send, Settings, Shuffle, Trash2 } from "lucide-react";
+import { Check, Database, ExternalLink, Menu as MenuIcon, RefreshCw, Send, Settings, Shuffle, Trash2, X } from "lucide-react";
 import "./styles.css";
 
 type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
@@ -104,6 +104,8 @@ type QfcSubmitJob = {
   error?: string;
 };
 
+type AppView = "recipe-admin" | "qfc-api" | "planner";
+
 const categories: Array<{ value: RecipeCategory; label: string }> = [
   { value: "entree", label: "Entree" },
   { value: "vegetable_side", label: "Vegetable side" },
@@ -120,6 +122,12 @@ const emptyIngredient = (): RecipeIngredient => ({
 const qfcCartUrl = "https://www.qfc.com/cart";
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
+  { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
+  { id: "recipe-admin", label: "Recipe Admin", title: "Recipe Admin", eyebrow: "Recipe library", icon: Database },
+  { id: "qfc-api", label: "QFC API Setup", title: "QFC API Setup", eyebrow: "Integration settings", icon: Settings }
+];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -142,6 +150,8 @@ function browserQfcCallbackUri() {
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<AppView>("planner");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
@@ -266,44 +276,83 @@ function App() {
     [recipes]
   );
 
+  const currentView = views.find((view) => view.id === activeView) ?? views[0];
+
+  function selectView(view: AppView) {
+    setActiveView(view);
+    setIsMenuOpen(false);
+  }
+
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <h1>Grocery Getter</h1>
-          <p>Plan from structured recipes, review the ingredients, then send approved items to QFC.</p>
-        </div>
-        <div className="sidebar-stats">
-          {recipeCounts.map((category) => (
-            <div key={category.value}>
-              <span>{category.label}</span>
-              <strong>{category.count}</strong>
-            </div>
-          ))}
-        </div>
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={preferStoreBrands}
-            onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
-          />
-          <span>Prefer QFC/Kroger store brands</span>
-        </label>
-      </aside>
-
       <section className="workspace">
         <header className="topbar">
-          <div>
-            <span className="eyebrow">Local desktop app</span>
-            <h2>Weekly Menu Workflow</h2>
+          <div className="topbar-title">
+            <button
+              className="icon-button menu-trigger"
+              onClick={() => setIsMenuOpen((open) => !open)}
+              aria-expanded={isMenuOpen}
+              aria-label={isMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            >
+              {isMenuOpen ? <X size={20} /> : <MenuIcon size={20} />}
+            </button>
+            <div>
+              <h1>Grocery Getter</h1>
+              <span className="eyebrow">{currentView.eyebrow}</span>
+              <h2>{currentView.title}</h2>
+            </div>
           </div>
           <button className="icon-button" onClick={() => void loadRecipes()} aria-label="Refresh recipes">
             <RefreshCw size={18} />
           </button>
         </header>
 
-        <div className="grid two-columns">
+        {isMenuOpen ? (
+          <div className="menu-panel">
+            <nav className="view-tabs" aria-label="Primary navigation">
+              {views.map((view) => {
+                const Icon = view.icon;
+                return (
+                  <button
+                    className={view.id === activeView ? "tab-button active" : "tab-button"}
+                    key={view.id}
+                    onClick={() => selectView(view.id)}
+                  >
+                    <Icon size={18} />
+                    {view.label}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="menu-summary">
+              {recipeCounts.map((category) => (
+                <div key={category.value}>
+                  <span>{category.label}</span>
+                  <strong>{category.count}</strong>
+                </div>
+              ))}
+            </div>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={preferStoreBrands}
+                onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
+              />
+              <span>Prefer QFC/Kroger store brands</span>
+            </label>
+          </div>
+        ) : null}
+
+        {activeView === "recipe-admin" ? (
           <RecipeAdmin recipes={recipes} onSaved={loadRecipes} />
+        ) : null}
+
+        {activeView === "qfc-api" ? (
+          <QfcApiPanel status={qfcStatus} reloadStatus={loadSettings} />
+        ) : null}
+
+        {activeView === "planner" ? (
+          <div className="grid planner-grid">
           <MenuBuilder
             recipes={recipes}
             mealCount={mealCount}
@@ -313,20 +362,18 @@ function App() {
             updateMenuItem={updateMenuItem}
             aggregateIngredients={aggregateIngredients}
           />
-        </div>
-
-        <QfcApiPanel status={qfcStatus} reloadStatus={loadSettings} />
-
-        <ShoppingListReview
-          items={shoppingList}
-          setItems={setShoppingList}
-          saveItem={saveShoppingItem}
-          clearItems={clearAggregatedIngredients}
-          submitToQfc={submitToQfc}
-          openQfcCartToClear={openQfcCartToClear}
-          qfcSubmitProgress={qfcSubmitProgress}
-          message={message}
-        />
+            <ShoppingListReview
+              items={shoppingList}
+              setItems={setShoppingList}
+              saveItem={saveShoppingItem}
+              clearItems={clearAggregatedIngredients}
+              submitToQfc={submitToQfc}
+              openQfcCartToClear={openQfcCartToClear}
+              qfcSubmitProgress={qfcSubmitProgress}
+              message={message}
+            />
+          </div>
+        ) : null}
       </section>
     </main>
   );
