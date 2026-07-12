@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Check, Database, RefreshCw, Send, Settings, Shuffle, Trash2 } from "lucide-react";
+import { Check, Database, ExternalLink, RefreshCw, Send, Settings, Shuffle, Trash2 } from "lucide-react";
 import "./styles.css";
 
 type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
@@ -98,6 +98,8 @@ const emptyIngredient = (): RecipeIngredient => ({
   item: ""
 });
 
+const qfcCartUrl = "https://www.qfc.com/cart";
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -122,7 +124,7 @@ function App() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
-  const [mealCount, setMealCount] = useState(5);
+  const [mealCount, setMealCount] = useState(2);
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
@@ -195,6 +197,10 @@ function App() {
       { method: "POST" }
     );
     setMessage(result.message);
+  }
+
+  function openQfcCartToClear() {
+    window.open(qfcCartUrl, "_blank", "noopener,noreferrer");
   }
 
   async function updateStoreBrandPreference(next: boolean) {
@@ -271,6 +277,7 @@ function App() {
           saveItem={saveShoppingItem}
           clearItems={clearAggregatedIngredients}
           submitToQfc={submitToQfc}
+          openQfcCartToClear={openQfcCartToClear}
           message={message}
         />
       </section>
@@ -717,6 +724,7 @@ function ShoppingListReview({
   saveItem,
   clearItems,
   submitToQfc,
+  openQfcCartToClear,
   message
 }: {
   items: ShoppingListItem[];
@@ -724,6 +732,7 @@ function ShoppingListReview({
   saveItem: (item: ShoppingListItem) => Promise<void>;
   clearItems: () => Promise<void>;
   submitToQfc: () => Promise<void>;
+  openQfcCartToClear: () => void;
   message: string;
 }) {
   function patchItem(id: number, patch: Partial<ShoppingListItem>) {
@@ -765,6 +774,10 @@ function ShoppingListReview({
             <button className="secondary" onClick={() => void clearItems()}>
               <Trash2 size={17} />
               Clear aggregated ingredients
+            </button>
+            <button className="secondary" onClick={openQfcCartToClear}>
+              <ExternalLink size={17} />
+              Open cart on QFC
             </button>
             <button onClick={() => void submitToQfc()}>
               <Send size={17} />

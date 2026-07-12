@@ -83,6 +83,7 @@ Use Cart API only after customer auth is complete.
 
 - Public Cart API rate limit from catalog docs: 5,000 calls per day.
 - Public Cart API description says it adds an item to an authenticated customer's cart.
+- The public Cart API does not expose a documented cart-read, remove-item, or clear-cart operation. Clearing a customer cart appears to require the shopper-facing QFC/Kroger cart UI or partner Cart API access.
 - The adapter submits only approved shopping-list rows and never checks out or places an order.
 - If Kroger credentials are missing, `submitToQfcCart` returns a stub-mode message and does not call Kroger.
 - If customer OAuth is missing, product/location APIs can still work, but cart mutation returns a stub-mode message.
