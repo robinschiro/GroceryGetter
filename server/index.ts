@@ -49,9 +49,16 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
+type RecipeRow = Omit<Recipe, "ingredients" | "isTestData"> & {
+  isTestData: number;
+};
+
 function getRecipe(id: number): Recipe | null {
-  const recipe = queryOne("SELECT id, name, category, servings, notes FROM recipes WHERE id = ?", [id]) as
-    | Omit<Recipe, "ingredients">
+  const recipe = queryOne(
+    "SELECT id, name, category, is_test_data AS isTestData, servings, notes FROM recipes WHERE id = ?",
+    [id]
+  ) as
+    | RecipeRow
     | null;
 
   if (!recipe) {
@@ -73,7 +80,7 @@ function getRecipe(id: number): Recipe | null {
       [id]
     ) as Recipe["ingredients"];
 
-  return { ...recipe, ingredients };
+  return { ...recipe, isTestData: Boolean(recipe.isTestData), ingredients };
 }
 
 function validateRecipeInput(input: RecipeInput) {
@@ -148,11 +155,12 @@ app.get("/api/recipes", (_req, res) => {
         id,
         name,
         category,
+        is_test_data AS isTestData,
         servings,
         notes
       FROM recipes
       ORDER BY category, name`
-    ) as Omit<Recipe, "ingredients">[];
+    ) as RecipeRow[];
 
   res.json(rows.map((row) => getRecipe(row.id)));
 });
@@ -163,9 +171,10 @@ app.post("/api/recipes", (req, res) => {
     validateRecipeInput(input);
 
     const createdRecipe = transaction(() => {
-      const recipeId = insert("INSERT INTO recipes (name, category, servings, notes) VALUES (?, ?, ?, ?)", [
+      const recipeId = insert("INSERT INTO recipes (name, category, is_test_data, servings, notes) VALUES (?, ?, ?, ?, ?)", [
         input.name.trim(),
         input.category,
+        input.isTestData ? 1 : 0,
         input.servings ?? null,
         input.notes?.trim() ?? ""
       ]);
@@ -320,12 +329,15 @@ app.get("/api/qfc/products", async (req, res) => {
 
 app.post("/api/menus/generate", (req, res) => {
   const mealCount = Number(req.body.mealCount ?? 5);
+  const includeTestData = Boolean(req.body.includeTestData);
   if (!Number.isInteger(mealCount) || mealCount < 1 || mealCount > 14) {
     res.status(400).json({ error: "Meal count must be between 1 and 14." });
     return;
   }
 
-  const recipes = queryAll("SELECT id, name, category FROM recipes") as Array<{
+  const recipes = queryAll("SELECT id, name, category FROM recipes WHERE is_test_data = ?", [
+    includeTestData ? 1 : 0
+  ]) as Array<{
     id: number;
     name: string;
     category: string;

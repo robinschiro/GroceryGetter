@@ -14,6 +14,10 @@ export let db: Database;
 
 export type Row = Record<string, string | number | null>;
 
+function columnExists(tableName: string, columnName: string) {
+  return queryAll(`PRAGMA table_info(${tableName})`).some((column) => column.name === columnName);
+}
+
 export async function initializeDb() {
   SQL = await initSqlJs();
   if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
@@ -27,6 +31,7 @@ export async function initializeDb() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     category TEXT NOT NULL CHECK (category IN ('entree', 'vegetable_side', 'starch_side')),
+    is_test_data INTEGER NOT NULL DEFAULT 0,
     servings INTEGER,
     notes TEXT NOT NULL DEFAULT '',
     source_path TEXT,
@@ -80,6 +85,12 @@ export async function initializeDb() {
     value TEXT NOT NULL
   );
 `);
+
+  if (!columnExists("recipes", "is_test_data")) {
+    run("ALTER TABLE recipes ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
+    run("UPDATE recipes SET is_test_data = 1");
+    saveDb();
+  }
 
   const settings = queryOne<{ count: number }>("SELECT COUNT(*) AS count FROM settings");
   if (settings?.count === 0) {

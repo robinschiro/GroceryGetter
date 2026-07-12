@@ -273,7 +273,12 @@ label {
 }
 
 .menu-controls {
-  grid-template-columns: 120px 150px;
+  align-items: end;
+  grid-template-columns: 120px 180px 150px;
+}
+
+.menu-controls button {
+  width: 100%;
 }
 
 .menu-table {
@@ -459,6 +464,14 @@ label {
 
   .tool-row {
     grid-template-columns: 1fr;
+  }
+
+  .menu-controls {
+    grid-template-columns: minmax(0, 120px) minmax(0, 180px);
+  }
+
+  .menu-controls button {
+    grid-column: 1 / -1;
   }
 
   .wide-field {

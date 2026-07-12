@@ -9,10 +9,13 @@ type Recipe = {
   id: number;
   name: string;
   category: RecipeCategory;
+  isTestData: boolean;
   servings: number | null;
   notes: string;
   ingredients: RecipeIngredient[];
 };
+
+type PlannerRecipeMode = "test" | "production";
 
 type RecipeIngredient = {
   id?: number;
@@ -156,6 +159,7 @@ function App() {
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [mealCount, setMealCount] = useState(2);
+  const [plannerRecipeMode, setPlannerRecipeMode] = useState<PlannerRecipeMode>("test");
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
@@ -178,13 +182,24 @@ function App() {
 
   async function generateMenu() {
     setMessage("");
-    const created = await api<{ id: number }>("/api/menus/generate", {
-      method: "POST",
-      body: JSON.stringify({ mealCount })
-    });
-    const menu = await api<Menu>(`/api/menus/${created.id}`);
-    setActiveMenu(menu);
+    try {
+      const created = await api<{ id: number }>("/api/menus/generate", {
+        method: "POST",
+        body: JSON.stringify({ mealCount, includeTestData: plannerRecipeMode === "test" })
+      });
+      const menu = await api<Menu>(`/api/menus/${created.id}`);
+      setActiveMenu(menu);
+      setShoppingList([]);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
+    }
+  }
+
+  function updatePlannerRecipeMode(next: PlannerRecipeMode) {
+    setPlannerRecipeMode(next);
+    setActiveMenu(null);
     setShoppingList([]);
+    setMessage("");
   }
 
   async function loadMenu(id: number) {
@@ -357,6 +372,8 @@ function App() {
             recipes={recipes}
             mealCount={mealCount}
             setMealCount={setMealCount}
+            plannerRecipeMode={plannerRecipeMode}
+            setPlannerRecipeMode={updatePlannerRecipeMode}
             activeMenu={activeMenu}
             generateMenu={generateMenu}
             updateMenuItem={updateMenuItem}
@@ -605,6 +622,7 @@ function QfcApiPanel({
 function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState<RecipeCategory>("entree");
+  const [isTestData, setIsTestData] = useState(false);
   const [servings, setServings] = useState("");
   const [notes, setNotes] = useState("");
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>([emptyIngredient()]);
@@ -622,6 +640,7 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
         body: JSON.stringify({
           name,
           category,
+          isTestData,
           servings: servings ? Number(servings) : null,
           notes,
           ingredients: ingredients.filter((ingredient) => ingredient.text.trim() && ingredient.item.trim())
@@ -629,6 +648,7 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
       });
       setName("");
       setCategory("entree");
+      setIsTestData(false);
       setServings("");
       setNotes("");
       setIngredients([emptyIngredient()]);
@@ -665,6 +685,15 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
           <input value={servings} onChange={(event) => setServings(event.target.value)} inputMode="numeric" />
         </label>
       </div>
+
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={isTestData}
+          onChange={(event) => setIsTestData(event.target.checked)}
+        />
+        <span>Mark as test data</span>
+      </label>
 
       <label>
         Notes
@@ -722,7 +751,11 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
         {recipes.slice(0, 8).map((recipe) => (
           <div key={recipe.id} className="recipe-list-item">
             <strong>{recipe.name}</strong>
-            <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
+            <span>
+              {[categories.find((item) => item.value === recipe.category)?.label, recipe.isTestData ? "Test" : "Non-test"]
+                .filter(Boolean)
+                .join(" / ")}
+            </span>
           </div>
         ))}
       </div>
@@ -734,6 +767,8 @@ function MenuBuilder({
   recipes,
   mealCount,
   setMealCount,
+  plannerRecipeMode,
+  setPlannerRecipeMode,
   activeMenu,
   generateMenu,
   updateMenuItem,
@@ -742,11 +777,15 @@ function MenuBuilder({
   recipes: Recipe[];
   mealCount: number;
   setMealCount: (value: number) => void;
+  plannerRecipeMode: PlannerRecipeMode;
+  setPlannerRecipeMode: (value: PlannerRecipeMode) => void;
   activeMenu: Menu | null;
   generateMenu: () => Promise<void>;
   updateMenuItem: (menuItemId: number, recipeId: number) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
+  const plannerRecipes = recipes.filter((recipe) => recipe.isTestData === (plannerRecipeMode === "test"));
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -764,6 +803,16 @@ function MenuBuilder({
             value={mealCount}
             onChange={(event) => setMealCount(Number(event.target.value))}
           />
+        </label>
+        <label>
+          Recipes
+          <select
+            value={plannerRecipeMode}
+            onChange={(event) => setPlannerRecipeMode(event.target.value as PlannerRecipeMode)}
+          >
+            <option value="test">Test recipes</option>
+            <option value="production">Non-test recipes</option>
+          </select>
         </label>
         <button onClick={() => void generateMenu()}>
           <Shuffle size={17} />
@@ -787,7 +836,7 @@ function MenuBuilder({
                       value={item?.recipeId ?? ""}
                       onChange={(event) => item && void updateMenuItem(item.id, Number(event.target.value))}
                     >
-                      {recipes
+                      {plannerRecipes
                         .filter((recipe) => recipe.category === category.value)
                         .map((recipe) => (
                           <option key={recipe.id} value={recipe.id}>
