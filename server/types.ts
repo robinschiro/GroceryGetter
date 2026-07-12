@@ -6,6 +6,9 @@ export type RecipeInput = {
   isTestData?: boolean;
   servings?: number | null;
   notes?: string;
+  sourcePath?: string;
+  sourceHash?: string;
+  syncStatus?: string;
   ingredients: Array<{
     text: string;
     quantity?: string;
@@ -21,6 +24,9 @@ export type Recipe = {
   isTestData: boolean;
   servings: number | null;
   notes: string;
+  sourcePath: string | null;
+  sourceHash: string | null;
+  syncStatus: string;
   ingredients: RecipeIngredient[];
 };
 

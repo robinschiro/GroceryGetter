@@ -55,7 +55,18 @@ type RecipeRow = Omit<Recipe, "ingredients" | "isTestData"> & {
 
 function getRecipe(id: number): Recipe | null {
   const recipe = queryOne(
-    "SELECT id, name, category, is_test_data AS isTestData, servings, notes FROM recipes WHERE id = ?",
+    `SELECT
+      id,
+      name,
+      category,
+      is_test_data AS isTestData,
+      servings,
+      notes,
+      source_path AS sourcePath,
+      source_hash AS sourceHash,
+      sync_status AS syncStatus
+    FROM recipes
+    WHERE id = ?`,
     [id]
   ) as
     | RecipeRow
@@ -157,7 +168,10 @@ app.get("/api/recipes", (_req, res) => {
         category,
         is_test_data AS isTestData,
         servings,
-        notes
+        notes,
+        source_path AS sourcePath,
+        source_hash AS sourceHash,
+        sync_status AS syncStatus
       FROM recipes
       ORDER BY category, name`
     ) as RecipeRow[];
@@ -171,13 +185,21 @@ app.post("/api/recipes", (req, res) => {
     validateRecipeInput(input);
 
     const createdRecipe = transaction(() => {
-      const recipeId = insert("INSERT INTO recipes (name, category, is_test_data, servings, notes) VALUES (?, ?, ?, ?, ?)", [
-        input.name.trim(),
-        input.category,
-        input.isTestData ? 1 : 0,
-        input.servings ?? null,
-        input.notes?.trim() ?? ""
-      ]);
+      const recipeId = insert(
+        `INSERT INTO recipes
+          (name, category, is_test_data, servings, notes, source_path, source_hash, sync_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.name.trim(),
+          input.category,
+          input.isTestData ? 1 : 0,
+          input.servings ?? null,
+          input.notes?.trim() ?? "",
+          input.sourcePath?.trim() || null,
+          input.sourceHash?.trim() || null,
+          input.syncStatus?.trim() || "manual"
+        ]
+      );
 
       input.ingredients.forEach((ingredient, index) => {
         run(
@@ -199,6 +221,76 @@ app.post("/api/recipes", (req, res) => {
     });
 
     res.status(201).json(createdRecipe);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Invalid recipe." });
+  }
+});
+
+app.put("/api/recipes/:id", (req, res) => {
+  try {
+    const recipeId = Number(req.params.id);
+    if (!Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "Recipe id is invalid." });
+      return;
+    }
+
+    const existingRecipe = getRecipe(recipeId);
+    if (!existingRecipe) {
+      res.status(404).json({ error: "Recipe not found." });
+      return;
+    }
+
+    const input = req.body as RecipeInput;
+    validateRecipeInput(input);
+
+    const updatedRecipe = transaction(() => {
+      run(
+        `UPDATE recipes
+        SET
+          name = ?,
+          category = ?,
+          is_test_data = ?,
+          servings = ?,
+          notes = ?,
+          source_path = ?,
+          source_hash = ?,
+          sync_status = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+        [
+          input.name.trim(),
+          input.category,
+          input.isTestData ? 1 : 0,
+          input.servings ?? null,
+          input.notes?.trim() ?? "",
+          input.sourcePath?.trim() || null,
+          input.sourceHash?.trim() || null,
+          input.syncStatus?.trim() || "manual",
+          recipeId
+        ]
+      );
+      run("DELETE FROM recipe_ingredients WHERE recipe_id = ?", [recipeId]);
+
+      input.ingredients.forEach((ingredient, index) => {
+        run(
+          `INSERT INTO recipe_ingredients
+            (recipe_id, text, quantity, unit, item, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            recipeId,
+            ingredient.text.trim(),
+            ingredient.quantity?.trim() ?? "",
+            ingredient.unit?.trim() ?? "",
+            ingredient.item.trim(),
+            index
+          ]
+        );
+      });
+
+      return getRecipe(recipeId);
+    });
+
+    res.json(updatedRecipe);
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Invalid recipe." });
   }

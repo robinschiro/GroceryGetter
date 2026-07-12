@@ -35,6 +35,7 @@
 ## User Shorthands
 - If the user sends exactly `c`, treat it as: review the current git diff, summarize the intended commit, then create a git commit with an appropriate message.
 - If the user sends exactly `cp`, treat it as: do everything for `c`, then push the resulting commit to the current branch.
+- If the user sends exactly `rsd`, treat it as: run the Dropbox recipe sync dry run for `imports/dropbox-recipes/parsed-recipes.json`. First validate the JSON with `scripts/import-recipes.ts --validate-only`, then run `scripts/import-recipes.ts --sync` without `--commit` against the local API. Report new, changed, unchanged, name-conflict, and missing-source recipes. Do not create, update, or delete recipes.
 - Before committing, run the relevant verification for the touched files when practical.
 - Never include unrelated work in the commit. If unrelated changes are present, leave them unstaged and mention them.
 - Do not push if the commit fails, verification fails, or the branch/upstream state is unclear; explain the blocker instead.

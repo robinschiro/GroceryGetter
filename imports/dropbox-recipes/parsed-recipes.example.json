@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Example Pasta",
+    "category": "entree",
+    "servings": 4,
+    "notes": "Example only. Replace this file with parsed-recipes.json for a real import.",
+    "sourcePath": "raw/example-pasta.txt",
+    "syncStatus": "llm_import",
+    "ingredients": [
+      {
+        "text": "1 lb pasta",
+        "quantity": "1",
+        "unit": "lb",
+        "item": "pasta"
+      },
+      {
+        "text": "2 cups marinara sauce",
+        "quantity": "2",
+        "unit": "cups",
+        "item": "marinara sauce"
+      }
+    ]
+  }
+]
