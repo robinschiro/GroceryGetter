@@ -55,6 +55,7 @@ export async function initializeDb() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     meal_count INTEGER NOT NULL,
+    is_test_data INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'draft',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -89,6 +90,11 @@ export async function initializeDb() {
   if (!columnExists("recipes", "is_test_data")) {
     run("ALTER TABLE recipes ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
     run("UPDATE recipes SET is_test_data = 1");
+    saveDb();
+  }
+
+  if (!columnExists("menus", "is_test_data")) {
+    run("ALTER TABLE menus ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
     saveDb();
   }
 

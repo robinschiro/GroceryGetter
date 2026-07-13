@@ -36,6 +36,7 @@ type MenuRecipe = {
   id: number;
   name: string;
   category: RecipeCategory;
+  isTestData: number;
 };
 type MenuItemInput = {
   mealNumber: number;
@@ -120,7 +121,7 @@ function pick<T>(items: T[], index: number) {
 }
 
 function getPlannerRecipes(includeTestData: boolean) {
-  return queryAll("SELECT id, name, category FROM recipes WHERE is_test_data = ?", [
+  return queryAll("SELECT id, name, category, is_test_data AS isTestData FROM recipes WHERE is_test_data = ?", [
     includeTestData ? 1 : 0
   ]) as MenuRecipe[];
 }
@@ -167,6 +168,7 @@ function buildMenuPreview(mealCount: number, includeTestData: boolean) {
     id: null,
     name: `Week of ${new Date().toLocaleDateString("en-US")}`,
     mealCount,
+    isTestData: includeTestData,
     status: "preview",
     items
   };
@@ -516,6 +518,7 @@ app.post("/api/menus/preview", (req, res) => {
 
 app.post("/api/menus", (req, res) => {
   const mealCount = Number(req.body.mealCount);
+  const isTestData = Boolean(req.body.isTestData);
   const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
   if (!validateMealCount(mealCount)) {
     res.status(400).json({ error: "Meal count must be between 1 and 14." });
@@ -547,16 +550,27 @@ app.post("/api/menus", (req, res) => {
     }
     seenSlots.add(key);
 
-    const recipe = queryOne<{ category: RecipeCategory }>("SELECT category FROM recipes WHERE id = ?", [recipeId]);
+    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
+      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
+      [recipeId]
+    );
     if (!recipe || recipe.category !== item.slot) {
       res.status(400).json({ error: "Menu items include a recipe that does not match its meal slot." });
+      return;
+    }
+    if (Boolean(recipe.isTestData) !== isTestData) {
+      res.status(400).json({ error: "Menu items must all match the saved menu recipe type." });
       return;
     }
   }
 
   const menuName = String(req.body.name || `Week of ${new Date().toLocaleDateString("en-US")}`);
   const createdMenuId = transaction(() => {
-    const menuId = insert("INSERT INTO menus (name, meal_count) VALUES (?, ?)", [menuName, mealCount]);
+    const menuId = insert("INSERT INTO menus (name, meal_count, is_test_data) VALUES (?, ?, ?)", [
+      menuName,
+      mealCount,
+      isTestData ? 1 : 0
+    ]);
     for (const item of items) {
       run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
         menuId,
@@ -572,7 +586,15 @@ app.post("/api/menus", (req, res) => {
 });
 
 app.get("/api/menus/:id", (req, res) => {
-  const menu = queryOne("SELECT id, name, meal_count AS mealCount, status FROM menus WHERE id = ?", [req.params.id]);
+  const menu = queryOne<{
+    id: number;
+    name: string;
+    mealCount: number;
+    isTestData: number;
+    status: string;
+  }>("SELECT id, name, meal_count AS mealCount, is_test_data AS isTestData, status FROM menus WHERE id = ?", [
+    req.params.id
+  ]);
   if (!menu) {
     res.status(404).json({ error: "Menu not found." });
     return;
@@ -593,7 +615,7 @@ app.get("/api/menus/:id", (req, res) => {
       [req.params.id]
     );
 
-  res.json({ ...menu, items });
+  res.json({ ...menu, isTestData: Boolean(menu.isTestData), items });
 });
 
 app.put("/api/menu-items/:id", (req, res) => {

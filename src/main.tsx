@@ -29,6 +29,7 @@ type Menu = {
   id: number | null;
   name: string;
   mealCount: number;
+  isTestData: boolean;
   status: string;
   items: MenuItem[];
 };
@@ -208,6 +209,7 @@ function App() {
         body: JSON.stringify({
           name: activeMenu.name,
           mealCount: activeMenu.mealCount,
+          isTestData: activeMenu.isTestData,
           items: activeMenu.items.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
         })
       });
