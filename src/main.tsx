@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Check,
@@ -7,10 +7,12 @@ import {
   Database,
   ExternalLink,
   Menu as MenuIcon,
+  Moon,
   RefreshCw,
   Send,
   Settings,
   Shuffle,
+  Sun,
   Trash2,
   X
 } from "lucide-react";
@@ -31,6 +33,7 @@ type Recipe = {
 type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
 type QfcSettingsTab = "api" | "search";
+type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
 
 type RecipeIngredient = {
@@ -160,6 +163,7 @@ function normalizeRecipeIngredient(ingredient: RecipeIngredient): RecipeIngredie
 }
 
 const qfcCartUrl = "https://www.qfc.com/cart";
+const themeStorageKey = "grocery-getter-theme";
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -189,8 +193,13 @@ function browserQfcCallbackUri() {
   return `${window.location.origin}/api/qfc/oauth/callback`;
 }
 
+function getInitialTheme(): ThemeMode {
+  return window.localStorage.getItem(themeStorageKey) === "dark" ? "dark" : "light";
+}
+
 function App() {
   const [activeView, setActiveView] = useState<AppView>("planner");
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
@@ -217,6 +226,11 @@ function App() {
     void loadRecipes();
     void loadSettings();
   }, []);
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    window.localStorage.setItem(themeStorageKey, themeMode);
+  }, [themeMode]);
 
   async function generateMenu() {
     setMessage("");
@@ -438,9 +452,21 @@ function App() {
               <h2>{currentView.title}</h2>
             </div>
           </div>
-          <button className="icon-button" onClick={() => void loadRecipes()} aria-label="Refresh recipes">
-            <RefreshCw size={18} />
-          </button>
+          <div className="topbar-actions">
+            <button
+              className="icon-button"
+              onClick={() => setThemeMode((mode) => (mode === "dark" ? "light" : "dark"))}
+              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              aria-pressed={themeMode === "dark"}
+              title={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              type="button"
+            >
+              {themeMode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className="icon-button" onClick={() => void loadRecipes()} aria-label="Refresh recipes" type="button">
+              <RefreshCw size={18} />
+            </button>
+          </div>
         </header>
 
         {isMenuOpen ? (

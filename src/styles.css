@@ -1,10 +1,17 @@
 :root {
   color: #1b1f24;
   background: #f3f4f1;
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme="dark"] {
+  background: #151a17;
+  color: #eef4f0;
+  color-scheme: dark;
 }
 
 * {
@@ -77,6 +84,10 @@ label {
   min-height: 100vh;
 }
 
+:root[data-theme="dark"] .app-shell {
+  background: #151a17;
+}
+
 .toggle-row {
   align-items: center;
   color: #1f2b28;
@@ -106,6 +117,13 @@ label {
   display: flex;
   gap: 16px;
   justify-content: space-between;
+}
+
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .topbar-title {
@@ -562,6 +580,130 @@ label {
   border-radius: inherit;
   height: 100%;
   transition: width 220ms ease;
+}
+
+:root[data-theme="dark"] button {
+  background: #68a99a;
+  color: #0f1714;
+}
+
+:root[data-theme="dark"] button.secondary {
+  background: #263630;
+  color: #e4eee9;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: #111613;
+  border-color: #33443d;
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #7f9289;
+}
+
+:root[data-theme="dark"] label,
+:root[data-theme="dark"] .subhead,
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .recipe-count-summary span,
+:root[data-theme="dark"] .recipe-list-item span,
+:root[data-theme="dark"] .recipe-management-header span,
+:root[data-theme="dark"] .pagination-controls span,
+:root[data-theme="dark"] .shopping-row span,
+:root[data-theme="dark"] .result-row span,
+:root[data-theme="dark"] .product-row span,
+:root[data-theme="dark"] .qfc-progress-meta span {
+  color: #9fb2aa;
+}
+
+:root[data-theme="dark"] .toggle-row,
+:root[data-theme="dark"] .tab-button,
+:root[data-theme="dark"] .sub-tab-button,
+:root[data-theme="dark"] .recipe-management-item {
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .recipe-management-item {
+  background: #1d2621;
+  border-color: transparent;
+}
+
+:root[data-theme="dark"] .menu-panel,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .recipe-count-summary div,
+:root[data-theme="dark"] .edit-heading,
+:root[data-theme="dark"] .result-row,
+:root[data-theme="dark"] .product-row,
+:root[data-theme="dark"] .qfc-progress {
+  background: #1d2621;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .tab-button,
+:root[data-theme="dark"] .sub-tab-button,
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] .qfc-progress-track {
+  background: #263630;
+}
+
+:root[data-theme="dark"] .tab-button.active,
+:root[data-theme="dark"] .sub-tab-button.active {
+  background: #68a99a;
+  color: #0f1714;
+}
+
+:root[data-theme="dark"] .recipe-list,
+:root[data-theme="dark"] .meal-block {
+  border-top-color: #33443d;
+}
+
+:root[data-theme="dark"] .recipe-management-item:hover {
+  background: #24332d;
+  border-color: #5c766c;
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .recipe-management-item span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .recipe-management-item:focus-visible {
+  outline-color: #68a99a;
+}
+
+:root[data-theme="dark"] .empty-state {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .error {
+  background: #4a201a;
+  color: #ffd2ca;
+}
+
+:root[data-theme="dark"] .success {
+  background: #173528;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .status-good {
+  background: #173528;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .status-muted {
+  background: #263630;
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .qfc-progress-meta {
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .qfc-progress-fill {
+  background: #68a99a;
 }
 
 @media (max-width: 1100px) {
