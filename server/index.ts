@@ -725,12 +725,13 @@ app.put("/api/shopping-list-items/:id", (req, res) => {
 });
 
 app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
+  const menuId = req.params.id;
   const rows = queryAll(
       `SELECT id, text, quantity, unit, item
       FROM shopping_list_items
       WHERE menu_id = ? AND approved = 1
       ORDER BY sort_order, id`,
-      [req.params.id]
+      [menuId]
     ) as Array<{
       id: number;
       text: string;
@@ -758,6 +759,8 @@ app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
     job.progress = progress;
   })
     .then((result) => {
+      run("UPDATE menus SET status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [menuId]);
+      saveDb();
       job.status = "complete";
       job.result = result;
       job.progress = {

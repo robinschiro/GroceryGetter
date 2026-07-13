@@ -284,6 +284,7 @@ function App() {
 
   async function submitToQfc() {
     if (!activeMenu?.id) return;
+    const menuId = activeMenu.id;
     setMessage("");
     setQfcSubmitProgress({
       phase: "checking",
@@ -293,7 +294,7 @@ function App() {
     });
 
     try {
-      const started = await api<QfcSubmitJob>(`/api/menus/${activeMenu.id}/submit-to-qfc`, { method: "POST" });
+      const started = await api<QfcSubmitJob>(`/api/menus/${menuId}/submit-to-qfc`, { method: "POST" });
       setQfcSubmitProgress(started.progress);
 
       let job = started;
@@ -308,6 +309,7 @@ function App() {
       }
 
       setMessage(job.result?.message ?? job.progress.message);
+      await loadMenu(menuId);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
     } finally {
