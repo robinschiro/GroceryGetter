@@ -195,6 +195,7 @@ function App() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
+  const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState(2);
   const [plannerRecipeMode, setPlannerRecipeMode] = useState<PlannerRecipeMode>("test");
   const [message, setMessage] = useState("");
@@ -226,6 +227,7 @@ function App() {
       });
       setActiveMenu(preview);
       setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
     }
@@ -251,6 +253,7 @@ function App() {
       });
       setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
       setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
       setMessage("Menu saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to save menu.");
@@ -261,6 +264,7 @@ function App() {
     setPlannerRecipeMode(next);
     setActiveMenu(null);
     setShoppingList([]);
+    setDirtyShoppingItemIds(new Set());
     setMessage("");
   }
 
@@ -281,6 +285,7 @@ function App() {
         )
       });
       setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
       return;
     }
 
@@ -291,6 +296,7 @@ function App() {
     if (activeMenu?.id != null) {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
     }
   }
 
@@ -302,25 +308,57 @@ function App() {
     }
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
+    setDirtyShoppingItemIds(new Set());
   }
 
   async function clearAggregatedIngredients() {
     if (!activeMenu?.id) return;
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
+    setDirtyShoppingItemIds(new Set());
     setMessage("");
   }
 
-  async function saveShoppingItem(item: ShoppingListItem) {
-    await api(`/api/shopping-list-items/${item.id}`, {
+  async function saveDirtyShoppingItems() {
+    if (!activeMenu?.id) return;
+    const dirtyItems = shoppingList.filter((item) => dirtyShoppingItemIds.has(item.id));
+    if (!dirtyItems.length) return;
+
+    await api(`/api/menus/${activeMenu.id}/shopping-list/items`, {
       method: "PUT",
-      body: JSON.stringify({ ...item, approved: Boolean(item.approved) })
+      body: JSON.stringify({
+        items: dirtyItems.map((item) => ({ ...item, approved: Boolean(item.approved) }))
+      })
+    });
+
+    setDirtyShoppingItemIds((current) => {
+      const next = new Set(current);
+      dirtyItems.forEach((item) => next.delete(item.id));
+      return next;
     });
   }
 
   async function submitToQfc() {
     if (!activeMenu?.id) return;
     const menuId = activeMenu.id;
+    setMessage("");
+
+    if (dirtyShoppingItemIds.size) {
+      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before sending to QFC?");
+      if (!shouldSave) {
+        setMessage("QFC submission canceled. Save or discard ingredient changes before sending.");
+        return;
+      }
+
+      try {
+        setMessage("Saving ingredient changes...");
+        await saveDirtyShoppingItems();
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "Unable to save ingredient changes.");
+        return;
+      }
+    }
+
     setMessage("");
     setQfcSubmitProgress({
       phase: "checking",
@@ -455,7 +493,13 @@ function App() {
             <ShoppingListReview
               items={shoppingList}
               setItems={setShoppingList}
-              saveItem={saveShoppingItem}
+              markItemDirty={(id) =>
+                setDirtyShoppingItemIds((current) => {
+                  const next = new Set(current);
+                  next.add(id);
+                  return next;
+                })
+              }
               clearItems={clearAggregatedIngredients}
               submitToQfc={submitToQfc}
               openQfcCartToClear={openQfcCartToClear}
@@ -1220,7 +1264,7 @@ function MenuBuilder({
 function ShoppingListReview({
   items,
   setItems,
-  saveItem,
+  markItemDirty,
   clearItems,
   submitToQfc,
   openQfcCartToClear,
@@ -1229,7 +1273,7 @@ function ShoppingListReview({
 }: {
   items: ShoppingListItem[];
   setItems: (items: ShoppingListItem[]) => void;
-  saveItem: (item: ShoppingListItem) => Promise<void>;
+  markItemDirty: (id: number) => void;
   clearItems: () => Promise<void>;
   submitToQfc: () => Promise<void>;
   openQfcCartToClear: () => void;
@@ -1238,6 +1282,7 @@ function ShoppingListReview({
 }) {
   function patchItem(id: number, patch: Partial<ShoppingListItem>) {
     setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    markItemDirty(id);
   }
 
   return (
@@ -1257,7 +1302,6 @@ function ShoppingListReview({
                     type="checkbox"
                     checked={Boolean(item.approved)}
                     onChange={(event) => patchItem(item.id, { approved: event.target.checked ? 1 : 0 })}
-                    onBlur={() => void saveItem(item)}
                   />
                 </label>
                 <input value={item.quantity} onChange={(event) => patchItem(item.id, { quantity: event.target.value })} />
@@ -1265,9 +1309,6 @@ function ShoppingListReview({
                 <input value={item.item} onChange={(event) => patchItem(item.id, { item: event.target.value })} />
                 <input value={item.text} onChange={(event) => patchItem(item.id, { text: event.target.value })} />
                 <span>{item.sourceRecipeNames}</span>
-                <button className="secondary" onClick={() => void saveItem(item)}>
-                  Save
-                </button>
               </div>
             ))}
           </div>

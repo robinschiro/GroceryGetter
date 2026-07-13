@@ -705,23 +705,47 @@ app.delete("/api/menus/:id/shopping-list", (req, res) => {
   res.json({ ok: true });
 });
 
-app.put("/api/shopping-list-items/:id", (req, res) => {
-  run(
-    `UPDATE shopping_list_items
-      SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?
-      WHERE id = ?`
-    ,
-    [
-    req.body.text ?? "",
-    req.body.quantity ?? "",
-    req.body.unit ?? "",
-    req.body.item ?? "",
-    req.body.approved ? 1 : 0,
-    req.params.id
-    ]
-  );
-  saveDb();
-  res.json({ ok: true });
+app.put("/api/menus/:id/shopping-list/items", (req, res) => {
+  const menuId = Number(req.params.id);
+  const items = req.body.items;
+
+  if (!Number.isInteger(menuId)) {
+    res.status(400).json({ error: "A valid menu id is required." });
+    return;
+  }
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "Shopping list items must be an array." });
+    return;
+  }
+
+  for (const item of items) {
+    if (!Number.isInteger(Number(item.id))) {
+      res.status(400).json({ error: "Shopping list items must include valid ids." });
+      return;
+    }
+  }
+
+  transaction(() => {
+    for (const item of items) {
+      run(
+        `UPDATE shopping_list_items
+          SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?
+          WHERE id = ? AND menu_id = ?`,
+        [
+          item.text ?? "",
+          item.quantity ?? "",
+          item.unit ?? "",
+          item.item ?? "",
+          item.approved ? 1 : 0,
+          Number(item.id),
+          menuId
+        ]
+      );
+    }
+  });
+
+  res.json({ ok: true, updated: items.length });
 });
 
 app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
