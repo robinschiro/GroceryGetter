@@ -16,6 +16,7 @@ type Recipe = {
 };
 
 type PlannerRecipeMode = "test" | "production";
+type RecipeAdminTab = "create" | "manage";
 
 type RecipeIngredient = {
   id?: number;
@@ -668,6 +669,7 @@ function QfcApiPanel({
 }
 
 function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
+  const [activeAdminTab, setActiveAdminTab] = useState<RecipeAdminTab>("create");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<RecipeCategory>("entree");
   const [isTestData, setIsTestData] = useState(false);
@@ -713,100 +715,116 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
         <h3>Recipe Admin</h3>
       </div>
 
-      <div className="form-grid">
-        <label>
-          Name
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Lemon chicken" />
-        </label>
-        <label>
-          Category
-          <select value={category} onChange={(event) => setCategory(event.target.value as RecipeCategory)}>
-            {categories.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Servings
-          <input value={servings} onChange={(event) => setServings(event.target.value)} inputMode="numeric" />
-        </label>
+      <div className="sub-tabs" role="tablist" aria-label="Recipe admin sections">
+        <button
+          className={`sub-tab-button ${activeAdminTab === "create" ? "active" : ""}`}
+          onClick={() => setActiveAdminTab("create")}
+          role="tab"
+          aria-selected={activeAdminTab === "create"}
+          type="button"
+        >
+          Recipe Creation
+        </button>
+        <button
+          className={`sub-tab-button ${activeAdminTab === "manage" ? "active" : ""}`}
+          onClick={() => setActiveAdminTab("manage")}
+          role="tab"
+          aria-selected={activeAdminTab === "manage"}
+          type="button"
+        >
+          Recipe Management
+        </button>
       </div>
 
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={isTestData}
-          onChange={(event) => setIsTestData(event.target.checked)}
-        />
-        <span>Mark as test data</span>
-      </label>
+      {activeAdminTab === "create" ? (
+        <div className="tab-panel" role="tabpanel">
+          <div className="form-grid">
+            <label>
+              Name
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Lemon chicken" />
+            </label>
+            <label>
+              Category
+              <select value={category} onChange={(event) => setCategory(event.target.value as RecipeCategory)}>
+                {categories.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Servings
+              <input value={servings} onChange={(event) => setServings(event.target.value)} inputMode="numeric" />
+            </label>
+          </div>
 
-      <label>
-        Notes
-        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
-      </label>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={isTestData}
+              onChange={(event) => setIsTestData(event.target.checked)}
+            />
+            <span>Mark as test data</span>
+          </label>
 
-      <div className="ingredient-editor">
-        <div className="subhead">Ingredients</div>
-        {ingredients.map((ingredient, index) => (
-          <div className="ingredient-row" key={index}>
-            <input
-              value={ingredient.quantity}
-              onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
-              placeholder="2"
-            />
-            <input
-              value={ingredient.unit}
-              onChange={(event) => updateIngredient(index, { unit: event.target.value })}
-              placeholder="cups"
-            />
-            <input
-              value={ingredient.item}
-              onChange={(event) => updateIngredient(index, { item: event.target.value })}
-              placeholder="rice"
-            />
-            <input
-              value={ingredient.text}
-              onChange={(event) => updateIngredient(index, { text: event.target.value })}
-              placeholder="2 cups rice"
-            />
-            <button
-              className="icon-button"
-              onClick={() => setIngredients((current) => current.filter((_, i) => i !== index))}
-              aria-label="Remove ingredient"
-            >
-              <Trash2 size={16} />
+          <label>
+            Notes
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+          </label>
+
+          <div className="ingredient-editor">
+            <div className="subhead">Ingredients</div>
+            {ingredients.map((ingredient, index) => (
+              <div className="ingredient-row" key={index}>
+                <input
+                  value={ingredient.quantity}
+                  onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
+                  placeholder="2"
+                />
+                <input
+                  value={ingredient.unit}
+                  onChange={(event) => updateIngredient(index, { unit: event.target.value })}
+                  placeholder="cups"
+                />
+                <input
+                  value={ingredient.item}
+                  onChange={(event) => updateIngredient(index, { item: event.target.value })}
+                  placeholder="rice"
+                />
+                <input
+                  value={ingredient.text}
+                  onChange={(event) => updateIngredient(index, { text: event.target.value })}
+                  placeholder="2 cups rice"
+                />
+                <button
+                  className="icon-button"
+                  onClick={() => setIngredients((current) => current.filter((_, i) => i !== index))}
+                  aria-label="Remove ingredient"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            <button className="secondary" onClick={() => setIngredients((current) => [...current, emptyIngredient()])}>
+              Add ingredient
             </button>
           </div>
-        ))}
-        <button className="secondary" onClick={() => setIngredients((current) => [...current, emptyIngredient()])}>
-          Add ingredient
-        </button>
-      </div>
 
-      {error ? <div className="error">{error}</div> : null}
+          {error ? <div className="error">{error}</div> : null}
 
-      <div className="panel-actions">
-        <button onClick={() => void saveRecipe()}>
-          <Check size={17} />
-          Save recipe
-        </button>
-      </div>
-
-      <div className="recipe-list">
-        {recipes.slice(0, 8).map((recipe) => (
-          <div key={recipe.id} className="recipe-list-item">
-            <strong>{recipe.name}</strong>
-            <span>
-              {[categories.find((item) => item.value === recipe.category)?.label, recipe.isTestData ? "Test" : "Non-test"]
-                .filter(Boolean)
-                .join(" / ")}
-            </span>
+          <div className="panel-actions">
+            <button onClick={() => void saveRecipe()}>
+              <Check size={17} />
+              Save recipe
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="empty-state tab-panel" role="tabpanel">
+          Recipe management tools will go here. {recipes.length} recipes are currently available.
+        </div>
+      )}
     </section>
   );
 }

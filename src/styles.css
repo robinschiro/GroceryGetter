@@ -221,6 +221,30 @@ label {
   margin: 0;
 }
 
+.sub-tabs {
+  display: inline-grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 420px;
+  width: 100%;
+}
+
+.sub-tab-button {
+  background: #edf0ee;
+  color: #1f2b28;
+  min-width: 0;
+}
+
+.sub-tab-button.active {
+  background: #315b53;
+  color: #fff;
+}
+
+.tab-panel {
+  display: grid;
+  gap: 16px;
+}
+
 .form-grid,
 .menu-controls {
   display: grid;
