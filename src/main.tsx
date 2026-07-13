@@ -30,6 +30,7 @@ type Recipe = {
 
 type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
+type QfcSettingsTab = "api" | "search";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
 
 type RecipeIngredient = {
@@ -165,7 +166,7 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
   { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
   { id: "recipe-admin", label: "Recipe Admin", title: "Recipe Admin", eyebrow: "Recipe library", icon: Database },
-  { id: "qfc-api", label: "QFC API Setup", title: "QFC API Setup", eyebrow: "Integration settings", icon: Settings }
+  { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings }
 ];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -421,14 +422,6 @@ function App() {
                 );
               })}
             </nav>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={preferStoreBrands}
-                onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
-              />
-              <span>Prefer QFC/Kroger store brands</span>
-            </label>
           </div>
         ) : null}
 
@@ -437,7 +430,12 @@ function App() {
         ) : null}
 
         {activeView === "qfc-api" ? (
-          <QfcApiPanel status={qfcStatus} reloadStatus={loadSettings} />
+          <QfcApiPanel
+            status={qfcStatus}
+            reloadStatus={loadSettings}
+            preferStoreBrands={preferStoreBrands}
+            updateStoreBrandPreference={updateStoreBrandPreference}
+          />
         ) : null}
 
         {activeView === "planner" ? (
@@ -473,11 +471,16 @@ function App() {
 
 function QfcApiPanel({
   status,
-  reloadStatus
+  reloadStatus,
+  preferStoreBrands,
+  updateStoreBrandPreference
 }: {
   status: QfcStatus | null;
   reloadStatus: () => Promise<void>;
+  preferStoreBrands: boolean;
+  updateStoreBrandPreference: (next: boolean) => Promise<void>;
 }) {
+  const [activeQfcTab, setActiveQfcTab] = useState<QfcSettingsTab>("api");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -589,107 +592,143 @@ function QfcApiPanel({
     <section className="panel full-width">
       <div className="panel-heading">
         <Settings size={18} />
-        <h3>QFC API Setup</h3>
+        <h3>QFC Settings</h3>
       </div>
 
-      <div className="status-strip">
-        <span className={status?.hasClientId ? "status-good" : "status-muted"}>Client ID</span>
-        <span className={status?.hasClientSecret ? "status-good" : "status-muted"}>Client secret</span>
-        <span className={status?.locationId ? "status-good" : "status-muted"}>Location</span>
-        <span className={status?.hasCustomerAccessToken ? "status-good" : "status-muted"}>Customer OAuth</span>
-        <span className={status?.hasCustomerRefreshToken ? "status-good" : "status-muted"}>Refresh token</span>
-      </div>
-
-      <div className="qfc-grid">
-        <label>
-          Client ID
-          <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
-        </label>
-        <label>
-          Client secret
-          <input
-            value={clientSecret}
-            onChange={(event) => setClientSecret(event.target.value)}
-            placeholder={status?.hasClientSecret ? "Already saved" : ""}
-            type="password"
-          />
-        </label>
-        <label>
-          Location ID
-          <input value={locationId} onChange={(event) => setLocationId(event.target.value)} />
-        </label>
-        <label>
-          Service scopes
-          <input value={serviceScopes} onChange={(event) => setServiceScopes(event.target.value)} />
-        </label>
-        <label>
-          Customer scopes
-          <input value={customerScopes} onChange={(event) => setCustomerScopes(event.target.value)} />
-        </label>
-        <label className="wide-field">
-          Redirect URI
-          <input value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
-        </label>
-      </div>
-
-      <div className="panel-actions">
-        <button className="secondary" onClick={() => void reloadStatus()}>
-          <RefreshCw size={17} />
-          Refresh status
+      <div className="sub-tabs" role="tablist" aria-label="QFC settings sections">
+        <button
+          className={`sub-tab-button ${activeQfcTab === "api" ? "active" : ""}`}
+          onClick={() => setActiveQfcTab("api")}
+          role="tab"
+          aria-selected={activeQfcTab === "api"}
+          type="button"
+        >
+          QFC API Setup
         </button>
-        <button className="secondary" onClick={() => void refreshCustomerOAuth()}>
-          <RefreshCw size={17} />
-          Refresh OAuth
-        </button>
-        <button onClick={() => void startCustomerOAuth()}>
-          <Send size={17} />
-          Start customer OAuth
-        </button>
-        <button onClick={() => void saveSettings()}>
-          <Check size={17} />
-          Save QFC settings
+        <button
+          className={`sub-tab-button ${activeQfcTab === "search" ? "active" : ""}`}
+          onClick={() => setActiveQfcTab("search")}
+          role="tab"
+          aria-selected={activeQfcTab === "search"}
+          type="button"
+        >
+          QFC Search Preferences
         </button>
       </div>
 
-      <div className="qfc-tools">
-        <div>
-          <div className="tool-row">
-            <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Search locations by ZIP" />
-            <button className="secondary" onClick={() => void findLocations()}>Find locations</button>
+      {activeQfcTab === "api" ? (
+        <div className="tab-panel" role="tabpanel">
+          <div className="status-strip">
+            <span className={status?.hasClientId ? "status-good" : "status-muted"}>Client ID</span>
+            <span className={status?.hasClientSecret ? "status-good" : "status-muted"}>Client secret</span>
+            <span className={status?.locationId ? "status-good" : "status-muted"}>Location</span>
+            <span className={status?.hasCustomerAccessToken ? "status-good" : "status-muted"}>Customer OAuth</span>
+            <span className={status?.hasCustomerRefreshToken ? "status-good" : "status-muted"}>Refresh token</span>
           </div>
-          <div className="result-list">
-            {locations.map((location) => (
-              <button
-                className="result-row"
-                key={location.locationId}
-                onClick={() => void saveLocationId(location.locationId)}
-              >
-                <strong>{location.name}</strong>
-                <span>{location.locationId}</span>
-                <span>{[location.address?.addressLine1, location.address?.city, location.address?.state].filter(Boolean).join(", ")}</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
-        <div>
-          <div className="tool-row">
-            <input value={productTerm} onChange={(event) => setProductTerm(event.target.value)} placeholder="Search products" />
-            <button className="secondary" onClick={() => void findProducts()}>Find products</button>
+          <div className="qfc-grid">
+            <label>
+              Client ID
+              <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
+            </label>
+            <label>
+              Client secret
+              <input
+                value={clientSecret}
+                onChange={(event) => setClientSecret(event.target.value)}
+                placeholder={status?.hasClientSecret ? "Already saved" : ""}
+                type="password"
+              />
+            </label>
+            <label>
+              Location ID
+              <input value={locationId} onChange={(event) => setLocationId(event.target.value)} />
+            </label>
+            <label>
+              Service scopes
+              <input value={serviceScopes} onChange={(event) => setServiceScopes(event.target.value)} />
+            </label>
+            <label>
+              Customer scopes
+              <input value={customerScopes} onChange={(event) => setCustomerScopes(event.target.value)} />
+            </label>
+            <label className="wide-field">
+              Redirect URI
+              <input value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
+            </label>
           </div>
-          <div className="result-list">
-            {products.map((product) => (
-              <div className="product-row" key={`${product.productId}-${product.upc}`}>
-                <strong>{product.description}</strong>
-                <span>{[product.brand, product.size, product.stockLevel].filter(Boolean).join(" / ")}</span>
-                <span>{product.price === null ? "" : `$${product.price.toFixed(2)}`}</span>
+
+          <div className="panel-actions">
+            <button className="secondary" onClick={() => void reloadStatus()}>
+              <RefreshCw size={17} />
+              Refresh status
+            </button>
+            <button className="secondary" onClick={() => void refreshCustomerOAuth()}>
+              <RefreshCw size={17} />
+              Refresh OAuth
+            </button>
+            <button onClick={() => void startCustomerOAuth()}>
+              <Send size={17} />
+              Start customer OAuth
+            </button>
+            <button onClick={() => void saveSettings()}>
+              <Check size={17} />
+              Save QFC settings
+            </button>
+          </div>
+
+          <div className="qfc-tools">
+            <div>
+              <div className="tool-row">
+                <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Search locations by ZIP" />
+                <button className="secondary" onClick={() => void findLocations()}>Find locations</button>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              <div className="result-list">
+                {locations.map((location) => (
+                  <button
+                    className="result-row"
+                    key={location.locationId}
+                    onClick={() => void saveLocationId(location.locationId)}
+                  >
+                    <strong>{location.name}</strong>
+                    <span>{location.locationId}</span>
+                    <span>{[location.address?.addressLine1, location.address?.city, location.address?.state].filter(Boolean).join(", ")}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-      {error ? <div className="error">{error}</div> : null}
+            <div>
+              <div className="tool-row">
+                <input value={productTerm} onChange={(event) => setProductTerm(event.target.value)} placeholder="Search products" />
+                <button className="secondary" onClick={() => void findProducts()}>Find products</button>
+              </div>
+              <div className="result-list">
+                {products.map((product) => (
+                  <div className="product-row" key={`${product.productId}-${product.upc}`}>
+                    <strong>{product.description}</strong>
+                    <span>{[product.brand, product.size, product.stockLevel].filter(Boolean).join(" / ")}</span>
+                    <span>{product.price === null ? "" : `$${product.price.toFixed(2)}`}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {error ? <div className="error">{error}</div> : null}
+        </div>
+      ) : (
+        <div className="tab-panel" role="tabpanel">
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={preferStoreBrands}
+              onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
+            />
+            <span>Prefer QFC/Kroger store brands</span>
+          </label>
+        </div>
+      )}
     </section>
   );
 }
