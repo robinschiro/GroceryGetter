@@ -322,15 +322,33 @@ label {
 }
 
 .recipe-management-list {
-  max-height: 620px;
-  overflow: auto;
+  overflow: visible;
 }
 
 .recipe-management-item {
   align-items: start;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #1b1f24;
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(220px, 1.5fr) minmax(130px, 0.7fr) minmax(120px, 0.6fr) minmax(90px, 0.5fr);
+  justify-content: stretch;
+  min-height: auto;
+  padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.recipe-management-item:hover {
+  border-color: #9fb0aa;
+  color: #1b1f24;
+}
+
+.recipe-management-item:focus-visible {
+  outline: 2px solid #315b53;
+  outline-offset: 3px;
 }
 
 .recipe-management-item > div {
@@ -341,6 +359,29 @@ label {
 
 .recipe-management-item strong,
 .recipe-management-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-heading {
+  align-items: center;
+  background: #eef2ef;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.edit-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.edit-heading strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -576,6 +617,11 @@ label {
   }
 
   .recipe-management-header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .edit-heading {
     align-items: stretch;
     display: grid;
   }

@@ -703,57 +703,28 @@ function QfcApiPanel({
 
 function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
   const [activeAdminTab, setActiveAdminTab] = useState<RecipeAdminTab>("create");
-  const [managementPage, setManagementPage] = useState(0);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<RecipeCategory>("entree");
-  const [isTestData, setIsTestData] = useState(false);
-  const [servings, setServings] = useState("");
-  const [notes, setNotes] = useState("");
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>([emptyIngredient()]);
-  const [error, setError] = useState("");
-  const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
-  const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
-  const managementPageStart = currentManagementPage * recipeManagementPageSize;
-  const visibleManagementRecipes = recipes.slice(managementPageStart, managementPageStart + recipeManagementPageSize);
-  const managementRangeStart = recipes.length === 0 ? 0 : managementPageStart + 1;
-  const managementRangeEnd = Math.min(recipes.length, managementPageStart + visibleManagementRecipes.length);
+  const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
+  const editingRecipe = recipes.find((recipe) => recipe.id === editingRecipeId) ?? null;
 
-  useEffect(() => {
-    setManagementPage((current) => Math.min(current, managementPageCount - 1));
-  }, [managementPageCount]);
-
-  function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
-    setIngredients((current) => current.map((ingredient, i) => (i === index ? { ...ingredient, ...patch } : ingredient)));
+  async function createRecipe(payload: RecipeFormPayload) {
+    await api("/api/recipes", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    await onSaved();
   }
 
-  async function saveRecipe() {
-    setError("");
-    const savedIngredients = ingredients
-      .map(normalizeRecipeIngredient)
-      .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
-
-    try {
-      await api("/api/recipes", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          category,
-          isTestData,
-          servings: servings ? Number(servings) : null,
-          notes,
-          ingredients: savedIngredients
-        })
-      });
-      setName("");
-      setCategory("entree");
-      setIsTestData(false);
-      setServings("");
-      setNotes("");
-      setIngredients([emptyIngredient()]);
-      await onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save recipe.");
+  async function updateRecipe(payload: RecipeFormPayload) {
+    if (!editingRecipe) {
+      return;
     }
+
+    await api(`/api/recipes/${editingRecipe.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+    await onSaved();
+    setEditingRecipeId(null);
   }
 
   return (
@@ -766,7 +737,10 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
       <div className="sub-tabs" role="tablist" aria-label="Recipe admin sections">
         <button
           className={`sub-tab-button ${activeAdminTab === "create" ? "active" : ""}`}
-          onClick={() => setActiveAdminTab("create")}
+          onClick={() => {
+            setActiveAdminTab("create");
+            setEditingRecipeId(null);
+          }}
           role="tab"
           aria-selected={activeAdminTab === "create"}
           type="button"
@@ -785,143 +759,288 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
       </div>
 
       {activeAdminTab === "create" ? (
-        <div className="tab-panel" role="tabpanel">
-          <div className="form-grid">
-            <label>
-              Name
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Lemon chicken" />
-            </label>
-            <label>
-              Category
-              <select value={category} onChange={(event) => setCategory(event.target.value as RecipeCategory)}>
-                {categories.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Servings
-              <input value={servings} onChange={(event) => setServings(event.target.value)} inputMode="numeric" />
-            </label>
-          </div>
-
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={isTestData}
-              onChange={(event) => setIsTestData(event.target.checked)}
-            />
-            <span>Mark as test data</span>
-          </label>
-
-          <label>
-            Notes
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
-          </label>
-
-          <div className="ingredient-editor">
-            <div className="subhead">Ingredients</div>
-            {ingredients.map((ingredient, index) => (
-              <div className="ingredient-row" key={index}>
-                <input
-                  value={ingredient.quantity}
-                  onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
-                  placeholder="2"
-                />
-                <input
-                  value={ingredient.unit}
-                  onChange={(event) => updateIngredient(index, { unit: event.target.value })}
-                  placeholder="cups"
-                />
-                <input
-                  value={ingredient.item}
-                  onChange={(event) => updateIngredient(index, { item: event.target.value })}
-                  placeholder="rice"
-                />
-                <input
-                  value={ingredient.text}
-                  onChange={(event) => updateIngredient(index, { text: event.target.value })}
-                  placeholder="2 cups rice"
-                />
-                <button
-                  className="icon-button"
-                  onClick={() => setIngredients((current) => current.filter((_, i) => i !== index))}
-                  aria-label="Remove ingredient"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
-            <button className="secondary" onClick={() => setIngredients((current) => [...current, emptyIngredient()])}>
-              Add ingredient
-            </button>
-          </div>
-
-          {error ? <div className="error">{error}</div> : null}
-
-          <div className="panel-actions">
-            <button onClick={() => void saveRecipe()}>
-              <Check size={17} />
-              Save recipe
-            </button>
-          </div>
-        </div>
+        <RecipeForm mode="create" onSubmit={createRecipe} />
+      ) : editingRecipe ? (
+        <RecipeForm
+          mode="edit"
+          initialRecipe={editingRecipe}
+          onCancel={() => setEditingRecipeId(null)}
+          onSubmit={updateRecipe}
+        />
       ) : (
-        <div className="tab-panel" role="tabpanel">
-          <div className="recipe-management-header">
-            <div>
-              <div className="subhead">Recipes</div>
-              <span>
-                Showing {managementRangeStart}-{managementRangeEnd} of {recipes.length}
-              </span>
-            </div>
-            <div className="pagination-controls" aria-label="Recipe list pagination">
-              <button
-                className="icon-button secondary"
-                onClick={() => setManagementPage((current) => Math.max(0, current - 1))}
-                disabled={currentManagementPage === 0}
-                aria-label="Previous recipe page"
-                type="button"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span>
-                Page {currentManagementPage + 1} of {managementPageCount}
-              </span>
-              <button
-                className="icon-button secondary"
-                onClick={() => setManagementPage((current) => Math.min(managementPageCount - 1, current + 1))}
-                disabled={currentManagementPage >= managementPageCount - 1}
-                aria-label="Next recipe page"
-                type="button"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-
-          {visibleManagementRecipes.length === 0 ? (
-            <div className="empty-state">No recipes have been added yet.</div>
-          ) : (
-            <div className="recipe-list recipe-management-list">
-              {visibleManagementRecipes.map((recipe) => (
-                <div key={recipe.id} className="recipe-list-item recipe-management-item">
-                  <div>
-                    <strong>{recipe.name}</strong>
-                    <span>{recipe.notes || "No notes"}</span>
-                  </div>
-                  <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
-                  <span>{recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}</span>
-                  <span>{recipe.isTestData ? "Test" : "Non-test"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <RecipeManagementList recipes={recipes} onEdit={setEditingRecipeId} />
       )}
     </section>
+  );
+}
+
+type RecipeFormPayload = {
+  name: string;
+  category: RecipeCategory;
+  isTestData: boolean;
+  servings: number | null;
+  notes: string;
+  ingredients: RecipeIngredient[];
+};
+
+function recipeFormInitialState(recipe?: Recipe) {
+  return {
+    name: recipe?.name ?? "",
+    category: recipe?.category ?? "entree",
+    isTestData: recipe?.isTestData ?? false,
+    servings: recipe?.servings === null || recipe?.servings === undefined ? "" : String(recipe.servings),
+    notes: recipe?.notes ?? "",
+    ingredients: recipe?.ingredients.length
+      ? recipe.ingredients.map((ingredient) => ({ ...ingredient }))
+      : [emptyIngredient()]
+  };
+}
+
+function RecipeForm({
+  mode,
+  initialRecipe,
+  onCancel,
+  onSubmit
+}: {
+  mode: "create" | "edit";
+  initialRecipe?: Recipe;
+  onCancel?: () => void;
+  onSubmit: (payload: RecipeFormPayload) => Promise<void>;
+}) {
+  const [form, setForm] = useState(() => recipeFormInitialState(initialRecipe));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setForm(recipeFormInitialState(initialRecipe));
+    setError("");
+  }, [initialRecipe?.id]);
+
+  function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
+    setForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((ingredient, i) => (i === index ? { ...ingredient, ...patch } : ingredient))
+    }));
+  }
+
+  async function saveRecipe() {
+    setError("");
+    const savedIngredients = form.ingredients
+      .map(normalizeRecipeIngredient)
+      .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
+
+    try {
+      await onSubmit({
+        name: form.name,
+        category: form.category,
+        isTestData: form.isTestData,
+        servings: form.servings ? Number(form.servings) : null,
+        notes: form.notes,
+        ingredients: savedIngredients
+      });
+
+      if (mode === "create") {
+        setForm(recipeFormInitialState());
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : mode === "create" ? "Unable to save recipe." : "Unable to update recipe.");
+    }
+  }
+
+  return (
+    <div className="tab-panel" role="tabpanel">
+      {mode === "edit" ? (
+        <div className="edit-heading">
+          <div>
+            <div className="subhead">Editing recipe</div>
+            <strong>{initialRecipe?.name}</strong>
+          </div>
+          <button className="secondary" onClick={onCancel} type="button">
+            <X size={17} />
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      <div className="form-grid">
+        <label>
+          Name
+          <input
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="Lemon chicken"
+          />
+        </label>
+        <label>
+          Category
+          <select
+            value={form.category}
+            onChange={(event) => setForm((current) => ({ ...current, category: event.target.value as RecipeCategory }))}
+          >
+            {categories.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Servings
+          <input
+            value={form.servings}
+            onChange={(event) => setForm((current) => ({ ...current, servings: event.target.value }))}
+            inputMode="numeric"
+          />
+        </label>
+      </div>
+
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={form.isTestData}
+          onChange={(event) => setForm((current) => ({ ...current, isTestData: event.target.checked }))}
+        />
+        <span>Mark as test data</span>
+      </label>
+
+      <label>
+        Notes
+        <textarea
+          value={form.notes}
+          onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+          rows={3}
+        />
+      </label>
+
+      <div className="ingredient-editor">
+        <div className="subhead">Ingredients</div>
+        {form.ingredients.map((ingredient, index) => (
+          <div className="ingredient-row" key={`${ingredient.id ?? "new"}-${index}`}>
+            <input
+              value={ingredient.quantity}
+              onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
+              placeholder="2"
+            />
+            <input
+              value={ingredient.unit}
+              onChange={(event) => updateIngredient(index, { unit: event.target.value })}
+              placeholder="cups"
+            />
+            <input
+              value={ingredient.item}
+              onChange={(event) => updateIngredient(index, { item: event.target.value })}
+              placeholder="rice"
+            />
+            <input
+              value={ingredient.text}
+              onChange={(event) => updateIngredient(index, { text: event.target.value })}
+              placeholder="2 cups rice"
+            />
+            <button
+              className="icon-button"
+              onClick={() =>
+                setForm((current) => ({
+                  ...current,
+                  ingredients: current.ingredients.filter((_, i) => i !== index)
+                }))
+              }
+              aria-label="Remove ingredient"
+              type="button"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        <button
+          className="secondary"
+          onClick={() => setForm((current) => ({ ...current, ingredients: [...current.ingredients, emptyIngredient()] }))}
+          type="button"
+        >
+          Add ingredient
+        </button>
+      </div>
+
+      {error ? <div className="error">{error}</div> : null}
+
+      <div className="panel-actions">
+        <button onClick={() => void saveRecipe()} type="button">
+          <Check size={17} />
+          {mode === "create" ? "Save recipe" : "Update recipe"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecipeManagementList({ recipes, onEdit }: { recipes: Recipe[]; onEdit: (recipeId: number) => void }) {
+  const [managementPage, setManagementPage] = useState(0);
+  const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
+  const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
+  const managementPageStart = currentManagementPage * recipeManagementPageSize;
+  const visibleManagementRecipes = recipes.slice(managementPageStart, managementPageStart + recipeManagementPageSize);
+  const managementRangeStart = recipes.length === 0 ? 0 : managementPageStart + 1;
+  const managementRangeEnd = Math.min(recipes.length, managementPageStart + visibleManagementRecipes.length);
+
+  useEffect(() => {
+    setManagementPage((current) => Math.min(current, managementPageCount - 1));
+  }, [managementPageCount]);
+
+  return (
+    <div className="tab-panel" role="tabpanel">
+      <div className="recipe-management-header">
+        <div>
+          <div className="subhead">Recipes</div>
+          <span>
+            Showing {managementRangeStart}-{managementRangeEnd} of {recipes.length}
+          </span>
+        </div>
+        <div className="pagination-controls" aria-label="Recipe list pagination">
+          <button
+            className="icon-button secondary"
+            onClick={() => setManagementPage((current) => Math.max(0, current - 1))}
+            disabled={currentManagementPage === 0}
+            aria-label="Previous recipe page"
+            type="button"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span>
+            Page {currentManagementPage + 1} of {managementPageCount}
+          </span>
+          <button
+            className="icon-button secondary"
+            onClick={() => setManagementPage((current) => Math.min(managementPageCount - 1, current + 1))}
+            disabled={currentManagementPage >= managementPageCount - 1}
+            aria-label="Next recipe page"
+            type="button"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      {visibleManagementRecipes.length === 0 ? (
+        <div className="empty-state">No recipes have been added yet.</div>
+      ) : (
+        <div className="recipe-list recipe-management-list">
+          {visibleManagementRecipes.map((recipe) => (
+            <button
+              key={recipe.id}
+              className="recipe-list-item recipe-management-item"
+              onClick={() => onEdit(recipe.id)}
+              type="button"
+            >
+              <div>
+                <strong>{recipe.name}</strong>
+                <span>{recipe.notes || "No notes"}</span>
+              </div>
+              <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
+              <span>{recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}</span>
+              <span>{recipe.isTestData ? "Test" : "Non-test"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
