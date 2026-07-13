@@ -446,6 +446,20 @@ app.post("/api/menus/generate", (req, res) => {
     return;
   }
 
+  const shuffle = <T>(items: T[]) => {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
+  };
+
+  const shuffledByCategory = {
+    entree: shuffle(byCategory.entree),
+    vegetable_side: shuffle(byCategory.vegetable_side),
+    starch_side: shuffle(byCategory.starch_side)
+  };
   const pick = <T>(items: T[], index: number) => items[index % items.length];
   const menuName = `Week of ${new Date().toLocaleDateString("en-US")}`;
 
@@ -457,19 +471,19 @@ app.post("/api/menus/generate", (req, res) => {
         menuId,
         meal,
         "entree",
-        pick(byCategory.entree, meal - 1).id
+        pick(shuffledByCategory.entree, meal - 1).id
       ]);
       run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
         menuId,
         meal,
         "vegetable_side",
-        pick(byCategory.vegetable_side, meal - 1).id
+        pick(shuffledByCategory.vegetable_side, meal - 1).id
       ]);
       run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
         menuId,
         meal,
         "starch_side",
-        pick(byCategory.starch_side, meal - 1).id
+        pick(shuffledByCategory.starch_side, meal - 1).id
       ]);
     }
 
