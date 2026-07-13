@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Check, Database, ExternalLink, Menu as MenuIcon, RefreshCw, Send, Settings, Shuffle, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  ExternalLink,
+  Menu as MenuIcon,
+  RefreshCw,
+  Send,
+  Settings,
+  Shuffle,
+  Trash2,
+  X
+} from "lucide-react";
 import "./styles.css";
 
 type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
@@ -116,6 +129,7 @@ const categories: Array<{ value: RecipeCategory; label: string }> = [
   { value: "vegetable_side", label: "Vegetable side" },
   { value: "starch_side", label: "Starch side" }
 ];
+const recipeManagementPageSize = 50;
 
 const emptyIngredient = (): RecipeIngredient => ({
   text: "",
@@ -123,6 +137,25 @@ const emptyIngredient = (): RecipeIngredient => ({
   unit: "",
   item: ""
 });
+
+function normalizeRecipeIngredient(ingredient: RecipeIngredient): RecipeIngredient | null {
+  const quantity = ingredient.quantity.trim();
+  const unit = ingredient.unit.trim();
+  const item = ingredient.item.trim();
+  const text = ingredient.text.trim() || [quantity, unit, item].filter(Boolean).join(" ");
+
+  if (!item) {
+    return null;
+  }
+
+  return {
+    ...ingredient,
+    text,
+    quantity,
+    unit,
+    item
+  };
+}
 
 const qfcCartUrl = "https://www.qfc.com/cart";
 
@@ -670,6 +703,7 @@ function QfcApiPanel({
 
 function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
   const [activeAdminTab, setActiveAdminTab] = useState<RecipeAdminTab>("create");
+  const [managementPage, setManagementPage] = useState(0);
   const [name, setName] = useState("");
   const [category, setCategory] = useState<RecipeCategory>("entree");
   const [isTestData, setIsTestData] = useState(false);
@@ -677,6 +711,16 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
   const [notes, setNotes] = useState("");
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>([emptyIngredient()]);
   const [error, setError] = useState("");
+  const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
+  const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
+  const managementPageStart = currentManagementPage * recipeManagementPageSize;
+  const visibleManagementRecipes = recipes.slice(managementPageStart, managementPageStart + recipeManagementPageSize);
+  const managementRangeStart = recipes.length === 0 ? 0 : managementPageStart + 1;
+  const managementRangeEnd = Math.min(recipes.length, managementPageStart + visibleManagementRecipes.length);
+
+  useEffect(() => {
+    setManagementPage((current) => Math.min(current, managementPageCount - 1));
+  }, [managementPageCount]);
 
   function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
     setIngredients((current) => current.map((ingredient, i) => (i === index ? { ...ingredient, ...patch } : ingredient)));
@@ -684,6 +728,10 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
 
   async function saveRecipe() {
     setError("");
+    const savedIngredients = ingredients
+      .map(normalizeRecipeIngredient)
+      .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
+
     try {
       await api("/api/recipes", {
         method: "POST",
@@ -693,7 +741,7 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
           isTestData,
           servings: servings ? Number(servings) : null,
           notes,
-          ingredients: ingredients.filter((ingredient) => ingredient.text.trim() && ingredient.item.trim())
+          ingredients: savedIngredients
         })
       });
       setName("");
@@ -821,8 +869,56 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
           </div>
         </div>
       ) : (
-        <div className="empty-state tab-panel" role="tabpanel">
-          Recipe management tools will go here. {recipes.length} recipes are currently available.
+        <div className="tab-panel" role="tabpanel">
+          <div className="recipe-management-header">
+            <div>
+              <div className="subhead">Recipes</div>
+              <span>
+                Showing {managementRangeStart}-{managementRangeEnd} of {recipes.length}
+              </span>
+            </div>
+            <div className="pagination-controls" aria-label="Recipe list pagination">
+              <button
+                className="icon-button secondary"
+                onClick={() => setManagementPage((current) => Math.max(0, current - 1))}
+                disabled={currentManagementPage === 0}
+                aria-label="Previous recipe page"
+                type="button"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span>
+                Page {currentManagementPage + 1} of {managementPageCount}
+              </span>
+              <button
+                className="icon-button secondary"
+                onClick={() => setManagementPage((current) => Math.min(managementPageCount - 1, current + 1))}
+                disabled={currentManagementPage >= managementPageCount - 1}
+                aria-label="Next recipe page"
+                type="button"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+
+          {visibleManagementRecipes.length === 0 ? (
+            <div className="empty-state">No recipes have been added yet.</div>
+          ) : (
+            <div className="recipe-list recipe-management-list">
+              {visibleManagementRecipes.map((recipe) => (
+                <div key={recipe.id} className="recipe-list-item recipe-management-item">
+                  <div>
+                    <strong>{recipe.name}</strong>
+                    <span>{recipe.notes || "No notes"}</span>
+                  </div>
+                  <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
+                  <span>{recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}</span>
+                  <span>{recipe.isTestData ? "Test" : "Non-test"}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
