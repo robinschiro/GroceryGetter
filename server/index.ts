@@ -41,7 +41,7 @@ type MenuRecipe = {
 type MenuItemInput = {
   mealNumber: number;
   slot: RecipeCategory;
-  recipeId: number;
+  recipeId: number | null;
 };
 
 function pruneQfcSubmitJobs() {
@@ -141,7 +141,7 @@ function validateMealCount(mealCount: number) {
 function buildMenuPreview(mealCount: number, includeTestData: boolean) {
   const byCategory = getRecipesByCategory(getPlannerRecipes(includeTestData));
 
-  if (!byCategory.entree.length || !byCategory.vegetable_side.length || !byCategory.starch_side.length) {
+  if (!byCategory.entree.length) {
     return null;
   }
 
@@ -158,8 +158,8 @@ function buildMenuPreview(mealCount: number, includeTestData: boolean) {
         id: null,
         mealNumber,
         slot,
-        recipeId: recipe.id,
-        recipeName: recipe.name
+        recipeId: recipe?.id ?? null,
+        recipeName: recipe?.name ?? null
       };
     })
   );
@@ -509,7 +509,7 @@ app.post("/api/menus/preview", (req, res) => {
 
   const preview = buildMenuPreview(mealCount, includeTestData);
   if (!preview) {
-    res.status(400).json({ error: "Add at least one recipe in each category before generating a menu." });
+    res.status(400).json({ error: "Add at least one entree recipe before generating a menu." });
     return;
   }
 
@@ -533,13 +533,17 @@ app.post("/api/menus", (req, res) => {
   const seenSlots = new Set<string>();
   for (const item of items) {
     const mealNumber = Number(item.mealNumber);
-    const recipeId = Number(item.recipeId);
+    const recipeId = item.recipeId === null ? null : Number(item.recipeId);
     if (!Number.isInteger(mealNumber) || mealNumber < 1 || mealNumber > mealCount) {
       res.status(400).json({ error: "Menu items include an invalid meal number." });
       return;
     }
-    if (!recipeCategories.includes(item.slot) || !Number.isInteger(recipeId)) {
+    if (!recipeCategories.includes(item.slot) || (recipeId !== null && !Number.isInteger(recipeId))) {
       res.status(400).json({ error: "Menu items include an invalid recipe selection." });
+      return;
+    }
+    if (item.slot === "entree" && recipeId === null) {
+      res.status(400).json({ error: "Entree slots must include a recipe." });
       return;
     }
 
@@ -549,6 +553,10 @@ app.post("/api/menus", (req, res) => {
       return;
     }
     seenSlots.add(key);
+
+    if (recipeId === null) {
+      continue;
+    }
 
     const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
       "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
@@ -609,7 +617,7 @@ app.get("/api/menus/:id", (req, res) => {
         recipes.name AS recipeName,
         recipes.category
       FROM menu_items
-      JOIN recipes ON recipes.id = menu_items.recipe_id
+      LEFT JOIN recipes ON recipes.id = menu_items.recipe_id
       WHERE menu_items.menu_id = ?
       ORDER BY menu_items.meal_number, menu_items.slot`,
       [req.params.id]
@@ -619,7 +627,47 @@ app.get("/api/menus/:id", (req, res) => {
 });
 
 app.put("/api/menu-items/:id", (req, res) => {
-  run("UPDATE menu_items SET recipe_id = ? WHERE id = ?", [req.body.recipeId, req.params.id]);
+  const menuItem = queryOne<{
+    slot: RecipeCategory;
+    isTestData: number;
+  }>(
+    `SELECT menu_items.slot, menus.is_test_data AS isTestData
+    FROM menu_items
+    JOIN menus ON menus.id = menu_items.menu_id
+    WHERE menu_items.id = ?`,
+    [req.params.id]
+  );
+  if (!menuItem) {
+    res.status(404).json({ error: "Menu item not found." });
+    return;
+  }
+
+  const recipeId = req.body.recipeId === null ? null : Number(req.body.recipeId);
+  if (recipeId === null) {
+    if (menuItem.slot === "entree") {
+      res.status(400).json({ error: "Entree slots must include a recipe." });
+      return;
+    }
+  } else {
+    if (!Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "Menu item includes an invalid recipe selection." });
+      return;
+    }
+    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
+      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
+      [recipeId]
+    );
+    if (!recipe || recipe.category !== menuItem.slot) {
+      res.status(400).json({ error: "Menu item includes a recipe that does not match its meal slot." });
+      return;
+    }
+    if (Boolean(recipe.isTestData) !== Boolean(menuItem.isTestData)) {
+      res.status(400).json({ error: "Menu item must match the saved menu recipe type." });
+      return;
+    }
+  }
+
+  run("UPDATE menu_items SET recipe_id = ? WHERE id = ?", [recipeId, req.params.id]);
   saveDb();
   res.json({ ok: true });
 });

@@ -57,8 +57,8 @@ type MenuItem = {
   id: number | null;
   mealNumber: number;
   slot: RecipeCategory;
-  recipeId: number;
-  recipeName: string;
+  recipeId: number | null;
+  recipeName: string | null;
 };
 
 type ShoppingListItem = {
@@ -286,15 +286,20 @@ function App() {
     setActiveMenu(await api<Menu>(`/api/menus/${id}`));
   }
 
-  async function updateMenuItem(menuItemId: number | null, mealNumber: number, slot: RecipeCategory, recipeId: number) {
+  async function updateMenuItem(
+    menuItemId: number | null,
+    mealNumber: number,
+    slot: RecipeCategory,
+    recipeId: number | null
+  ) {
     if (menuItemId === null) {
-      const recipe = recipes.find((item) => item.id === recipeId);
-      if (!activeMenu || !recipe) return;
+      const recipe = recipeId === null ? null : recipes.find((item) => item.id === recipeId);
+      if (!activeMenu || (recipeId !== null && !recipe)) return;
       setActiveMenu({
         ...activeMenu,
         items: activeMenu.items.map((item) =>
           item.mealNumber === mealNumber && item.slot === slot
-            ? { ...item, recipeId, recipeName: recipe.name }
+            ? { ...item, recipeId, recipeName: recipe?.name ?? null }
             : item
         )
       });
@@ -1195,7 +1200,7 @@ function MenuBuilder({
     menuItemId: number | null,
     mealNumber: number,
     slot: RecipeCategory,
-    recipeId: number
+    recipeId: number | null
   ) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
@@ -1250,9 +1255,16 @@ function MenuBuilder({
                     <select
                       value={item?.recipeId ?? ""}
                       onChange={(event) =>
-                        item && void updateMenuItem(item.id, mealNumber, category.value, Number(event.target.value))
+                        item &&
+                        void updateMenuItem(
+                          item.id,
+                          mealNumber,
+                          category.value,
+                          event.target.value === "" ? null : Number(event.target.value)
+                        )
                       }
                     >
+                      {category.value !== "entree" ? <option value="">None</option> : null}
                       {plannerRecipes
                         .filter((recipe) => recipe.category === category.value)
                         .map((recipe) => (
@@ -1281,7 +1293,7 @@ function MenuBuilder({
           </div>
         </div>
       ) : (
-        <div className="empty-state">Add recipes in all three categories, then generate a weekly menu.</div>
+        <div className="empty-state">Add at least one entree recipe, then generate a weekly menu.</div>
       )}
     </section>
   );

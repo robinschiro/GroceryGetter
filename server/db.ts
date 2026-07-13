@@ -18,6 +18,12 @@ function columnExists(tableName: string, columnName: string) {
   return queryAll(`PRAGMA table_info(${tableName})`).some((column) => column.name === columnName);
 }
 
+function columnIsNotNull(tableName: string, columnName: string) {
+  return queryAll(`PRAGMA table_info(${tableName})`).some(
+    (column) => column.name === columnName && column.notnull === 1
+  );
+}
+
 export async function initializeDb() {
   SQL = await initSqlJs();
   if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
@@ -66,7 +72,7 @@ export async function initializeDb() {
     menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
     meal_number INTEGER NOT NULL,
     slot TEXT NOT NULL CHECK (slot IN ('entree', 'vegetable_side', 'starch_side')),
-    recipe_id INTEGER NOT NULL REFERENCES recipes(id)
+    recipe_id INTEGER REFERENCES recipes(id)
   );
 
   CREATE TABLE IF NOT EXISTS shopping_list_items (
@@ -95,6 +101,28 @@ export async function initializeDb() {
 
   if (!columnExists("menus", "is_test_data")) {
     run("ALTER TABLE menus ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
+    saveDb();
+  }
+
+  if (columnIsNotNull("menu_items", "recipe_id")) {
+    run("PRAGMA foreign_keys = OFF");
+    run("ALTER TABLE menu_items RENAME TO menu_items_old");
+    run(`
+      CREATE TABLE menu_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+        meal_number INTEGER NOT NULL,
+        slot TEXT NOT NULL CHECK (slot IN ('entree', 'vegetable_side', 'starch_side')),
+        recipe_id INTEGER REFERENCES recipes(id)
+      )
+    `);
+    run(`
+      INSERT INTO menu_items (id, menu_id, meal_number, slot, recipe_id)
+      SELECT id, menu_id, meal_number, slot, recipe_id
+      FROM menu_items_old
+    `);
+    run("DROP TABLE menu_items_old");
+    run("PRAGMA foreign_keys = ON");
     saveDb();
   }
 
