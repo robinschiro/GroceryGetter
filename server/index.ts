@@ -30,6 +30,18 @@ type QfcSubmitJob = {
 
 const qfcSubmitJobs = new Map<string, QfcSubmitJob>();
 const qfcSubmitJobTtlMs = 15 * 60 * 1000;
+const recipeCategories = ["entree", "vegetable_side", "starch_side"] as const;
+type RecipeCategory = (typeof recipeCategories)[number];
+type MenuRecipe = {
+  id: number;
+  name: string;
+  category: RecipeCategory;
+};
+type MenuItemInput = {
+  mealNumber: number;
+  slot: RecipeCategory;
+  recipeId: number;
+};
 
 function pruneQfcSubmitJobs() {
   const cutoff = Date.now() - qfcSubmitJobTtlMs;
@@ -92,6 +104,72 @@ function getRecipe(id: number): Recipe | null {
     ) as Recipe["ingredients"];
 
   return { ...recipe, isTestData: Boolean(recipe.isTestData), ingredients };
+}
+
+function shuffle<T>(items: T[]) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function pick<T>(items: T[], index: number) {
+  return items[index % items.length];
+}
+
+function getPlannerRecipes(includeTestData: boolean) {
+  return queryAll("SELECT id, name, category FROM recipes WHERE is_test_data = ?", [
+    includeTestData ? 1 : 0
+  ]) as MenuRecipe[];
+}
+
+function getRecipesByCategory(recipes: MenuRecipe[]) {
+  return {
+    entree: recipes.filter((recipe) => recipe.category === "entree"),
+    vegetable_side: recipes.filter((recipe) => recipe.category === "vegetable_side"),
+    starch_side: recipes.filter((recipe) => recipe.category === "starch_side")
+  };
+}
+
+function validateMealCount(mealCount: number) {
+  return Number.isInteger(mealCount) && mealCount >= 1 && mealCount <= 14;
+}
+
+function buildMenuPreview(mealCount: number, includeTestData: boolean) {
+  const byCategory = getRecipesByCategory(getPlannerRecipes(includeTestData));
+
+  if (!byCategory.entree.length || !byCategory.vegetable_side.length || !byCategory.starch_side.length) {
+    return null;
+  }
+
+  const shuffledByCategory = {
+    entree: shuffle(byCategory.entree),
+    vegetable_side: shuffle(byCategory.vegetable_side),
+    starch_side: shuffle(byCategory.starch_side)
+  };
+
+  const items = Array.from({ length: mealCount }, (_, index) => index + 1).flatMap((mealNumber) =>
+    recipeCategories.map((slot) => {
+      const recipe = pick(shuffledByCategory[slot], mealNumber - 1);
+      return {
+        id: null,
+        mealNumber,
+        slot,
+        recipeId: recipe.id,
+        recipeName: recipe.name
+      };
+    })
+  );
+
+  return {
+    id: null,
+    name: `Week of ${new Date().toLocaleDateString("en-US")}`,
+    mealCount,
+    status: "preview",
+    items
+  };
 }
 
 function validateRecipeInput(input: RecipeInput) {
@@ -419,74 +497,74 @@ app.get("/api/qfc/products", async (req, res) => {
   }
 });
 
-app.post("/api/menus/generate", (req, res) => {
+app.post("/api/menus/preview", (req, res) => {
   const mealCount = Number(req.body.mealCount ?? 5);
   const includeTestData = Boolean(req.body.includeTestData);
-  if (!Number.isInteger(mealCount) || mealCount < 1 || mealCount > 14) {
+  if (!validateMealCount(mealCount)) {
     res.status(400).json({ error: "Meal count must be between 1 and 14." });
     return;
   }
 
-  const recipes = queryAll("SELECT id, name, category FROM recipes WHERE is_test_data = ?", [
-    includeTestData ? 1 : 0
-  ]) as Array<{
-    id: number;
-    name: string;
-    category: string;
-  }>;
-
-  const byCategory = {
-    entree: recipes.filter((recipe) => recipe.category === "entree"),
-    vegetable_side: recipes.filter((recipe) => recipe.category === "vegetable_side"),
-    starch_side: recipes.filter((recipe) => recipe.category === "starch_side")
-  };
-
-  if (!byCategory.entree.length || !byCategory.vegetable_side.length || !byCategory.starch_side.length) {
+  const preview = buildMenuPreview(mealCount, includeTestData);
+  if (!preview) {
     res.status(400).json({ error: "Add at least one recipe in each category before generating a menu." });
     return;
   }
 
-  const shuffle = <T>(items: T[]) => {
-    const shuffled = [...items];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  res.json(preview);
+});
+
+app.post("/api/menus", (req, res) => {
+  const mealCount = Number(req.body.mealCount);
+  const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
+  if (!validateMealCount(mealCount)) {
+    res.status(400).json({ error: "Meal count must be between 1 and 14." });
+    return;
+  }
+
+  if (items.length !== mealCount * recipeCategories.length) {
+    res.status(400).json({ error: "Saved menus must include one recipe for every meal slot." });
+    return;
+  }
+
+  const seenSlots = new Set<string>();
+  for (const item of items) {
+    const mealNumber = Number(item.mealNumber);
+    const recipeId = Number(item.recipeId);
+    if (!Number.isInteger(mealNumber) || mealNumber < 1 || mealNumber > mealCount) {
+      res.status(400).json({ error: "Menu items include an invalid meal number." });
+      return;
     }
-    return shuffled;
-  };
+    if (!recipeCategories.includes(item.slot) || !Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "Menu items include an invalid recipe selection." });
+      return;
+    }
 
-  const shuffledByCategory = {
-    entree: shuffle(byCategory.entree),
-    vegetable_side: shuffle(byCategory.vegetable_side),
-    starch_side: shuffle(byCategory.starch_side)
-  };
-  const pick = <T>(items: T[], index: number) => items[index % items.length];
-  const menuName = `Week of ${new Date().toLocaleDateString("en-US")}`;
+    const key = `${mealNumber}:${item.slot}`;
+    if (seenSlots.has(key)) {
+      res.status(400).json({ error: "Saved menus cannot include duplicate meal slots." });
+      return;
+    }
+    seenSlots.add(key);
 
+    const recipe = queryOne<{ category: RecipeCategory }>("SELECT category FROM recipes WHERE id = ?", [recipeId]);
+    if (!recipe || recipe.category !== item.slot) {
+      res.status(400).json({ error: "Menu items include a recipe that does not match its meal slot." });
+      return;
+    }
+  }
+
+  const menuName = String(req.body.name || `Week of ${new Date().toLocaleDateString("en-US")}`);
   const createdMenuId = transaction(() => {
     const menuId = insert("INSERT INTO menus (name, meal_count) VALUES (?, ?)", [menuName, mealCount]);
-
-    for (let meal = 1; meal <= mealCount; meal += 1) {
+    for (const item of items) {
       run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
         menuId,
-        meal,
-        "entree",
-        pick(shuffledByCategory.entree, meal - 1).id
-      ]);
-      run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
-        menuId,
-        meal,
-        "vegetable_side",
-        pick(shuffledByCategory.vegetable_side, meal - 1).id
-      ]);
-      run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
-        menuId,
-        meal,
-        "starch_side",
-        pick(shuffledByCategory.starch_side, meal - 1).id
+        item.mealNumber,
+        item.slot,
+        item.recipeId
       ]);
     }
-
     return menuId;
   });
 

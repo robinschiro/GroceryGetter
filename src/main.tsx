@@ -26,7 +26,7 @@ type RecipeIngredient = {
 };
 
 type Menu = {
-  id: number;
+  id: number | null;
   name: string;
   mealCount: number;
   status: string;
@@ -34,7 +34,7 @@ type Menu = {
 };
 
 type MenuItem = {
-  id: number;
+  id: number | null;
   mealNumber: number;
   slot: RecipeCategory;
   recipeId: number;
@@ -183,15 +183,39 @@ function App() {
   async function generateMenu() {
     setMessage("");
     try {
-      const created = await api<{ id: number }>("/api/menus/generate", {
+      const preview = await api<Menu>("/api/menus/preview", {
         method: "POST",
         body: JSON.stringify({ mealCount, includeTestData: plannerRecipeMode === "test" })
       });
-      const menu = await api<Menu>(`/api/menus/${created.id}`);
-      setActiveMenu(menu);
+      setActiveMenu(preview);
       setShoppingList([]);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
+    }
+  }
+
+  async function saveMenu() {
+    if (!activeMenu) return;
+    if (activeMenu.id !== null) {
+      setMessage("Menu is already saved.");
+      return;
+    }
+
+    setMessage("");
+    try {
+      const created = await api<{ id: number }>("/api/menus", {
+        method: "POST",
+        body: JSON.stringify({
+          name: activeMenu.name,
+          mealCount: activeMenu.mealCount,
+          items: activeMenu.items.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
+        })
+      });
+      setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
+      setShoppingList([]);
+      setMessage("Menu saved.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to save menu.");
     }
   }
 
@@ -206,12 +230,27 @@ function App() {
     setActiveMenu(await api<Menu>(`/api/menus/${id}`));
   }
 
-  async function updateMenuItem(menuItemId: number, recipeId: number) {
+  async function updateMenuItem(menuItemId: number | null, mealNumber: number, slot: RecipeCategory, recipeId: number) {
+    if (menuItemId === null) {
+      const recipe = recipes.find((item) => item.id === recipeId);
+      if (!activeMenu || !recipe) return;
+      setActiveMenu({
+        ...activeMenu,
+        items: activeMenu.items.map((item) =>
+          item.mealNumber === mealNumber && item.slot === slot
+            ? { ...item, recipeId, recipeName: recipe.name }
+            : item
+        )
+      });
+      setShoppingList([]);
+      return;
+    }
+
     await api(`/api/menu-items/${menuItemId}`, {
       method: "PUT",
       body: JSON.stringify({ recipeId })
     });
-    if (activeMenu) {
+    if (activeMenu?.id != null) {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
     }
@@ -219,12 +258,16 @@ function App() {
 
   async function aggregateIngredients() {
     if (!activeMenu) return;
+    if (activeMenu.id === null) {
+      setMessage("Save the menu before aggregating ingredients.");
+      return;
+    }
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
   }
 
   async function clearAggregatedIngredients() {
-    if (!activeMenu) return;
+    if (!activeMenu?.id) return;
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
     setMessage("");
@@ -238,7 +281,7 @@ function App() {
   }
 
   async function submitToQfc() {
-    if (!activeMenu) return;
+    if (!activeMenu?.id) return;
     setMessage("");
     setQfcSubmitProgress({
       phase: "checking",
@@ -376,6 +419,7 @@ function App() {
             setPlannerRecipeMode={updatePlannerRecipeMode}
             activeMenu={activeMenu}
             generateMenu={generateMenu}
+            saveMenu={saveMenu}
             updateMenuItem={updateMenuItem}
             aggregateIngredients={aggregateIngredients}
           />
@@ -771,6 +815,7 @@ function MenuBuilder({
   setPlannerRecipeMode,
   activeMenu,
   generateMenu,
+  saveMenu,
   updateMenuItem,
   aggregateIngredients
 }: {
@@ -781,7 +826,13 @@ function MenuBuilder({
   setPlannerRecipeMode: (value: PlannerRecipeMode) => void;
   activeMenu: Menu | null;
   generateMenu: () => Promise<void>;
-  updateMenuItem: (menuItemId: number, recipeId: number) => Promise<void>;
+  saveMenu: () => Promise<void>;
+  updateMenuItem: (
+    menuItemId: number | null,
+    mealNumber: number,
+    slot: RecipeCategory,
+    recipeId: number
+  ) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
   const plannerRecipes = recipes.filter((recipe) => recipe.isTestData === (plannerRecipeMode === "test"));
@@ -834,7 +885,9 @@ function MenuBuilder({
                     {category.label}
                     <select
                       value={item?.recipeId ?? ""}
-                      onChange={(event) => item && void updateMenuItem(item.id, Number(event.target.value))}
+                      onChange={(event) =>
+                        item && void updateMenuItem(item.id, mealNumber, category.value, Number(event.target.value))
+                      }
                     >
                       {plannerRecipes
                         .filter((recipe) => recipe.category === category.value)
@@ -849,10 +902,19 @@ function MenuBuilder({
               })}
             </div>
           ))}
-          <button onClick={() => void aggregateIngredients()}>
-            <Settings size={17} />
-            Aggregate ingredients
-          </button>
+          <div className="panel-actions">
+            {activeMenu.id === null ? (
+              <button onClick={() => void saveMenu()}>
+                <Check size={17} />
+                Save menu
+              </button>
+            ) : (
+              <button onClick={() => void aggregateIngredients()}>
+                <Settings size={17} />
+                Aggregate ingredients
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="empty-state">Add recipes in all three categories, then generate a weekly menu.</div>
