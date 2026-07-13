@@ -30,6 +30,7 @@ type Recipe = {
 
 type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
+type RecipeCategoryCount = (typeof categories)[number] & { count: number };
 
 type RecipeIngredient = {
   id?: number;
@@ -420,14 +421,6 @@ function App() {
                 );
               })}
             </nav>
-            <div className="menu-summary">
-              {recipeCounts.map((category) => (
-                <div key={category.value}>
-                  <span>{category.label}</span>
-                  <strong>{category.count}</strong>
-                </div>
-              ))}
-            </div>
             <label className="toggle-row">
               <input
                 type="checkbox"
@@ -440,7 +433,7 @@ function App() {
         ) : null}
 
         {activeView === "recipe-admin" ? (
-          <RecipeAdmin recipes={recipes} onSaved={loadRecipes} />
+          <RecipeAdmin recipes={recipes} recipeCounts={recipeCounts} onSaved={loadRecipes} />
         ) : null}
 
         {activeView === "qfc-api" ? (
@@ -701,7 +694,15 @@ function QfcApiPanel({
   );
 }
 
-function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => Promise<void> }) {
+function RecipeAdmin({
+  recipes,
+  recipeCounts,
+  onSaved
+}: {
+  recipes: Recipe[];
+  recipeCounts: RecipeCategoryCount[];
+  onSaved: () => Promise<void>;
+}) {
   const [activeAdminTab, setActiveAdminTab] = useState<RecipeAdminTab>("create");
   const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
   const editingRecipe = recipes.find((recipe) => recipe.id === editingRecipeId) ?? null;
@@ -768,7 +769,7 @@ function RecipeAdmin({ recipes, onSaved }: { recipes: Recipe[]; onSaved: () => P
           onSubmit={updateRecipe}
         />
       ) : (
-        <RecipeManagementList recipes={recipes} onEdit={setEditingRecipeId} />
+        <RecipeManagementList recipes={recipes} recipeCounts={recipeCounts} onEdit={setEditingRecipeId} />
       )}
     </section>
   );
@@ -971,7 +972,15 @@ function RecipeForm({
   );
 }
 
-function RecipeManagementList({ recipes, onEdit }: { recipes: Recipe[]; onEdit: (recipeId: number) => void }) {
+function RecipeManagementList({
+  recipes,
+  recipeCounts,
+  onEdit
+}: {
+  recipes: Recipe[];
+  recipeCounts: RecipeCategoryCount[];
+  onEdit: (recipeId: number) => void;
+}) {
   const [managementPage, setManagementPage] = useState(0);
   const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
   const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
@@ -986,6 +995,15 @@ function RecipeManagementList({ recipes, onEdit }: { recipes: Recipe[]; onEdit: 
 
   return (
     <div className="tab-panel" role="tabpanel">
+      <div className="recipe-count-summary" aria-label="Recipe category counts">
+        {recipeCounts.map((category) => (
+          <div key={category.value}>
+            <span>{category.label}</span>
+            <strong>{category.count}</strong>
+          </div>
+        ))}
+      </div>
+
       <div className="recipe-management-header">
         <div>
           <div className="subhead">Recipes</div>

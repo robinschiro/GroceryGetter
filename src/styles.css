@@ -156,13 +156,13 @@ label {
   color: #fff;
 }
 
-.menu-summary {
+.recipe-count-summary {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.menu-summary div {
+.recipe-count-summary div {
   align-items: center;
   background: #f3f6f4;
   border: 1px solid #d8dfdb;
@@ -173,7 +173,7 @@ label {
   padding: 10px 12px;
 }
 
-.menu-summary span {
+.recipe-count-summary span {
   color: #52615c;
   font-size: 0.86rem;
 }
@@ -612,7 +612,7 @@ label {
   }
 
   .view-tabs,
-  .menu-summary {
+  .recipe-count-summary {
     grid-template-columns: 1fr;
   }
 
