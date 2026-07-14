@@ -925,6 +925,16 @@ function RecipeAdmin({
     setEditingRecipeId(null);
   }
 
+  async function deleteRecipe() {
+    if (!editingRecipe) {
+      return;
+    }
+
+    await api(`/api/recipes/${editingRecipe.id}`, { method: "DELETE" });
+    await onSaved();
+    setEditingRecipeId(null);
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -963,6 +973,7 @@ function RecipeAdmin({
           mode="edit"
           initialRecipe={editingRecipe}
           onCancel={() => setEditingRecipeId(null)}
+          onDelete={deleteRecipe}
           onSubmit={updateRecipe}
         />
       ) : (
@@ -998,15 +1009,18 @@ function RecipeForm({
   mode,
   initialRecipe,
   onCancel,
+  onDelete,
   onSubmit
 }: {
   mode: "create" | "edit";
   initialRecipe?: Recipe;
   onCancel?: () => void;
+  onDelete?: () => Promise<void>;
   onSubmit: (payload: RecipeFormPayload) => Promise<void>;
 }) {
   const [form, setForm] = useState(() => recipeFormInitialState(initialRecipe));
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setForm(recipeFormInitialState(initialRecipe));
@@ -1027,6 +1041,7 @@ function RecipeForm({
       .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
 
     try {
+      setIsSubmitting(true);
       await onSubmit({
         name: form.name,
         category: form.category,
@@ -1041,6 +1056,29 @@ function RecipeForm({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : mode === "create" ? "Unable to save recipe." : "Unable to update recipe.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function deleteRecipe() {
+    if (!onDelete || !initialRecipe) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete “${initialRecipe.name}”? This action cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete recipe.");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -1160,7 +1198,18 @@ function RecipeForm({
       {error ? <div className="error">{error}</div> : null}
 
       <div className="panel-actions">
-        <button onClick={() => void saveRecipe()} type="button">
+        {mode === "edit" ? (
+          <button
+            className="danger delete-recipe-button"
+            disabled={isSubmitting}
+            onClick={() => void deleteRecipe()}
+            type="button"
+          >
+            <Trash2 size={17} />
+            Delete recipe
+          </button>
+        ) : null}
+        <button disabled={isSubmitting} onClick={() => void saveRecipe()} type="button">
           <Check size={17} />
           {mode === "create" ? "Save recipe" : "Update recipe"}
         </button>

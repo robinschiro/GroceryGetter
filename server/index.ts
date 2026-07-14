@@ -379,6 +379,31 @@ app.put("/api/recipes/:id", (req, res) => {
   }
 });
 
+app.delete("/api/recipes/:id", (req, res) => {
+  try {
+    const recipeId = Number(req.params.id);
+    if (!Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "Recipe id is invalid." });
+      return;
+    }
+
+    const existingRecipe = getRecipe(recipeId);
+    if (!existingRecipe) {
+      res.status(404).json({ error: "Recipe not found." });
+      return;
+    }
+
+    transaction(() => {
+      run("UPDATE menu_items SET recipe_id = NULL WHERE recipe_id = ?", [recipeId]);
+      run("DELETE FROM recipes WHERE id = ?", [recipeId]);
+    });
+
+    res.json({ id: recipeId });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Unable to delete recipe." });
+  }
+});
+
 app.get("/api/settings", (_req, res) => {
   const settings = queryAll("SELECT key, value FROM settings ORDER BY key") as Array<{
     key: string;

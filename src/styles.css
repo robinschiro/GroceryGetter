@@ -53,6 +53,10 @@ button.secondary {
   color: #18332e;
 }
 
+button.danger {
+  background: #b53a29;
+}
+
 .icon-button {
   aspect-ratio: 1;
   border-radius: 6px;
@@ -312,6 +316,10 @@ label {
 .recipe-list-item span {
   color: #66746f;
   font-size: 0.82rem;
+}
+
+.delete-recipe-button {
+  margin-right: auto;
 }
 
 .recipe-management-header {
@@ -646,6 +654,11 @@ label {
 :root[data-theme="dark"] button.secondary {
   background: #263630;
   color: #e4eee9;
+}
+
+:root[data-theme="dark"] button.danger {
+  background: #d96a59;
+  color: #1f0d09;
 }
 
 :root[data-theme="dark"] input,
