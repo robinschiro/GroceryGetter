@@ -7,6 +7,8 @@ export type CartSubmissionItem = {
   quantity: string;
   unit: string;
   item: string;
+  sourceRecipeNames: string;
+  approved: number;
 };
 
 export type KrogerLocation = {
@@ -464,7 +466,7 @@ async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
   });
 }
 
-export async function submitToQfcCart(
+export async function previewQfcCart(
   items: CartSubmissionItem[],
   onProgress?: CartSubmissionProgressHandler
 ): Promise<CartSubmissionResult> {
@@ -480,16 +482,7 @@ export async function submitToQfcCart(
     return {
       mode: "stub",
       submittedItemCount: 0,
-      message: "Kroger API credentials are not configured yet. Product search and cart submission are disabled.",
-      items
-    };
-  }
-
-  if (!status.hasCustomerAccessToken) {
-    return {
-      mode: "stub",
-      submittedItemCount: 0,
-      message: "Product/location APIs can be used, but customer OAuth is not configured yet, so cart mutation is disabled.",
+      message: "Kroger API credentials are not configured yet, so QFC products cannot be previewed.",
       items
     };
   }
@@ -499,7 +492,46 @@ export async function submitToQfcCart(
     return {
       mode: "api",
       submittedItemCount: 0,
-      message: "No approved items could be matched to Kroger products, so nothing was added to the cart.",
+      message: "No approved ingredients could be matched to QFC products.",
+      items,
+      matched,
+      skipped
+    };
+  }
+
+  return {
+    mode: "api",
+    submittedItemCount: 0,
+    message: `${matched.length} ingredient${matched.length === 1 ? "" : "s"} matched to QFC products. ${skipped.length} ingredient${skipped.length === 1 ? "" : "s"} unmatched.`,
+    items,
+    matched,
+    skipped
+  };
+}
+
+export async function addQfcMatchesToCart(
+  items: CartSubmissionItem[],
+  matched: CartSubmissionMatch[],
+  skipped: CartSubmissionSkip[],
+  onProgress?: CartSubmissionProgressHandler
+): Promise<CartSubmissionResult> {
+  const status = getQfcApiStatus();
+  if (!status.hasCustomerAccessToken) {
+    return {
+      mode: "stub",
+      submittedItemCount: 0,
+      message: "Connect your QFC customer account before adding the reviewed products to the cart.",
+      items,
+      matched,
+      skipped
+    };
+  }
+
+  if (!matched.length) {
+    return {
+      mode: "api",
+      submittedItemCount: 0,
+      message: "There are no matched QFC products to add to the cart.",
       items,
       matched,
       skipped

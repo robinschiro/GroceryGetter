@@ -120,11 +120,30 @@ type QfcSubmitJob = {
   status: "running" | "complete" | "failed";
   progress: QfcSubmitProgress;
   result?: {
+    mode: "stub" | "api";
     submittedItemCount: number;
     message: string;
-    skipped?: unknown[];
+    items: ShoppingListItem[];
+    matched?: QfcCartMatch[];
+    skipped?: QfcCartSkip[];
   };
   error?: string;
+};
+
+type QfcCartMatch = {
+  item: ShoppingListItem;
+  product: ProductCandidate;
+  cartQuantity: number;
+};
+
+type QfcCartSkip = {
+  item: ShoppingListItem;
+  reason: string;
+};
+
+type QfcCartPreview = {
+  jobId: string;
+  result: NonNullable<QfcSubmitJob["result"]>;
 };
 
 type AppView = "recipe-admin" | "qfc-api" | "planner";
@@ -211,6 +230,8 @@ function App() {
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
   const [qfcSubmitProgress, setQfcSubmitProgress] = useState<QfcSubmitProgress | null>(null);
+  const [qfcCartPreview, setQfcCartPreview] = useState<QfcCartPreview | null>(null);
+  const [qfcCartMessage, setQfcCartMessage] = useState("");
 
   async function loadRecipes() {
     setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
@@ -242,6 +263,8 @@ function App() {
       setActiveMenu(preview);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setQfcCartPreview(null);
+      setQfcCartMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
     }
@@ -268,6 +291,8 @@ function App() {
       setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setQfcCartPreview(null);
+      setQfcCartMessage("");
       setMessage("Menu saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to save menu.");
@@ -279,6 +304,8 @@ function App() {
     setActiveMenu(null);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
+    setQfcCartPreview(null);
+    setQfcCartMessage("");
     setMessage("");
   }
 
@@ -305,6 +332,8 @@ function App() {
       });
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setQfcCartPreview(null);
+      setQfcCartMessage("");
       return;
     }
 
@@ -316,6 +345,8 @@ function App() {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setQfcCartPreview(null);
+      setQfcCartMessage("");
     }
   }
 
@@ -328,6 +359,8 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
     setDirtyShoppingItemIds(new Set());
+    setQfcCartPreview(null);
+    setQfcCartMessage("");
   }
 
   async function clearAggregatedIngredients() {
@@ -335,6 +368,8 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
+    setQfcCartPreview(null);
+    setQfcCartMessage("");
     setMessage("");
   }
 
@@ -357,15 +392,15 @@ function App() {
     });
   }
 
-  async function submitToQfc() {
+  async function previewQfcProducts() {
     if (!activeMenu?.id) return;
     const menuId = activeMenu.id;
     setMessage("");
 
     if (dirtyShoppingItemIds.size) {
-      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before sending to QFC?");
+      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching QFC products?");
       if (!shouldSave) {
-        setMessage("QFC submission canceled. Save or discard ingredient changes before sending.");
+        setMessage("QFC product matching canceled. Save or discard ingredient changes first.");
         return;
       }
 
@@ -383,11 +418,13 @@ function App() {
       phase: "checking",
       processedItems: 0,
       totalItems: shoppingList.filter((item) => item.approved).length,
-      message: "Starting QFC cart submission..."
+      message: "Starting QFC product matching..."
     });
 
     try {
-      const started = await api<QfcSubmitJob>(`/api/menus/${menuId}/submit-to-qfc`, { method: "POST" });
+      setQfcCartPreview(null);
+      setQfcCartMessage("");
+      const started = await api<QfcSubmitJob>(`/api/menus/${menuId}/preview-qfc`, { method: "POST" });
       setQfcSubmitProgress(started.progress);
 
       let job = started;
@@ -398,11 +435,49 @@ function App() {
       }
 
       if (job.status === "failed") {
-        throw new Error(job.error ?? "QFC cart submission failed.");
+        throw new Error(job.error ?? "QFC product matching failed.");
       }
 
       setMessage(job.result?.message ?? job.progress.message);
-      await loadMenu(menuId);
+      if (job.result) {
+        setQfcCartPreview({ jobId: started.id, result: job.result });
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "QFC product matching failed.");
+    } finally {
+      setQfcSubmitProgress(null);
+    }
+  }
+
+  async function addReviewedProductsToQfc() {
+    if (!qfcCartPreview || !activeMenu?.id) return;
+    setMessage("");
+    setQfcCartMessage("");
+    setQfcSubmitProgress({
+      phase: "adding",
+      processedItems: qfcCartPreview.result.items.length,
+      totalItems: qfcCartPreview.result.items.length,
+      message: "Adding reviewed products to your QFC cart..."
+    });
+
+    try {
+      const started = await api<QfcSubmitJob>(`/api/qfc/submit-jobs/${qfcCartPreview.jobId}/add-to-cart`, {
+        method: "POST"
+      });
+      setQfcSubmitProgress(started.progress);
+      let job = started;
+      while (job.status === "running") {
+        await wait(600);
+        job = await api<QfcSubmitJob>(`/api/qfc/submit-jobs/${started.id}`);
+        setQfcSubmitProgress(job.progress);
+      }
+      if (job.status === "failed") {
+        throw new Error(job.error ?? "QFC cart submission failed.");
+      }
+      const confirmation = job.result?.message ?? job.progress.message;
+      setMessage(confirmation);
+      setQfcCartMessage(confirmation);
+      await loadMenu(activeMenu.id);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
     } finally {
@@ -416,6 +491,7 @@ function App() {
 
   async function updateStoreBrandPreference(next: boolean) {
     setPreferStoreBrands(next);
+    setQfcCartPreview(null);
     await api("/api/settings/preferStoreBrands", {
       method: "PUT",
       body: JSON.stringify({ value: String(next) })
@@ -524,18 +600,25 @@ function App() {
             <ShoppingListReview
               items={shoppingList}
               setItems={setShoppingList}
-              markItemDirty={(id) =>
+              markItemDirty={(id) => {
+                setQfcCartPreview(null);
                 setDirtyShoppingItemIds((current) => {
                   const next = new Set(current);
                   next.add(id);
                   return next;
-                })
-              }
+                });
+              }}
               clearItems={clearAggregatedIngredients}
-              submitToQfc={submitToQfc}
+              previewQfcProducts={previewQfcProducts}
               openQfcCartToClear={openQfcCartToClear}
               qfcSubmitProgress={qfcSubmitProgress}
               message={message}
+            />
+            <QfcCartReview
+              preview={qfcCartPreview}
+              addToCart={addReviewedProductsToQfc}
+              qfcSubmitProgress={qfcSubmitProgress}
+              message={qfcCartMessage}
             />
           </div>
         ) : null}
@@ -1304,7 +1387,7 @@ function ShoppingListReview({
   setItems,
   markItemDirty,
   clearItems,
-  submitToQfc,
+  previewQfcProducts,
   openQfcCartToClear,
   qfcSubmitProgress,
   message
@@ -1313,7 +1396,7 @@ function ShoppingListReview({
   setItems: (items: ShoppingListItem[]) => void;
   markItemDirty: (id: number) => void;
   clearItems: () => Promise<void>;
-  submitToQfc: () => Promise<void>;
+  previewQfcProducts: () => Promise<void>;
   openQfcCartToClear: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
@@ -1359,9 +1442,9 @@ function ShoppingListReview({
               <ExternalLink size={17} />
               Open cart on QFC
             </button>
-            <button onClick={() => void submitToQfc()} disabled={Boolean(qfcSubmitProgress)}>
+            <button onClick={() => void previewQfcProducts()} disabled={Boolean(qfcSubmitProgress)}>
               <Send size={17} />
-              {qfcSubmitProgress ? "Sending to QFC..." : "Send approved items to QFC"}
+              {qfcSubmitProgress ? "Matching QFC products..." : "Review QFC products"}
             </button>
           </div>
         </>
@@ -1369,8 +1452,86 @@ function ShoppingListReview({
         <div className="empty-state">Aggregate a menu to review its grocery list.</div>
       )}
 
-      {qfcSubmitProgress ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
+      {qfcSubmitProgress && qfcSubmitProgress.phase !== "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
       {message ? <div className="success">{message}</div> : null}
+    </section>
+  );
+}
+
+function QfcCartReview({
+  preview,
+  addToCart,
+  qfcSubmitProgress,
+  message
+}: {
+  preview: QfcCartPreview | null;
+  addToCart: () => Promise<void>;
+  qfcSubmitProgress: QfcSubmitProgress | null;
+  message: string;
+}) {
+  const matches = preview?.result.matched ?? [];
+  const skipped = preview?.result.skipped ?? [];
+
+  return (
+    <section className="panel full-width">
+      <div className="panel-heading">
+        <Send size={18} />
+        <h3>QFC Cart Review</h3>
+      </div>
+
+      {preview ? (
+        <>
+          {matches.length ? (
+            <div className="qfc-match-list">
+              {matches.map((match) => (
+                <div className="qfc-match-row" key={match.item.id}>
+                  <div className="qfc-match-ingredient">
+                    <span className="eyebrow">Aggregated ingredient</span>
+                    <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
+                    <span>{match.item.sourceRecipeNames}</span>
+                  </div>
+                  <ChevronRight className="qfc-match-arrow" size={22} aria-hidden="true" />
+                  <div className="qfc-match-product">
+                    <span className="eyebrow">QFC selection</span>
+                    <strong>{match.product.description}</strong>
+                    <span>{[match.product.brand, match.product.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
+                    <span>
+                      {match.product.price === null ? "Price unavailable" : `$${match.product.price.toFixed(2)}`}
+                      {match.product.stockLevel ? ` · ${match.product.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
+                      {` · Qty ${match.cartQuantity}`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">No QFC products were matched.</div>
+          )}
+
+          {skipped.length ? (
+            <div className="qfc-unmatched">
+              <h4>Unmatched ingredients</h4>
+              {skipped.map((skip) => (
+                <div className="qfc-unmatched-row" key={skip.item.id}>
+                  <strong>{skip.item.text || skip.item.item}</strong>
+                  <span>{skip.reason}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="panel-actions">
+            <button onClick={() => void addToCart()} disabled={!matches.length || Boolean(qfcSubmitProgress)}>
+              <Send size={17} />
+              {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed product${matches.length === 1 ? "" : "s"} to QFC`}
+            </button>
+          </div>
+          {qfcSubmitProgress?.phase === "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
+          {message ? <div className="success" role="status">{message}</div> : null}
+        </>
+      ) : (
+        <div className="empty-state">Review and approve ingredients, then match them to QFC products.</div>
+      )}
     </section>
   );
 }

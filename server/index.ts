@@ -2,14 +2,15 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { initializeDb, insert, queryAll, queryOne, run, saveDb, transaction } from "./db.js";
 import {
+  addQfcMatchesToCart,
   createCustomerAuthorizationUrl,
   exchangeCustomerAuthorizationCode,
   getQfcApiStatus,
   refreshCustomerToken,
   saveQfcApiSettings,
   searchLocations,
-  searchProducts,
-  submitToQfcCart
+  previewQfcCart,
+  searchProducts
 } from "./qfcAdapter.js";
 import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
 import type { Recipe, RecipeInput } from "./types.js";
@@ -21,6 +22,8 @@ const port = 5174;
 
 type QfcSubmitJob = {
   id: string;
+  kind: "preview" | "add";
+  menuId: string;
   status: "running" | "complete" | "failed";
   progress: CartSubmissionProgress;
   result?: CartSubmissionResult;
@@ -796,10 +799,10 @@ app.put("/api/menus/:id/shopping-list/items", (req, res) => {
   res.json({ ok: true, updated: items.length });
 });
 
-app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
+app.post("/api/menus/:id/preview-qfc", async (req, res) => {
   const menuId = req.params.id;
   const rows = queryAll(
-      `SELECT id, text, quantity, unit, item
+      `SELECT id, text, quantity, unit, item, source_recipe_names AS sourceRecipeNames, approved
       FROM shopping_list_items
       WHERE menu_id = ? AND approved = 1
       ORDER BY sort_order, id`,
@@ -810,29 +813,31 @@ app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
       quantity: string;
       unit: string;
       item: string;
+      sourceRecipeNames: string;
+      approved: number;
     }>;
 
   pruneQfcSubmitJobs();
   const jobId = randomUUID();
   const job: QfcSubmitJob = {
     id: jobId,
+    kind: "preview",
+    menuId,
     status: "running",
     progress: {
       phase: "checking",
       processedItems: 0,
       totalItems: rows.length,
-      message: "Starting QFC cart submission..."
+      message: "Starting QFC product matching..."
     },
     createdAt: Date.now()
   };
   qfcSubmitJobs.set(jobId, job);
 
-  void submitToQfcCart(rows, (progress) => {
+  void previewQfcCart(rows, (progress) => {
     job.progress = progress;
   })
     .then((result) => {
-      run("UPDATE menus SET status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [menuId]);
-      saveDb();
       job.status = "complete";
       job.result = result;
       job.progress = {
@@ -849,6 +854,66 @@ app.post("/api/menus/:id/submit-to-qfc", async (req, res) => {
         phase: "complete",
         processedItems: rows.length,
         totalItems: rows.length,
+        message: job.error
+      };
+    });
+
+  res.status(202).json({ jobId, ...job });
+});
+
+app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
+  pruneQfcSubmitJobs();
+  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
+    res.status(409).json({ error: "The QFC product preview is unavailable or incomplete. Preview the products again." });
+    return;
+  }
+
+  const jobId = randomUUID();
+  const job: QfcSubmitJob = {
+    id: jobId,
+    kind: "add",
+    menuId: previewJob.menuId,
+    status: "running",
+    progress: {
+      phase: "adding",
+      processedItems: previewJob.result.items.length,
+      totalItems: previewJob.result.items.length,
+      message: "Adding reviewed products to your QFC cart..."
+    },
+    createdAt: Date.now()
+  };
+  qfcSubmitJobs.set(jobId, job);
+
+  void addQfcMatchesToCart(
+    previewJob.result.items,
+    previewJob.result.matched ?? [],
+    previewJob.result.skipped ?? [],
+    (progress) => {
+      job.progress = progress;
+    }
+  )
+    .then((result) => {
+      if (result.submittedItemCount > 0) {
+        run("UPDATE menus SET status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [job.menuId]);
+        saveDb();
+      }
+      job.status = "complete";
+      job.result = result;
+      job.progress = {
+        phase: "complete",
+        processedItems: result.items.length,
+        totalItems: result.items.length,
+        message: result.message
+      };
+    })
+    .catch((error: unknown) => {
+      job.status = "failed";
+      job.error = error instanceof Error ? error.message : "QFC cart submission failed.";
+      job.progress = {
+        phase: "complete",
+        processedItems: previewJob.result?.items.length ?? 0,
+        totalItems: previewJob.result?.items.length ?? 0,
         message: job.error
       };
     });

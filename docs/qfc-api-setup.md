@@ -84,6 +84,8 @@ Current cart submission behavior:
 - Searches Kroger products using the shopping-list `item` text.
 - Prefers in-stock products when stock data is present.
 - Prefers Kroger/QFC/Simple Truth/Private Selection brands when the store-brand setting is enabled.
+- Shows a read-only review pairing each approved ingredient with its selected QFC product and lists unmatched ingredients.
+- Requires explicit confirmation from the review step before mutating the cart.
 - Adds one cart unit per approved grocery row.
 - Uses `PICKUP` as the cart modality.
 - Reports matched, skipped, and submitted counts.

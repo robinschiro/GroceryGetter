@@ -75,7 +75,7 @@ The implemented matching step currently returns transient product candidates wit
 - price
 - store-brand flag
 
-Product selections are not persisted on shopping-list rows yet. The current submit path searches by each approved row's `item` text, chooses one candidate, and submits that UPC directly.
+Product selections are not persisted on shopping-list rows yet. The current preview path searches by each approved row's `item` text and chooses one candidate. The resulting ingredient-to-product matches are retained in a short-lived server job so the user can review them before explicitly confirming the cart mutation.
 
 ## Cart
 
