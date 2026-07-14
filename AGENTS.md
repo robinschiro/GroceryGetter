@@ -25,6 +25,14 @@
 - If a command needs `.cmd` shims, first prepend the managed Node directory to `PATH` for that PowerShell command.
 - Use Vite's native config loader in Codex (`--configLoader native`). The default bundled config loader invokes esbuild while loading `vite.config.*`, and this sandbox can deny esbuild reads above the workspace.
 
+## Git Pushes from Codex
+- Do not run `git push` directly from the Codex shell. Use the repository wrapper with this exact standalone command: `& .\scripts\git-push.ps1`.
+- Invoke the wrapper without chaining, prefixes, suffixes, or surrounding PowerShell logic. A narrow Codex rule allows this exact command to run outside the sandbox so Git can update protected `.git` tracking refs.
+- The wrapper supports both the Codex-managed Git layout and the normal Windows Git installation, avoids the broken Schannel path, and restricts credentials to `https://github.com/robinschiro/GroceryGetter.git`.
+- The wrapper reads `GITHUB_USERNAME` and `GITHUB_PAT` from the gitignored `.env`. Never print, log, stage, commit, or ask the user to paste these values into chat.
+- If `.env` is missing or the wrapper rejects its configuration, stop and ask the user to configure it locally. Do not fall back to embedding credentials in a remote URL, command argument, tracked file, or general application settings.
+- After pushing, verify that local `HEAD`, local `origin/<branch>`, and the remote branch agree. Treat `.env` as a local secret and leave it untracked.
+
 ## Development Notes
 - The API listens on `127.0.0.1:5174`; Vite serves the frontend on `127.0.0.1`.
 - Keep frontend requests relative to `/api/...` so Vite proxy behavior remains simple.
@@ -35,7 +43,7 @@
 
 ## User Shorthands
 - If the user sends exactly `c`, treat it as: review the current git diff, summarize the intended commit, then create a git commit with an appropriate message.
-- If the user sends exactly `cp`, treat it as: do everything for `c`, then push the resulting commit to the current branch.
+- If the user sends exactly `cp`, treat it as: do everything for `c`, then push the resulting commit to the current branch using the exact standalone wrapper command documented under "Git Pushes from Codex."
 - If the user sends exactly `rsd`, treat it as: run the Dropbox recipe sync dry run for `imports/dropbox-recipes/parsed-recipes.json`. First validate the JSON with `scripts/import-recipes.ts --validate-only`, then run `scripts/import-recipes.ts --sync` without `--commit` against the local API. Report new, changed, unchanged, name-conflict, and missing-source recipes. Do not create, update, or delete recipes.
 - Before committing, run the relevant verification for the touched files when practical.
 - Never include unrelated work in the commit. If unrelated changes are present, leave them unstaged and mention them.
