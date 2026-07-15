@@ -46,7 +46,7 @@ Use the Location API to resolve a nearby or user-selected QFC store.
 - Public Location API rate limit from catalog docs: 1,600 calls per day per endpoint.
 - Default location search returns 10 results, with `filter.limit` up to 200.
 - The docs note the default radius is 10 miles; widen `filter.radiusInMiles` if increasing the limit.
-- Store the selected `locationId` in app settings so product matching can use it.
+- Store the selected `locationId` in app settings so store-item matching can use it.
 
 Implemented app flow:
 
@@ -55,27 +55,29 @@ Implemented app flow:
 3. Persist `locationId`.
 4. Use that value in Product API `filter.locationId`.
 
-## Products
+## Store Items (Kroger Products API)
 
-Use Product API to turn a shopping-list item into a product candidate.
+Use Kroger's Product API to turn a shopping-list ingredient into store-item candidates. Product terminology is kept only where it names Kroger's external API and fields.
 
 - Public Product API rate limit from catalog docs: 10,000 calls per day.
 - Product search supports `filter.limit` and `filter.start`; default page size is 10.
 - The docs warn fuzzy search ordering can change between requests.
 - Include `filter.locationId` to get local price, fulfillment booleans, aisle locations, and inventory `stockLevel`.
 - The docs define inventory values as `HIGH`, `LOW`, and `TEMPORARILY_OUT_OF_STOCK`.
-- Store-brand matching prefers QFC/Kroger/Simple Truth/Private Selection when the `preferStoreBrands` setting is enabled.
+- A remembered ingredient-to-store-item mapping wins when one exists.
+- Store-brand matching prefers QFC/Kroger/Simple Truth/Private Selection when the `preferStoreBrands` setting is enabled and no remembered mapping exists.
 
-The implemented matching step currently returns transient product candidates with:
+The implemented matching step returns transient store-item candidates with:
 
 - `productId`
 - UPC
-- product description/brand/size
+- description/brand/size
+- selected product image URL when Kroger provides one
 - stock level
 - price
 - store-brand flag
 
-Product selections are not persisted on shopping-list rows yet. The current preview path searches by each approved row's `item` text and chooses one candidate. The resulting ingredient-to-product matches are retained in a short-lived server job so the user can review them before explicitly confirming the cart mutation.
+Selections made in the review are persisted in `store_item_preferences`, keyed by provider and normalized ingredient name. The current review stays in a short-lived server job so the user can change candidates or run a custom-term search that replaces the candidates for a matched ingredient. The same search can promote an unmatched ingredient when it finds results. A remembered store item is reused on future menus; otherwise the general availability and store-brand ranking chooses the initial candidate.
 
 ## Cart
 
@@ -111,18 +113,17 @@ Implementation note: the OpenAPI document endpoint required authentication when 
 
 1. `getServiceToken()` for Products/Locations.
 2. `getCustomerAccessToken()` and `refreshCustomerToken()` for Cart.
-3. `searchProducts(item, locationId)` returning ranked candidates.
-4. `chooseProductCandidate(candidates)` using store-brand and availability rules.
+3. `searchStoreItems(item, locationId)` returning candidates from Kroger's Products API.
+4. Remembered ingredient mapping lookup, followed by `chooseStoreItemCandidate(candidates)` as the fallback.
 5. `addMatchedItemsToCart(matches)` using customer auth.
-6. `submitToQfcCart(items)` orchestration with a result that reports matched, skipped, and submitted items.
+6. `previewQfcCart(items)` and `addQfcMatchesToCart(matches)` orchestration with results that report matched, skipped, and submitted items.
 
-This keeps product matching testable without requiring a live customer session.
+This keeps store-item matching testable without requiring a live customer session.
 
 ## Remaining Cart Work
 
-Cart mutation is implemented, but it still needs product-review polish before it should be trusted for a full real grocery run:
+Cart mutation is implemented, but it still needs review polish before it should be trusted for a full real grocery run:
 
-1. Add a product matching review screen before submission.
-2. Persist selected product/cart identifiers for each approved shopping-list row.
-3. Let the user choose package/cart quantities instead of always sending quantity `1`.
-4. Improve unit display and package conversion.
+1. Let the user search beyond the first candidate page during review.
+2. Let the user choose package/cart quantities instead of always sending quantity `1`.
+3. Improve unit display and package conversion.

@@ -24,6 +24,12 @@ function columnIsNotNull(tableName: string, columnName: string) {
   );
 }
 
+function storeItemPreferencesHaveProviderKey() {
+  const columns = queryAll(`PRAGMA table_info(store_item_preferences)`);
+  return columns.some((column) => column.name === "provider" && column.pk === 1)
+    && columns.some((column) => column.name === "ingredient_key" && column.pk === 2);
+}
+
 export async function initializeDb() {
   SQL = await initSqlJs();
   if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
@@ -91,7 +97,62 @@ export async function initializeDb() {
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS store_item_preferences (
+    ingredient_key TEXT NOT NULL,
+    ingredient_name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    store_item_id TEXT NOT NULL,
+    upc TEXT NOT NULL,
+    description TEXT NOT NULL,
+    brand TEXT NOT NULL DEFAULT '',
+    size TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    is_store_brand INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (provider, ingredient_key)
+  );
 `);
+  saveDb();
+
+  if (!storeItemPreferencesHaveProviderKey()) {
+    run("ALTER TABLE store_item_preferences RENAME TO store_item_preferences_old");
+    run(`
+      CREATE TABLE store_item_preferences (
+        ingredient_key TEXT NOT NULL,
+        ingredient_name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        store_item_id TEXT NOT NULL,
+        upc TEXT NOT NULL,
+        description TEXT NOT NULL,
+        brand TEXT NOT NULL DEFAULT '',
+        size TEXT NOT NULL DEFAULT '',
+        image_url TEXT NOT NULL DEFAULT '',
+        is_store_brand INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider, ingredient_key)
+      )
+    `);
+    run(`
+      INSERT INTO store_item_preferences (
+        ingredient_key, ingredient_name, provider, store_item_id, upc,
+        description, brand, size, image_url, is_store_brand, created_at, updated_at
+      )
+      SELECT
+        ingredient_key, ingredient_name, provider, store_item_id, upc,
+        description, brand, size, '', is_store_brand, created_at, updated_at
+      FROM store_item_preferences_old
+    `);
+    run("DROP TABLE store_item_preferences_old");
+    saveDb();
+  }
+
+  if (!columnExists("store_item_preferences", "image_url")) {
+    run("ALTER TABLE store_item_preferences ADD COLUMN image_url TEXT NOT NULL DEFAULT ''");
+    saveDb();
+  }
 
   if (!columnExists("recipes", "is_test_data")) {
     run("ALTER TABLE recipes ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");

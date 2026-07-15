@@ -6,11 +6,14 @@ import {
   createCustomerAuthorizationUrl,
   exchangeCustomerAuthorizationCode,
   getQfcApiStatus,
+  getStoreItemPreferences,
   refreshCustomerToken,
   saveQfcApiSettings,
+  saveStoreItemPreference,
   searchLocations,
   previewQfcCart,
-  searchProducts
+  searchStoreItems,
+  deleteStoreItemPreference
 } from "./qfcAdapter.js";
 import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
 import type { Recipe, RecipeInput } from "./types.js";
@@ -511,20 +514,29 @@ app.get("/api/qfc/locations", async (req, res) => {
   }
 });
 
-app.get("/api/qfc/products", async (req, res) => {
+app.get("/api/qfc/store-items", async (req, res) => {
   try {
     const term = String(req.query.term ?? "");
     const limit = Number(req.query.limit ?? 10);
     const locationId = req.query.locationId ? String(req.query.locationId) : undefined;
     if (!term.trim()) {
-      res.status(400).json({ error: "A product search term is required." });
+      res.status(400).json({ error: "A store item search term is required." });
       return;
     }
 
-    res.json(await searchProducts(term, { locationId, limit }));
+    res.json(await searchStoreItems(term, { locationId, limit }));
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search products." });
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search store items." });
   }
+});
+
+app.get("/api/store-item-preferences", (_req, res) => {
+  res.json(getStoreItemPreferences());
+});
+
+app.delete("/api/store-item-preferences/:provider/:ingredientKey", (req, res) => {
+  deleteStoreItemPreference(req.params.provider, req.params.ingredientKey);
+  res.json({ ok: true });
 });
 
 app.post("/api/menus/preview", (req, res) => {
@@ -853,7 +865,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
       phase: "checking",
       processedItems: 0,
       totalItems: rows.length,
-      message: "Starting QFC product matching..."
+      message: "Starting store item matching..."
     },
     createdAt: Date.now()
   };
@@ -874,7 +886,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
     })
     .catch((error: unknown) => {
       job.status = "failed";
-      job.error = error instanceof Error ? error.message : "QFC cart submission failed.";
+      job.error = error instanceof Error ? error.message : "Store item matching failed.";
       job.progress = {
         phase: "complete",
         processedItems: rows.length,
@@ -886,11 +898,133 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
   res.status(202).json({ jobId, ...job });
 });
 
+app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) => {
+  pruneQfcSubmitJobs();
+  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
+    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
+    return;
+  }
+
+  const shoppingItemId = Number(req.params.shoppingItemId);
+  const match = previewJob.result.matched?.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
+  if (!match) {
+    res.status(404).json({ error: "The ingredient was not found in this store item review." });
+    return;
+  }
+
+  const productId = String(req.body.productId ?? "");
+  const upc = String(req.body.upc ?? "");
+  const storeItem = match.candidates.find((candidate) =>
+    candidate.productId === productId && candidate.upc === upc
+  );
+  if (!storeItem) {
+    res.status(400).json({ error: "Choose a store item from the current review results." });
+    return;
+  }
+
+  const ingredientName = match.item.item.trim() || match.item.text.trim();
+  const preference = saveStoreItemPreference("kroger", ingredientName, storeItem);
+  match.storeItem = storeItem;
+  match.selectionSource = "remembered";
+  res.json({ match, preference });
+});
+
+app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (req, res) => {
+  pruneQfcSubmitJobs();
+  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
+    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
+    return;
+  }
+
+  const shoppingItemId = Number(req.params.shoppingItemId);
+  const matches = previewJob.result.matched ?? [];
+  const skipped = previewJob.result.skipped ?? [];
+  let match = matches.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
+  const skip = skipped.find((candidateSkip) => candidateSkip.item.id === shoppingItemId);
+  if (!match && !skip) {
+    res.status(404).json({ error: "The ingredient was not found in this store item review." });
+    return;
+  }
+
+  const term = String(req.body.term ?? "").trim();
+  if (!term) {
+    res.status(400).json({ error: "Enter a search term to find store items." });
+    return;
+  }
+
+  try {
+    const results = await searchStoreItems(term, { limit: 20 });
+    const candidateKeys = new Set<string>();
+    const candidates = results.filter((candidate) => {
+      const key = `${candidate.productId}\u0000${candidate.upc}`;
+      if (candidateKeys.has(key)) return false;
+      candidateKeys.add(key);
+      return true;
+    });
+
+    if (candidates.length) {
+      if (match) {
+        match.candidates = candidates;
+        match.storeItem = candidates[0];
+        match.selectionSource = "search";
+      } else if (skip) {
+        match = {
+          item: skip.item,
+          storeItem: candidates[0],
+          candidates,
+          selectionSource: "search",
+          cartQuantity: 1
+        };
+        previewJob.result.matched = [...matches, match].sort((left, right) => left.item.id - right.item.id);
+        previewJob.result.skipped = skipped.filter((candidateSkip) => candidateSkip.item.id !== shoppingItemId);
+      }
+    }
+
+    res.json({
+      match: match ?? null,
+      matched: previewJob.result.matched ?? matches,
+      skipped: previewJob.result.skipped ?? skipped,
+      resultCount: candidates.length
+    });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search store items." });
+  }
+});
+
+app.delete("/api/store-item-reviews/:jobId/items/:shoppingItemId", (req, res) => {
+  pruneQfcSubmitJobs();
+  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
+    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
+    return;
+  }
+
+  const shoppingItemId = Number(req.params.shoppingItemId);
+  const reviewItem = previewJob.result.items.find((item) => item.id === shoppingItemId);
+  if (!reviewItem) {
+    res.status(404).json({ error: "The ingredient was not found in this store item review." });
+    return;
+  }
+
+  previewJob.result.items = previewJob.result.items.filter((item) => item.id !== shoppingItemId);
+  previewJob.result.matched = (previewJob.result.matched ?? []).filter((match) => match.item.id !== shoppingItemId);
+  previewJob.result.skipped = (previewJob.result.skipped ?? []).filter((skip) => skip.item.id !== shoppingItemId);
+
+  res.json({
+    removedItem: reviewItem,
+    items: previewJob.result.items,
+    matched: previewJob.result.matched,
+    skipped: previewJob.result.skipped
+  });
+});
+
 app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
   pruneQfcSubmitJobs();
   const previewJob = qfcSubmitJobs.get(req.params.jobId);
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The QFC product preview is unavailable or incomplete. Preview the products again." });
+    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
     return;
   }
 
@@ -904,7 +1038,7 @@ app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
       phase: "adding",
       processedItems: previewJob.result.items.length,
       totalItems: previewJob.result.items.length,
-      message: "Adding reviewed products to your QFC cart..."
+      message: "Adding reviewed store items to your QFC cart..."
     },
     createdAt: Date.now()
   };

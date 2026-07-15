@@ -1,4 +1,4 @@
-import { queryOne, run, saveDb } from "./db.js";
+import { queryAll, queryOne, run, saveDb } from "./db.js";
 import { randomUUID } from "node:crypto";
 
 export type CartSubmissionItem = {
@@ -28,6 +28,14 @@ export type KrogerProduct = {
   upc: string;
   description: string;
   brand?: string;
+  images?: Array<{
+    perspective?: string;
+    featured?: boolean;
+    sizes?: Array<{
+      size?: string;
+      url?: string;
+    }>;
+  }>;
   items?: Array<{
     itemId?: string;
     size?: string;
@@ -47,7 +55,7 @@ export type KrogerProduct = {
   }>;
 };
 
-export type ProductCandidate = {
+export type StoreItemCandidate = {
   productId: string;
   upc: string;
   description: string;
@@ -55,6 +63,7 @@ export type ProductCandidate = {
   size: string;
   stockLevel: string;
   price: number | null;
+  imageUrl: string;
   isStoreBrand: boolean;
 };
 
@@ -78,7 +87,9 @@ export type CartSubmissionProgressHandler = (progress: CartSubmissionProgress) =
 
 export type CartSubmissionMatch = {
   item: CartSubmissionItem;
-  product: ProductCandidate;
+  storeItem: StoreItemCandidate;
+  candidates: StoreItemCandidate[];
+  selectionSource: "remembered" | "general" | "search";
   cartQuantity: number;
 };
 
@@ -341,10 +352,18 @@ export async function searchLocations(query: string, limit = 10) {
   return response.data ?? [];
 }
 
-function toProductCandidate(product: KrogerProduct): ProductCandidate {
+function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   const primaryItem = product.items?.[0];
   const brand = product.brand ?? "";
   const price = primaryItem?.price?.promo ?? primaryItem?.price?.regular ?? null;
+  const image = product.images?.find((candidate) =>
+    candidate.featured && candidate.perspective?.toLowerCase() === "front"
+  ) ?? product.images?.find((candidate) => candidate.perspective?.toLowerCase() === "front")
+    ?? product.images?.[0];
+  const imageSizes = image?.sizes ?? [];
+  const imageUrl = ["medium", "small", "large", "xlarge", "thumbnail"]
+    .map((size) => imageSizes.find((candidate) => candidate.size?.toLowerCase() === size)?.url)
+    .find(Boolean) ?? imageSizes.find((candidate) => candidate.url)?.url ?? "";
 
   return {
     productId: product.productId,
@@ -354,11 +373,12 @@ function toProductCandidate(product: KrogerProduct): ProductCandidate {
     size: primaryItem?.size ?? "",
     stockLevel: primaryItem?.inventory?.stockLevel ?? "",
     price,
+    imageUrl,
     isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase()))
   };
 }
 
-export async function searchProducts(term: string, options?: { locationId?: string; limit?: number }) {
+export async function searchStoreItems(term: string, options?: { locationId?: string; limit?: number }) {
   const accessToken = await getServiceToken();
   const locationId = options?.locationId ?? getSetting("krogerLocationId");
   const params = new URLSearchParams({
@@ -380,20 +400,156 @@ export async function searchProducts(term: string, options?: { locationId?: stri
     }
   );
 
-  return (response.data ?? []).map(toProductCandidate);
+  return (response.data ?? []).map(toStoreItemCandidate);
 }
 
 function prefersStoreBrands() {
   return getSetting("preferStoreBrands") !== "false";
 }
 
-function chooseProductCandidate(candidates: ProductCandidate[]) {
+function chooseStoreItemCandidate(candidates: StoreItemCandidate[]) {
   const inStock = candidates.filter((candidate) => candidate.stockLevel !== "TEMPORARILY_OUT_OF_STOCK");
   const pool = inStock.length ? inStock : candidates;
   if (prefersStoreBrands()) {
     return pool.find((candidate) => candidate.isStoreBrand) ?? pool[0] ?? null;
   }
   return pool[0] ?? null;
+}
+
+type StoreItemPreferenceRow = {
+  ingredientKey: string;
+  ingredientName: string;
+  provider: string;
+  storeItemId: string;
+  upc: string;
+  description: string;
+  brand: string;
+  size: string;
+  imageUrl: string;
+  isStoreBrand: number;
+  updatedAt: string;
+};
+
+export type StoreItemPreference = Omit<StoreItemPreferenceRow, "isStoreBrand"> & {
+  isStoreBrand: boolean;
+};
+
+export function normalizeIngredientKey(ingredientName: string) {
+  return ingredientName.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
+}
+
+function toStoreItemPreference(row: StoreItemPreferenceRow): StoreItemPreference {
+  return { ...row, isStoreBrand: Boolean(row.isStoreBrand) };
+}
+
+export function getStoreItemPreferences(): StoreItemPreference[] {
+  const rows = queryAll<StoreItemPreferenceRow>(
+    `SELECT
+      ingredient_key AS ingredientKey,
+      ingredient_name AS ingredientName,
+      provider,
+      store_item_id AS storeItemId,
+      upc,
+      description,
+      brand,
+      size,
+      image_url AS imageUrl,
+      is_store_brand AS isStoreBrand,
+      updated_at AS updatedAt
+    FROM store_item_preferences
+    ORDER BY ingredient_name COLLATE NOCASE`
+  );
+  return rows.map(toStoreItemPreference);
+}
+
+function getStoreItemPreference(provider: string, ingredientName: string): StoreItemPreference | null {
+  const row = queryOne<StoreItemPreferenceRow>(
+    `SELECT
+      ingredient_key AS ingredientKey,
+      ingredient_name AS ingredientName,
+      provider,
+      store_item_id AS storeItemId,
+      upc,
+      description,
+      brand,
+      size,
+      image_url AS imageUrl,
+      is_store_brand AS isStoreBrand,
+      updated_at AS updatedAt
+    FROM store_item_preferences
+    WHERE provider = ? AND ingredient_key = ?`,
+    [provider, normalizeIngredientKey(ingredientName)]
+  );
+  return row ? toStoreItemPreference(row) : null;
+}
+
+export function saveStoreItemPreference(
+  provider: string,
+  ingredientName: string,
+  storeItem: StoreItemCandidate
+): StoreItemPreference {
+  const normalizedIngredientName = ingredientName.trim();
+  const ingredientKey = normalizeIngredientKey(normalizedIngredientName);
+  if (!ingredientKey) {
+    throw new Error("An ingredient name is required to remember a store item.");
+  }
+
+  run(
+    `INSERT INTO store_item_preferences (
+      ingredient_key, ingredient_name, provider, store_item_id, upc,
+      description, brand, size, image_url, is_store_brand
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(provider, ingredient_key) DO UPDATE SET
+      ingredient_name = excluded.ingredient_name,
+      provider = excluded.provider,
+      store_item_id = excluded.store_item_id,
+      upc = excluded.upc,
+      description = excluded.description,
+      brand = excluded.brand,
+      size = excluded.size,
+      image_url = excluded.image_url,
+      is_store_brand = excluded.is_store_brand,
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      ingredientKey,
+      normalizedIngredientName,
+      provider,
+      storeItem.productId,
+      storeItem.upc,
+      storeItem.description,
+      storeItem.brand,
+      storeItem.size,
+      storeItem.imageUrl,
+      storeItem.isStoreBrand ? 1 : 0
+    ]
+  );
+  saveDb();
+  return getStoreItemPreference(provider, normalizedIngredientName)!;
+}
+
+export function deleteStoreItemPreference(provider: string, ingredientKey: string) {
+  run("DELETE FROM store_item_preferences WHERE provider = ? AND ingredient_key = ?", [provider, ingredientKey]);
+  saveDb();
+}
+
+function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandidate {
+  return {
+    productId: preference.storeItemId,
+    upc: preference.upc,
+    description: preference.description,
+    brand: preference.brand,
+    size: preference.size,
+    stockLevel: "",
+    price: null,
+    imageUrl: preference.imageUrl,
+    isStoreBrand: preference.isStoreBrand
+  };
+}
+
+function distinctStoreItems(candidates: StoreItemCandidate[]) {
+  return candidates.filter((candidate, index) =>
+    candidates.findIndex((other) => other.productId === candidate.productId && other.upc === candidate.upc) === index
+  );
 }
 
 async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubmissionProgressHandler) {
@@ -406,7 +562,7 @@ async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubm
       phase: "matching",
       processedItems: index,
       totalItems: items.length,
-      message: `Matching ${searchTerm || "item"} with QFC products...`
+      message: `Matching ${searchTerm || "item"} with store items...`
     });
 
     if (!searchTerm) {
@@ -421,18 +577,33 @@ async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubm
     }
 
     try {
-      const candidates = await searchProducts(searchTerm, { limit: 10 });
-      const product = chooseProductCandidate(candidates);
-      if (!product) {
-        skipped.push({ item, reason: "No product candidates found." });
+      const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10 });
+      const preference = getStoreItemPreference("kroger", searchTerm);
+      const preferredCandidate = preference
+        ? searchedCandidates.find((candidate) =>
+            candidate.productId === preference.storeItemId || candidate.upc === preference.upc
+          ) ?? preferenceToStoreItem(preference)
+        : null;
+      const candidates = distinctStoreItems(preferredCandidate
+        ? [preferredCandidate, ...searchedCandidates]
+        : searchedCandidates);
+      const storeItem = preferredCandidate ?? chooseStoreItemCandidate(candidates);
+      if (!storeItem) {
+        skipped.push({ item, reason: "No store item candidates found." });
         continue;
       }
 
-      matched.push({ item, product, cartQuantity: 1 });
+      matched.push({
+        item,
+        storeItem,
+        candidates,
+        selectionSource: preferredCandidate ? "remembered" : "general",
+        cartQuantity: 1
+      });
     } catch (error) {
       skipped.push({
         item,
-        reason: error instanceof Error ? error.message : "Product search failed."
+        reason: error instanceof Error ? error.message : "Store item search failed."
       });
     }
 
@@ -450,7 +621,7 @@ async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubm
 async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
   const accessToken = await getCustomerAccessToken();
   const items = matches.map((match) => ({
-    upc: match.product.upc,
+    upc: match.storeItem.upc,
     quantity: match.cartQuantity,
     modality: "PICKUP"
   }));
@@ -474,7 +645,7 @@ export async function previewQfcCart(
     phase: "checking",
     processedItems: 0,
     totalItems: items.length,
-    message: "Checking QFC API settings..."
+    message: "Checking store API settings..."
   });
 
   const status = getQfcApiStatus();
@@ -482,7 +653,7 @@ export async function previewQfcCart(
     return {
       mode: "stub",
       submittedItemCount: 0,
-      message: "Kroger API credentials are not configured yet, so QFC products cannot be previewed.",
+      message: "Kroger API credentials are not configured yet, so store items cannot be previewed.",
       items
     };
   }
@@ -492,7 +663,7 @@ export async function previewQfcCart(
     return {
       mode: "api",
       submittedItemCount: 0,
-      message: "No approved ingredients could be matched to QFC products.",
+      message: "No approved ingredients could be matched to store items.",
       items,
       matched,
       skipped
@@ -502,7 +673,7 @@ export async function previewQfcCart(
   return {
     mode: "api",
     submittedItemCount: 0,
-    message: `${matched.length} ingredient${matched.length === 1 ? "" : "s"} matched to QFC products. ${skipped.length} ingredient${skipped.length === 1 ? "" : "s"} unmatched.`,
+    message: `${matched.length} ingredient${matched.length === 1 ? "" : "s"} matched to store items. ${skipped.length} ingredient${skipped.length === 1 ? "" : "s"} unmatched.`,
     items,
     matched,
     skipped
@@ -520,7 +691,7 @@ export async function addQfcMatchesToCart(
     return {
       mode: "stub",
       submittedItemCount: 0,
-      message: "Connect your QFC customer account before adding the reviewed products to the cart.",
+      message: "Connect your QFC customer account before adding the reviewed store items to the cart.",
       items,
       matched,
       skipped
@@ -531,7 +702,7 @@ export async function addQfcMatchesToCart(
     return {
       mode: "api",
       submittedItemCount: 0,
-      message: "There are no matched QFC products to add to the cart.",
+      message: "There are no matched store items to add to the cart.",
       items,
       matched,
       skipped

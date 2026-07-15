@@ -9,12 +9,14 @@ import {
   Menu as MenuIcon,
   Moon,
   RefreshCw,
+  Search,
   Send,
   Settings,
   Shuffle,
   Sun,
   Trash2,
-  X
+  X,
+  Package
 } from "lucide-react";
 import "./styles.css";
 
@@ -32,7 +34,7 @@ type Recipe = {
 
 type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
-type QfcSettingsTab = "api" | "search";
+type QfcSettingsTab = "api" | "preferences";
 type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
 
@@ -97,7 +99,7 @@ type QfcLocation = {
   };
 };
 
-type ProductCandidate = {
+type StoreItemCandidate = {
   productId: string;
   upc: string;
   description: string;
@@ -105,6 +107,7 @@ type ProductCandidate = {
   size: string;
   stockLevel: string;
   price: number | null;
+  imageUrl: string;
   isStoreBrand: boolean;
 };
 
@@ -124,15 +127,17 @@ type QfcSubmitJob = {
     submittedItemCount: number;
     message: string;
     items: ShoppingListItem[];
-    matched?: QfcCartMatch[];
+    matched?: StoreItemMatch[];
     skipped?: QfcCartSkip[];
   };
   error?: string;
 };
 
-type QfcCartMatch = {
+type StoreItemMatch = {
   item: ShoppingListItem;
-  product: ProductCandidate;
+  storeItem: StoreItemCandidate;
+  candidates: StoreItemCandidate[];
+  selectionSource: "remembered" | "general" | "search";
   cartQuantity: number;
 };
 
@@ -141,9 +146,23 @@ type QfcCartSkip = {
   reason: string;
 };
 
-type QfcCartPreview = {
+type StoreItemReview = {
   jobId: string;
   result: NonNullable<QfcSubmitJob["result"]>;
+};
+
+type StoreItemPreference = {
+  ingredientKey: string;
+  ingredientName: string;
+  provider: string;
+  storeItemId: string;
+  upc: string;
+  description: string;
+  brand: string;
+  size: string;
+  imageUrl: string;
+  isStoreBrand: boolean;
+  updatedAt: string;
 };
 
 type AppView = "recipe-admin" | "qfc-api" | "planner";
@@ -230,16 +249,21 @@ function App() {
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
   const [qfcSubmitProgress, setQfcSubmitProgress] = useState<QfcSubmitProgress | null>(null);
-  const [qfcCartPreview, setQfcCartPreview] = useState<QfcCartPreview | null>(null);
-  const [qfcCartMessage, setQfcCartMessage] = useState("");
+  const [storeItemReview, setStoreItemReview] = useState<StoreItemReview | null>(null);
+  const [storeItemReviewMessage, setStoreItemReviewMessage] = useState("");
+  const [storeItemPreferences, setStoreItemPreferences] = useState<StoreItemPreference[]>([]);
 
   async function loadRecipes() {
     setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
   }
 
   async function loadSettings() {
-    const settings = await api<Record<string, string>>("/api/settings");
+    const [settings, preferences] = await Promise.all([
+      api<Record<string, string>>("/api/settings"),
+      api<StoreItemPreference[]>("/api/store-item-preferences")
+    ]);
     setPreferStoreBrands(settings.preferStoreBrands === "true");
+    setStoreItemPreferences(preferences);
     setQfcStatus(await api<QfcStatus>("/api/qfc/status"));
   }
 
@@ -263,8 +287,8 @@ function App() {
       setActiveMenu(preview);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setQfcCartPreview(null);
-      setQfcCartMessage("");
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
     }
@@ -291,8 +315,8 @@ function App() {
       setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setQfcCartPreview(null);
-      setQfcCartMessage("");
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
       setMessage("Menu saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to save menu.");
@@ -304,8 +328,8 @@ function App() {
     setActiveMenu(null);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
-    setQfcCartPreview(null);
-    setQfcCartMessage("");
+    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
     setMessage("");
   }
 
@@ -332,8 +356,8 @@ function App() {
       });
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setQfcCartPreview(null);
-      setQfcCartMessage("");
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
       return;
     }
 
@@ -345,8 +369,8 @@ function App() {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setQfcCartPreview(null);
-      setQfcCartMessage("");
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
     }
   }
 
@@ -359,8 +383,8 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
     setDirtyShoppingItemIds(new Set());
-    setQfcCartPreview(null);
-    setQfcCartMessage("");
+    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
   }
 
   async function clearAggregatedIngredients() {
@@ -368,8 +392,8 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
-    setQfcCartPreview(null);
-    setQfcCartMessage("");
+    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
     setMessage("");
   }
 
@@ -392,15 +416,15 @@ function App() {
     });
   }
 
-  async function previewQfcProducts() {
+  async function previewStoreItems() {
     if (!activeMenu?.id) return;
     const menuId = activeMenu.id;
     setMessage("");
 
     if (dirtyShoppingItemIds.size) {
-      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching QFC products?");
+      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching store items?");
       if (!shouldSave) {
-        setMessage("QFC product matching canceled. Save or discard ingredient changes first.");
+        setMessage("Store item matching canceled. Save or discard ingredient changes first.");
         return;
       }
 
@@ -418,12 +442,12 @@ function App() {
       phase: "checking",
       processedItems: 0,
       totalItems: shoppingList.filter((item) => item.approved).length,
-      message: "Starting QFC product matching..."
+      message: "Starting store item matching..."
     });
 
     try {
-      setQfcCartPreview(null);
-      setQfcCartMessage("");
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
       const started = await api<QfcSubmitJob>(`/api/menus/${menuId}/preview-qfc`, { method: "POST" });
       setQfcSubmitProgress(started.progress);
 
@@ -435,33 +459,33 @@ function App() {
       }
 
       if (job.status === "failed") {
-        throw new Error(job.error ?? "QFC product matching failed.");
+        throw new Error(job.error ?? "Store item matching failed.");
       }
 
       setMessage(job.result?.message ?? job.progress.message);
       if (job.result) {
-        setQfcCartPreview({ jobId: started.id, result: job.result });
+        setStoreItemReview({ jobId: started.id, result: job.result });
       }
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "QFC product matching failed.");
+      setMessage(err instanceof Error ? err.message : "Store item matching failed.");
     } finally {
       setQfcSubmitProgress(null);
     }
   }
 
-  async function addReviewedProductsToQfc() {
-    if (!qfcCartPreview || !activeMenu?.id) return;
+  async function addReviewedStoreItemsToQfc() {
+    if (!storeItemReview || !activeMenu?.id) return;
     setMessage("");
-    setQfcCartMessage("");
+    setStoreItemReviewMessage("");
     setQfcSubmitProgress({
       phase: "adding",
-      processedItems: qfcCartPreview.result.items.length,
-      totalItems: qfcCartPreview.result.items.length,
-      message: "Adding reviewed products to your QFC cart..."
+      processedItems: storeItemReview.result.items.length,
+      totalItems: storeItemReview.result.items.length,
+      message: "Adding reviewed store items to your QFC cart..."
     });
 
     try {
-      const started = await api<QfcSubmitJob>(`/api/qfc/submit-jobs/${qfcCartPreview.jobId}/add-to-cart`, {
+      const started = await api<QfcSubmitJob>(`/api/qfc/submit-jobs/${storeItemReview.jobId}/add-to-cart`, {
         method: "POST"
       });
       setQfcSubmitProgress(started.progress);
@@ -476,7 +500,7 @@ function App() {
       }
       const confirmation = job.result?.message ?? job.progress.message;
       setMessage(confirmation);
-      setQfcCartMessage(confirmation);
+      setStoreItemReviewMessage(confirmation);
       await loadMenu(activeMenu.id);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
@@ -491,7 +515,7 @@ function App() {
 
   async function updateStoreBrandPreference(next: boolean) {
     setPreferStoreBrands(next);
-    setQfcCartPreview(null);
+    setStoreItemReview(null);
     await api("/api/settings/preferStoreBrands", {
       method: "PUT",
       body: JSON.stringify({ value: String(next) })
@@ -512,6 +536,106 @@ function App() {
   function selectView(view: AppView) {
     setActiveView(view);
     setIsMenuOpen(false);
+  }
+
+  async function selectStoreItem(shoppingItemId: number, productId: string, upc: string) {
+    if (!storeItemReview) return;
+    setStoreItemReviewMessage("");
+    try {
+      const result = await api<{ match: StoreItemMatch; preference: StoreItemPreference }>(
+        `/api/store-item-reviews/${storeItemReview.jobId}/selections/${shoppingItemId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ productId, upc })
+        }
+      );
+      setStoreItemReview((current) => current ? {
+        ...current,
+        result: {
+          ...current.result,
+          matched: current.result.matched?.map((match) =>
+            match.item.id === shoppingItemId ? result.match : match
+          )
+        }
+      } : current);
+      setStoreItemPreferences((current) => [
+        ...current.filter((preference) =>
+          preference.provider !== result.preference.provider
+          || preference.ingredientKey !== result.preference.ingredientKey
+        ),
+        result.preference
+      ].sort((left, right) => left.ingredientName.localeCompare(right.ingredientName)));
+      setStoreItemReviewMessage(`Remembered ${result.preference.description} for ${result.preference.ingredientName}.`);
+    } catch (err) {
+      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to remember the store item selection.");
+    }
+  }
+
+  async function searchStoreItemsForReview(shoppingItemId: number, term: string) {
+    if (!storeItemReview) {
+      throw new Error("Preview store items before searching for more choices.");
+    }
+
+    const result = await api<{
+      match: StoreItemMatch | null;
+      matched: StoreItemMatch[];
+      skipped: QfcCartSkip[];
+      resultCount: number;
+    }>(
+      `/api/store-item-reviews/${storeItemReview.jobId}/items/${shoppingItemId}/search`,
+      {
+        method: "POST",
+        body: JSON.stringify({ term })
+      }
+    );
+    setStoreItemReview((current) => current ? {
+      ...current,
+      result: {
+        ...current.result,
+        matched: result.matched,
+        skipped: result.skipped
+      }
+    } : current);
+    return result;
+  }
+
+  async function removeStoreItemFromReview(item: ShoppingListItem) {
+    if (!storeItemReview) {
+      setStoreItemReviewMessage("Preview store items before removing an ingredient.");
+      return false;
+    }
+
+    setStoreItemReviewMessage("");
+    try {
+      const result = await api<{
+        removedItem: ShoppingListItem;
+        items: ShoppingListItem[];
+        matched: StoreItemMatch[];
+        skipped: QfcCartSkip[];
+      }>(`/api/store-item-reviews/${storeItemReview.jobId}/items/${item.id}`, { method: "DELETE" });
+      setStoreItemReview((current) => current ? {
+        ...current,
+        result: {
+          ...current.result,
+          items: result.items,
+          matched: result.matched,
+          skipped: result.skipped
+        }
+      } : current);
+      setStoreItemReviewMessage(`Removed ${item.item || item.text} from this review.`);
+      return true;
+    } catch (err) {
+      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to remove the ingredient from this review.");
+      return false;
+    }
+  }
+
+  async function forgetStoreItemPreference(provider: string, ingredientKey: string) {
+    await api(`/api/store-item-preferences/${encodeURIComponent(provider)}/${encodeURIComponent(ingredientKey)}`, { method: "DELETE" });
+    setStoreItemPreferences((current) => current.filter((preference) =>
+      preference.provider !== provider || preference.ingredientKey !== ingredientKey
+    ));
+    setStoreItemReview(null);
   }
 
   return (
@@ -575,11 +699,13 @@ function App() {
         ) : null}
 
         {activeView === "qfc-api" ? (
-          <QfcApiPanel
+          <StoreSettingsPanel
             status={qfcStatus}
             reloadStatus={loadSettings}
             preferStoreBrands={preferStoreBrands}
             updateStoreBrandPreference={updateStoreBrandPreference}
+            storeItemPreferences={storeItemPreferences}
+            forgetStoreItemPreference={forgetStoreItemPreference}
           />
         ) : null}
 
@@ -601,7 +727,7 @@ function App() {
               items={shoppingList}
               setItems={setShoppingList}
               markItemDirty={(id) => {
-                setQfcCartPreview(null);
+                setStoreItemReview(null);
                 setDirtyShoppingItemIds((current) => {
                   const next = new Set(current);
                   next.add(id);
@@ -609,16 +735,19 @@ function App() {
                 });
               }}
               clearItems={clearAggregatedIngredients}
-              previewQfcProducts={previewQfcProducts}
+              previewStoreItems={previewStoreItems}
               openQfcCartToClear={openQfcCartToClear}
               qfcSubmitProgress={qfcSubmitProgress}
               message={message}
             />
-            <QfcCartReview
-              preview={qfcCartPreview}
-              addToCart={addReviewedProductsToQfc}
+            <StoreItemReviewPanel
+              review={storeItemReview}
+              addToCart={addReviewedStoreItemsToQfc}
+              selectStoreItem={selectStoreItem}
+              searchStoreItems={searchStoreItemsForReview}
+              removeStoreItem={removeStoreItemFromReview}
               qfcSubmitProgress={qfcSubmitProgress}
-              message={qfcCartMessage}
+              message={storeItemReviewMessage}
             />
           </div>
         ) : null}
@@ -627,16 +756,20 @@ function App() {
   );
 }
 
-function QfcApiPanel({
+function StoreSettingsPanel({
   status,
   reloadStatus,
   preferStoreBrands,
-  updateStoreBrandPreference
+  updateStoreBrandPreference,
+  storeItemPreferences,
+  forgetStoreItemPreference
 }: {
   status: QfcStatus | null;
   reloadStatus: () => Promise<void>;
   preferStoreBrands: boolean;
   updateStoreBrandPreference: (next: boolean) => Promise<void>;
+  storeItemPreferences: StoreItemPreference[];
+  forgetStoreItemPreference: (provider: string, ingredientKey: string) => Promise<void>;
 }) {
   const [activeQfcTab, setActiveQfcTab] = useState<QfcSettingsTab>("api");
   const [clientId, setClientId] = useState("");
@@ -647,8 +780,8 @@ function QfcApiPanel({
   const [redirectUri, setRedirectUri] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
   const [locations, setLocations] = useState<QfcLocation[]>([]);
-  const [productTerm, setProductTerm] = useState("");
-  const [products, setProducts] = useState<ProductCandidate[]>([]);
+  const [storeItemTerm, setStoreItemTerm] = useState("");
+  const [storeItems, setStoreItems] = useState<StoreItemCandidate[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -722,18 +855,18 @@ function QfcApiPanel({
     }
   }
 
-  async function findProducts() {
+  async function findStoreItems() {
     setError("");
     try {
-      const params = new URLSearchParams({ term: productTerm });
+      const params = new URLSearchParams({ term: storeItemTerm });
       const trimmedLocationId = locationId.trim();
       if (trimmedLocationId) {
         params.set("locationId", trimmedLocationId);
         await saveLocationId(trimmedLocationId);
       }
-      setProducts(await api<ProductCandidate[]>(`/api/qfc/products?${params.toString()}`));
+      setStoreItems(await api<StoreItemCandidate[]>(`/api/qfc/store-items?${params.toString()}`));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to search products.");
+      setError(err instanceof Error ? err.message : "Unable to search store items.");
     }
   }
 
@@ -764,13 +897,13 @@ function QfcApiPanel({
           QFC API Setup
         </button>
         <button
-          className={`sub-tab-button ${activeQfcTab === "search" ? "active" : ""}`}
-          onClick={() => setActiveQfcTab("search")}
+          className={`sub-tab-button ${activeQfcTab === "preferences" ? "active" : ""}`}
+          onClick={() => setActiveQfcTab("preferences")}
           role="tab"
-          aria-selected={activeQfcTab === "search"}
+          aria-selected={activeQfcTab === "preferences"}
           type="button"
         >
-          QFC Search Preferences
+          Store Item Preferences
         </button>
       </div>
 
@@ -858,15 +991,15 @@ function QfcApiPanel({
 
             <div>
               <div className="tool-row">
-                <input value={productTerm} onChange={(event) => setProductTerm(event.target.value)} placeholder="Search products" />
-                <button className="secondary" onClick={() => void findProducts()}>Find products</button>
+                <input value={storeItemTerm} onChange={(event) => setStoreItemTerm(event.target.value)} placeholder="Search store items" />
+                <button className="secondary" onClick={() => void findStoreItems()}>Find store items</button>
               </div>
               <div className="result-list">
-                {products.map((product) => (
-                  <div className="product-row" key={`${product.productId}-${product.upc}`}>
-                    <strong>{product.description}</strong>
-                    <span>{[product.brand, product.size, product.stockLevel].filter(Boolean).join(" / ")}</span>
-                    <span>{product.price === null ? "" : `$${product.price.toFixed(2)}`}</span>
+                {storeItems.map((storeItem) => (
+                  <div className="store-item-row" key={`${storeItem.productId}-${storeItem.upc}`}>
+                    <strong>{storeItem.description}</strong>
+                    <span>{[storeItem.brand, storeItem.size, storeItem.stockLevel].filter(Boolean).join(" / ")}</span>
+                    <span>{storeItem.price === null ? "" : `$${storeItem.price.toFixed(2)}`}</span>
                   </div>
                 ))}
               </div>
@@ -883,8 +1016,36 @@ function QfcApiPanel({
               checked={preferStoreBrands}
               onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
             />
-            <span>Prefer QFC/Kroger store brands</span>
+            <span>Prefer store brands when an ingredient has no remembered store item</span>
           </label>
+          <div className="store-item-preference-section">
+            <div>
+              <h4>Remembered store items</h4>
+              <p>Selections made during store item review are reused whenever the same ingredient appears again.</p>
+            </div>
+            {storeItemPreferences.length ? (
+              <div className="store-item-preference-list">
+                {storeItemPreferences.map((preference) => (
+                  <div className="store-item-preference-row" key={preference.ingredientKey}>
+                    <div>
+                      <strong>{preference.ingredientName}</strong>
+                      <span>{preference.description}</span>
+                      <span>{[preference.brand, preference.size].filter(Boolean).join(" · ")}</span>
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={() => void forgetStoreItemPreference(preference.provider, preference.ingredientKey)}
+                      type="button"
+                    >
+                      Forget
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">No store item choices have been remembered yet.</div>
+            )}
+          </div>
         </div>
       )}
     </section>
@@ -1436,7 +1597,7 @@ function ShoppingListReview({
   setItems,
   markItemDirty,
   clearItems,
-  previewQfcProducts,
+  previewStoreItems,
   openQfcCartToClear,
   qfcSubmitProgress,
   message
@@ -1445,7 +1606,7 @@ function ShoppingListReview({
   setItems: (items: ShoppingListItem[]) => void;
   markItemDirty: (id: number) => void;
   clearItems: () => Promise<void>;
-  previewQfcProducts: () => Promise<void>;
+  previewStoreItems: () => Promise<void>;
   openQfcCartToClear: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
@@ -1491,9 +1652,9 @@ function ShoppingListReview({
               <ExternalLink size={17} />
               Open cart on QFC
             </button>
-            <button onClick={() => void previewQfcProducts()} disabled={Boolean(qfcSubmitProgress)}>
+            <button onClick={() => void previewStoreItems()} disabled={Boolean(qfcSubmitProgress)}>
               <Send size={17} />
-              {qfcSubmitProgress ? "Matching QFC products..." : "Review QFC products"}
+              {qfcSubmitProgress ? "Matching store items..." : "Review store items"}
             </button>
           </div>
         </>
@@ -1507,63 +1668,272 @@ function ShoppingListReview({
   );
 }
 
-function QfcCartReview({
-  preview,
+function StoreItemReviewPanel({
+  review,
   addToCart,
+  selectStoreItem,
+  searchStoreItems,
+  removeStoreItem,
   qfcSubmitProgress,
   message
 }: {
-  preview: QfcCartPreview | null;
+  review: StoreItemReview | null;
   addToCart: () => Promise<void>;
+  selectStoreItem: (shoppingItemId: number, productId: string, upc: string) => Promise<void>;
+  searchStoreItems: (
+    shoppingItemId: number,
+    term: string
+  ) => Promise<{
+    match: StoreItemMatch | null;
+    matched: StoreItemMatch[];
+    skipped: QfcCartSkip[];
+    resultCount: number;
+  }>;
+  removeStoreItem: (item: ShoppingListItem) => Promise<boolean>;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
-  const matches = preview?.result.matched ?? [];
-  const skipped = preview?.result.skipped ?? [];
+  const [selectingItemId, setSelectingItemId] = useState<number | null>(null);
+  const [findingItemId, setFindingItemId] = useState<number | null>(null);
+  const [searchingItemId, setSearchingItemId] = useState<number | null>(null);
+  const [removingItemId, setRemovingItemId] = useState<number | null>(null);
+  const [customSearchTerm, setCustomSearchTerm] = useState("");
+  const [customSearchFeedback, setCustomSearchFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const matches = review?.result.matched ?? [];
+  const skipped = review?.result.skipped ?? [];
+
+  useEffect(() => {
+    setFindingItemId(null);
+    setSearchingItemId(null);
+    setRemovingItemId(null);
+    setCustomSearchTerm("");
+    setCustomSearchFeedback(null);
+  }, [review?.jobId]);
+
+  async function updateSelection(match: StoreItemMatch, selection: string) {
+    const [productId, upc] = JSON.parse(selection) as [string, string];
+    setSelectingItemId(match.item.id);
+    try {
+      await selectStoreItem(match.item.id, productId, upc);
+    } finally {
+      setSelectingItemId(null);
+    }
+  }
+
+  async function removeReviewItem(item: ShoppingListItem) {
+    setRemovingItemId(item.id);
+    try {
+      const removed = await removeStoreItem(item);
+      if (removed && findingItemId === item.id) {
+        setFindingItemId(null);
+        setCustomSearchTerm("");
+        setCustomSearchFeedback(null);
+      }
+    } finally {
+      setRemovingItemId(null);
+    }
+  }
+
+  function renderRemoveButton(item: ShoppingListItem) {
+    return (
+      <button
+        className="danger store-item-remove-button"
+        type="button"
+        disabled={removingItemId === item.id}
+        onClick={() => void removeReviewItem(item)}
+      >
+        <Trash2 size={16} />
+        {removingItemId === item.id ? "Removing..." : "Remove from review"}
+      </button>
+    );
+  }
+
+  function showCustomSearch(item: ShoppingListItem) {
+    setFindingItemId(item.id);
+    setCustomSearchTerm(item.item || item.text);
+    setCustomSearchFeedback(null);
+  }
+
+  async function runCustomSearch(event: React.FormEvent, item: ShoppingListItem) {
+    event.preventDefault();
+    const term = customSearchTerm.trim();
+    if (!term) {
+      setCustomSearchFeedback({ type: "error", text: "Enter a search term." });
+      return;
+    }
+
+    const wasUnmatched = skipped.some((skip) => skip.item.id === item.id);
+    setSearchingItemId(item.id);
+    setCustomSearchFeedback(null);
+    try {
+      const result = await searchStoreItems(item.id, term);
+      if (!result.resultCount) {
+        setCustomSearchFeedback({ type: "error", text: `No store items found for “${term}”.` });
+      } else {
+        setCustomSearchFeedback({
+          type: "success",
+          text: wasUnmatched
+            ? `${result.resultCount} store item${result.resultCount === 1 ? "" : "s"} found. The ingredient is now matched.`
+            : `Dropdown replaced with ${result.resultCount} store item${result.resultCount === 1 ? "" : "s"}.`
+        });
+      }
+    } catch (err) {
+      setCustomSearchFeedback({
+        type: "error",
+        text: err instanceof Error ? err.message : "Unable to search store items."
+      });
+    } finally {
+      setSearchingItemId(null);
+    }
+  }
+
+  function renderFindItemControl(item: ShoppingListItem) {
+    if (findingItemId !== item.id) {
+      return (
+        <button
+          className="secondary store-item-find-button"
+          type="button"
+          onClick={() => showCustomSearch(item)}
+        >
+          <Search size={16} />
+          Find item
+        </button>
+      );
+    }
+
+    return (
+      <form className="store-item-custom-search" onSubmit={(event) => void runCustomSearch(event, item)}>
+        <label>
+          <span className="eyebrow">Custom store item search</span>
+          <input
+            value={customSearchTerm}
+            onChange={(event) => setCustomSearchTerm(event.target.value)}
+            placeholder="Enter a different search term"
+            autoFocus
+          />
+        </label>
+        <div className="store-item-custom-search-actions">
+          <button
+            type="submit"
+            disabled={!customSearchTerm.trim() || searchingItemId === item.id}
+          >
+            <Search size={16} />
+            {searchingItemId === item.id ? "Searching..." : "Search"}
+          </button>
+          <button
+            className="secondary"
+            type="button"
+            onClick={() => {
+              setFindingItemId(null);
+              setCustomSearchFeedback(null);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+        {customSearchFeedback ? (
+          <span
+            className={`store-item-search-feedback ${customSearchFeedback.type}`}
+            role="status"
+          >
+            {customSearchFeedback.text}
+          </span>
+        ) : null}
+      </form>
+    );
+  }
 
   return (
     <section className="panel full-width">
       <div className="panel-heading">
         <Send size={18} />
-        <h3>QFC Cart Review</h3>
+        <h3>Store Item Review</h3>
       </div>
 
-      {preview ? (
+      {review ? (
         <>
           {matches.length ? (
-            <div className="qfc-match-list">
+            <div className="store-item-match-list">
               {matches.map((match) => (
-                <div className="qfc-match-row" key={match.item.id}>
-                  <div className="qfc-match-ingredient">
+                <div className="store-item-match-row" key={match.item.id}>
+                  <div className="store-item-match-ingredient">
                     <span className="eyebrow">Aggregated ingredient</span>
                     <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
                     <span>{match.item.sourceRecipeNames}</span>
+                    {renderRemoveButton(match.item)}
                   </div>
-                  <ChevronRight className="qfc-match-arrow" size={22} aria-hidden="true" />
-                  <div className="qfc-match-product">
-                    <span className="eyebrow">QFC selection</span>
-                    <strong>{match.product.description}</strong>
-                    <span>{[match.product.brand, match.product.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
-                    <span>
-                      {match.product.price === null ? "Price unavailable" : `$${match.product.price.toFixed(2)}`}
-                      {match.product.stockLevel ? ` · ${match.product.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
-                      {` · Qty ${match.cartQuantity}`}
+                  <ChevronRight className="store-item-match-arrow" size={22} aria-hidden="true" />
+                  <div className="store-item-match-selection">
+                    <span className="eyebrow">
+                      {match.selectionSource === "remembered"
+                        ? "Remembered store item"
+                        : match.selectionSource === "search"
+                          ? "Selected from custom search"
+                          : "Selected by general preferences"}
                     </span>
+                    <select
+                      aria-label={`Store item for ${match.item.item || match.item.text}`}
+                      disabled={selectingItemId === match.item.id}
+                      value={JSON.stringify([match.storeItem.productId, match.storeItem.upc])}
+                      onChange={(event) => void updateSelection(match, event.target.value)}
+                    >
+                      {match.candidates.map((candidate) => (
+                        <option
+                          key={`${candidate.productId}-${candidate.upc}`}
+                          value={JSON.stringify([candidate.productId, candidate.upc])}
+                        >
+                          {[candidate.description, candidate.brand, candidate.size].filter(Boolean).join(" — ")}
+                        </option>
+                      ))}
+                    </select>
+                    {renderFindItemControl(match.item)}
+                    <div className="store-item-selected-details">
+                      {match.storeItem.imageUrl ? (
+                        <img
+                          className="store-item-thumbnail"
+                          src={match.storeItem.imageUrl}
+                          alt=""
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="store-item-thumbnail placeholder" aria-hidden="true">
+                          <Package size={28} />
+                        </div>
+                      )}
+                      <div>
+                        <strong>{match.storeItem.description}</strong>
+                        <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
+                        <span>
+                          {match.storeItem.price === null ? "Price unavailable" : `$${match.storeItem.price.toFixed(2)}`}
+                          {match.storeItem.stockLevel ? ` · ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
+                          {` · Qty ${match.cartQuantity}`}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="empty-state">No QFC products were matched.</div>
+            <div className="empty-state">No store items were matched.</div>
           )}
 
           {skipped.length ? (
-            <div className="qfc-unmatched">
+            <div className="store-item-unmatched">
               <h4>Unmatched ingredients</h4>
               {skipped.map((skip) => (
-                <div className="qfc-unmatched-row" key={skip.item.id}>
-                  <strong>{skip.item.text || skip.item.item}</strong>
-                  <span>{skip.reason}</span>
+                <div className="store-item-unmatched-row" key={skip.item.id}>
+                  <div>
+                    <strong>{skip.item.text || skip.item.item}</strong>
+                    <span>{skip.reason}</span>
+                  </div>
+                  <div className="store-item-unmatched-actions">
+                    {renderFindItemControl(skip.item)}
+                    {renderRemoveButton(skip.item)}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1572,14 +1942,14 @@ function QfcCartReview({
           <div className="panel-actions">
             <button onClick={() => void addToCart()} disabled={!matches.length || Boolean(qfcSubmitProgress)}>
               <Send size={17} />
-              {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed product${matches.length === 1 ? "" : "s"} to QFC`}
+              {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`}
             </button>
           </div>
           {qfcSubmitProgress?.phase === "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
           {message ? <div className="success" role="status">{message}</div> : null}
         </>
       ) : (
-        <div className="empty-state">Review and approve ingredients, then match them to QFC products.</div>
+        <div className="empty-state">Review and approve ingredients, then match them to store items.</div>
       )}
     </section>
   );

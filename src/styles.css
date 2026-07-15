@@ -454,13 +454,13 @@ label {
   font-size: 0.82rem;
 }
 
-.qfc-match-list,
-.qfc-unmatched {
+.store-item-match-list,
+.store-item-unmatched {
   display: grid;
   gap: 10px;
 }
 
-.qfc-match-row {
+.store-item-match-row {
   align-items: center;
   background: #f3f6f4;
   border: 1px solid #d8dfdb;
@@ -471,43 +471,186 @@ label {
   padding: 14px 16px;
 }
 
-.qfc-match-ingredient,
-.qfc-match-product {
+.store-item-match-ingredient,
+.store-item-match-selection {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
 
-.qfc-match-row strong,
-.qfc-match-row span {
+.store-item-match-row strong,
+.store-item-match-row span {
   overflow-wrap: anywhere;
 }
 
-.qfc-match-row span:not(.eyebrow),
-.qfc-unmatched-row span {
+.store-item-match-row span:not(.eyebrow),
+.store-item-unmatched-row span {
   color: #66746f;
   font-size: 0.82rem;
 }
 
-.qfc-match-arrow {
+.store-item-match-arrow {
   color: #71817b;
 }
 
-.qfc-unmatched {
+.store-item-unmatched {
   border-top: 1px solid #d8dfdb;
   margin-top: 6px;
   padding-top: 14px;
 }
 
-.qfc-unmatched h4 {
+.store-item-unmatched h4 {
   margin: 0;
 }
 
-.qfc-unmatched-row {
-  align-items: baseline;
+.store-item-unmatched-row {
+  align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.store-item-unmatched-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.store-item-match-selection select {
+  min-width: 0;
+  width: 100%;
+}
+
+.store-item-find-button {
+  justify-self: start;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.store-item-remove-button {
+  justify-self: start;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.store-item-unmatched-actions {
+  align-items: center;
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px !important;
+  justify-content: flex-end;
+}
+
+.store-item-custom-search {
+  background: #fff;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.store-item-custom-search label {
+  display: grid;
+  gap: 5px;
+}
+
+.store-item-custom-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.store-item-custom-search-actions button {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.store-item-search-feedback {
+  font-size: 0.82rem;
+}
+
+.store-item-search-feedback.success {
+  color: #24543a;
+}
+
+.store-item-search-feedback.error {
+  color: #9d2f1d;
+}
+
+.store-item-selected-details {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  margin-top: 3px;
+}
+
+.store-item-selected-details > div:last-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.store-item-thumbnail {
+  background: #fff;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  height: 72px;
+  object-fit: contain;
+  padding: 4px;
+  width: 72px;
+}
+
+.store-item-thumbnail.placeholder {
+  align-items: center;
+  color: #71817b;
+  display: flex;
+  justify-content: center;
+}
+
+.store-item-preference-section {
+  border-top: 1px solid #d8dfdb;
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 16px;
+}
+
+.store-item-preference-section h4,
+.store-item-preference-section p {
+  margin: 0;
+}
+
+.store-item-preference-section p {
+  color: #66746f;
+  font-size: 0.86rem;
+  margin-top: 5px;
+}
+
+.store-item-preference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.store-item-preference-row {
+  align-items: center;
+  background: #f3f6f4;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.store-item-preference-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.store-item-preference-row span {
+  color: #66746f;
+  font-size: 0.82rem;
 }
 
 .status-strip {
@@ -564,7 +707,7 @@ label {
 }
 
 .result-row,
-.product-row {
+.store-item-row {
   background: #f3f6f4;
   border: 1px solid #d8dfdb;
   border-radius: 6px;
@@ -578,7 +721,7 @@ label {
 }
 
 .result-row span,
-.product-row span {
+.store-item-row span {
   color: #66746f;
   font-size: 0.82rem;
 }
@@ -683,7 +826,7 @@ label {
 :root[data-theme="dark"] .pagination-controls span,
 :root[data-theme="dark"] .shopping-row span,
 :root[data-theme="dark"] .result-row span,
-:root[data-theme="dark"] .product-row span,
+:root[data-theme="dark"] .store-item-row span,
 :root[data-theme="dark"] .qfc-progress-meta span {
   color: #9fb2aa;
 }
@@ -705,19 +848,53 @@ label {
 :root[data-theme="dark"] .recipe-count-summary div,
 :root[data-theme="dark"] .edit-heading,
 :root[data-theme="dark"] .result-row,
-:root[data-theme="dark"] .product-row,
+:root[data-theme="dark"] .store-item-row,
 :root[data-theme="dark"] .qfc-progress {
   background: #1d2621;
   border-color: #33443d;
 }
 
-:root[data-theme="dark"] .qfc-match-row {
+:root[data-theme="dark"] .store-item-match-row {
   background: #263630;
   border-color: #33443d;
 }
 
-:root[data-theme="dark"] .qfc-match-row span:not(.eyebrow),
-:root[data-theme="dark"] .qfc-unmatched-row span {
+:root[data-theme="dark"] .store-item-custom-search {
+  background: #111613;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .store-item-find-button,
+:root[data-theme="dark"] .store-item-preference-row button.secondary {
+  background: #3a5148;
+  border: 1px solid #668176;
+  color: #f2f7f4;
+}
+
+:root[data-theme="dark"] .store-item-thumbnail {
+  border-color: #52675f;
+}
+
+:root[data-theme="dark"] .store-item-search-feedback.success {
+  color: #8ac7a6;
+}
+
+:root[data-theme="dark"] .store-item-search-feedback.error {
+  color: #f19a88;
+}
+
+:root[data-theme="dark"] .store-item-preference-row {
+  background: #263630;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .store-item-preference-section p,
+:root[data-theme="dark"] .store-item-preference-row span {
+  color: #9fb2aa;
+}
+
+:root[data-theme="dark"] .store-item-match-row span:not(.eyebrow),
+:root[data-theme="dark"] .store-item-unmatched-row span {
   color: #9fb2aa;
 }
 
@@ -837,17 +1014,21 @@ label {
     grid-template-columns: 1fr;
   }
 
-  .qfc-match-row {
+  .store-item-match-row {
     align-items: start;
     grid-template-columns: 1fr;
   }
 
-  .qfc-match-arrow {
+  .store-item-match-arrow {
     transform: rotate(90deg);
   }
 
-  .qfc-unmatched-row {
+  .store-item-unmatched-row {
     grid-template-columns: 1fr;
+  }
+
+  .store-item-unmatched-actions {
+    justify-content: flex-start;
   }
 
   .recipe-management-header {

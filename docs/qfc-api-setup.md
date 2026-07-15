@@ -1,13 +1,13 @@
 # QFC/Kroger API Setup
 
-This app has a Kroger API adapter boundary for service-to-service APIs, customer OAuth, product matching, and cart mutation.
+This app has a Kroger API adapter boundary for service-to-service APIs, customer OAuth, store-item matching, and cart mutation. Kroger calls these records products in its external API; Grocery Getter calls them store items.
 
 ## Implemented
 
 - Stores Kroger developer app settings in the local SQLite database.
 - Requests a service-to-service OAuth token from `https://api.kroger.com/v1/connect/oauth2/token`.
 - Searches locations through `GET https://api.kroger.com/v1/locations`.
-- Searches products through `GET https://api.kroger.com/v1/products`.
+- Searches store items through Kroger's `GET https://api.kroger.com/v1/products` endpoint.
 - Starts customer OAuth through `GET https://api.kroger.com/v1/connect/oauth2/authorize`.
 - Handles the OAuth callback through `/api/qfc/oauth/callback`.
 - Exchanges authorization codes and refresh tokens through `POST https://api.kroger.com/v1/connect/oauth2/token`.
@@ -19,7 +19,12 @@ This app has a Kroger API adapter boundary for service-to-service APIs, customer
 - `GET /api/qfc/status`
 - `PUT /api/qfc/settings`
 - `GET /api/qfc/locations?query=98115`
-- `GET /api/qfc/products?term=milk&locationId=<locationId>`
+- `GET /api/qfc/store-items?term=milk&locationId=<locationId>`
+- `GET /api/store-item-preferences`
+- `DELETE /api/store-item-preferences/:provider/:ingredientKey`
+- `PUT /api/store-item-reviews/:jobId/selections/:shoppingItemId`
+- `POST /api/store-item-reviews/:jobId/items/:shoppingItemId/search`
+- `DELETE /api/store-item-reviews/:jobId/items/:shoppingItemId`
 - `POST /api/qfc/oauth/start`
 - `GET /api/qfc/oauth/callback`
 - `POST /api/qfc/oauth/refresh`
@@ -81,10 +86,16 @@ The app stores customer tokens server-side only:
 
 Current cart submission behavior:
 
-- Searches Kroger products using the shopping-list `item` text.
-- Prefers in-stock products when stock data is present.
+- Searches Kroger store items using the shopping-list `item` text.
+- Reuses a remembered ingredient-to-store-item choice when one exists.
+- Prefers in-stock store items when stock data is present.
 - Prefers Kroger/QFC/Simple Truth/Private Selection brands when the store-brand setting is enabled.
-- Shows a read-only review pairing each approved ingredient with its selected QFC product and lists unmatched ingredients.
+- Falls back to those general availability and store-brand preferences when an ingredient has no remembered store item.
+- Shows a review where each approved ingredient can be mapped to a different store item; changes are remembered immediately.
+- Allows a custom search term during review and replaces that ingredient's dropdown with the new results.
+- Allows unmatched ingredients to be searched manually and promoted into the matched review list when results are found.
+- Allows an ingredient to be removed from the current review and cart submission without changing the saved shopping list or its remembered store-item preference.
+- Shows the selected store item's Kroger image when the API provides one.
 - Requires explicit confirmation from the review step before mutating the cart.
 - Adds one cart unit per approved grocery row.
 - Uses `PICKUP` as the cart modality.
@@ -97,7 +108,7 @@ The current add-to-cart payload is:
 {
   "items": [
     {
-      "upc": "product upc",
+      "upc": "store item upc",
       "quantity": 1,
       "modality": "PICKUP"
     }
@@ -107,11 +118,10 @@ The current add-to-cart payload is:
 
 ## Next Cart Work
 
-Cart mutation is enabled, but it still needs product-review polish before it should be trusted for a full real grocery run:
+Cart mutation is enabled, but it still needs review polish before it should be trusted for a full real grocery run:
 
-1. Add a product matching review screen before submission.
-2. Persist selected product/cart identifiers for each approved shopping-list row.
-3. Let the user choose package/cart quantities instead of always sending quantity `1`.
-4. Improve unit display and package conversion.
+1. Let the user search beyond the first candidate page during review.
+2. Let the user choose package/cart quantities instead of always sending quantity `1`.
+3. Improve unit display and package conversion.
 
 The app must never checkout or place the order.
