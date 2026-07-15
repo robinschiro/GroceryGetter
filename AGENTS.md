@@ -31,7 +31,7 @@
 - The wrapper supports both the Codex-managed Git layout and the normal Windows Git installation, avoids the broken Schannel path, and restricts credentials to `https://github.com/robinschiro/GroceryGetter.git`.
 - The wrapper reads `GITHUB_USERNAME` and `GITHUB_PAT` from the gitignored `.env`. Never print, log, stage, commit, or ask the user to paste these values into chat.
 - If `.env` is missing or the wrapper rejects its configuration, stop and ask the user to configure it locally. Do not fall back to embedding credentials in a remote URL, command argument, tracked file, or general application settings.
-- After pushing, verify that local `HEAD`, local `origin/<branch>`, and the remote branch agree. Treat `.env` as a local secret and leave it untracked.
+- After a successful wrapper push, verify that local `HEAD` and local `origin/<branch>` agree. Do not separately check GitHub or query the remote after every successful push unless the wrapper output is ambiguous or the user explicitly asks for remote verification. Treat `.env` as a local secret and leave it untracked.
 
 ## Development Notes
 - The API listens on `127.0.0.1:5174`; Vite serves the frontend on `127.0.0.1`.
