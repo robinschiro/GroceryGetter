@@ -520,6 +520,51 @@ label {
   width: 100%;
 }
 
+.store-item-quantity {
+  display: grid;
+  gap: 5px;
+  justify-self: start;
+}
+
+.store-item-number-control {
+  display: grid;
+  grid-template-columns: 44px 72px 44px;
+}
+
+.store-item-number-control input {
+  appearance: textfield;
+  border-radius: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  text-align: center;
+  width: 72px;
+}
+
+.store-item-number-control input::-webkit-inner-spin-button,
+.store-item-number-control input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.store-item-number-control button {
+  border: 1px solid #c9d1cc;
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  min-height: 44px;
+  padding: 0;
+  width: 44px;
+}
+
+.store-item-number-control button:last-child {
+  border-left: 0;
+  border-right: 1px solid #c9d1cc;
+  border-radius: 0 6px 6px 0;
+}
+
+.store-item-number-control button:disabled {
+  cursor: not-allowed;
+}
+
 .store-item-find-button {
   justify-self: start;
   min-height: 34px;

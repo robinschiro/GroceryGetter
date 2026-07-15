@@ -23,6 +23,7 @@ This app has a Kroger API adapter boundary for service-to-service APIs, customer
 - `GET /api/store-item-preferences`
 - `DELETE /api/store-item-preferences/:provider/:ingredientKey`
 - `PUT /api/store-item-reviews/:jobId/selections/:shoppingItemId`
+- `PUT /api/store-item-reviews/:jobId/quantities/:shoppingItemId`
 - `POST /api/store-item-reviews/:jobId/items/:shoppingItemId/search`
 - `DELETE /api/store-item-reviews/:jobId/items/:shoppingItemId`
 - `POST /api/qfc/oauth/start`
@@ -97,7 +98,7 @@ Current cart submission behavior:
 - Allows an ingredient to be removed from the current review and cart submission without changing the saved shopping list or its remembered store-item preference.
 - Shows the selected store item's Kroger image when the API provides one.
 - Requires explicit confirmation from the review step before mutating the cart.
-- Adds one cart unit per approved grocery row.
+- Defaults to one cart unit per approved grocery row and allows the quantity to be changed during review.
 - Uses `PICKUP` as the cart modality.
 - Reports matched, skipped, and submitted counts.
 - Returns stub-mode messages instead of mutating the cart when Kroger credentials or customer OAuth are missing.
@@ -121,7 +122,6 @@ The current add-to-cart payload is:
 Cart mutation is enabled, but it still needs review polish before it should be trusted for a full real grocery run:
 
 1. Let the user search beyond the first candidate page during review.
-2. Let the user choose package/cart quantities instead of always sending quantity `1`.
-3. Improve unit display and package conversion.
+2. Improve unit display and package conversion.
 
 The app must never checkout or place the order.

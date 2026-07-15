@@ -89,7 +89,7 @@ Use Cart API only after customer auth is complete.
 - The adapter submits only approved shopping-list rows and never checks out or places an order.
 - If Kroger credentials are missing, `submitToQfcCart` returns a stub-mode message and does not call Kroger.
 - If customer OAuth is missing, product/location APIs can still work, but cart mutation returns a stub-mode message.
-- When customer OAuth is present, the adapter matches approved rows, adds one `PICKUP` cart unit per matched UPC through `PUT https://api.kroger.com/v1/cart/add`, and reports matched, skipped, and submitted counts.
+- When customer OAuth is present, the adapter matches approved rows, adds the quantity selected during review as `PICKUP` units per matched UPC through `PUT https://api.kroger.com/v1/cart/add`, and reports matched, skipped, and submitted counts.
 
 Current cart-add request body:
 
@@ -125,5 +125,4 @@ This keeps store-item matching testable without requiring a live customer sessio
 Cart mutation is implemented, but it still needs review polish before it should be trusted for a full real grocery run:
 
 1. Let the user search beyond the first candidate page during review.
-2. Let the user choose package/cart quantities instead of always sending quantity `1`.
-3. Improve unit display and package conversion.
+2. Improve unit display and package conversion.

@@ -8,12 +8,12 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ### Allow setting quantity during store-item review
 
-- Status: `Idea`
+- Status: `Done`
 - Reported: 2026-07-14
 - Area: Store-item review
 - Description: Allow the user to set or adjust the quantity of an item while reviewing its store-item match.
 - Expected: The selected quantity is used when the approved item is added to the store cart.
-- Notes: Consider whether quantity should default from the aggregated shopping-list amount or the store item's package size.
+- Notes: Quantity defaults to one cart unit and can be changed to any positive whole number during review. The selected quantity is kept with the transient review and sent to the cart API.
 
 ### Show prices in the store-item review dropdown
 

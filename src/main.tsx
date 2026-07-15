@@ -7,7 +7,10 @@ import {
   Database,
   ExternalLink,
   Menu as MenuIcon,
+  Minus,
   Moon,
+  Package,
+  Plus,
   RefreshCw,
   Search,
   Send,
@@ -15,8 +18,7 @@ import {
   Shuffle,
   Sun,
   Trash2,
-  X,
-  Package
+  X
 } from "lucide-react";
 import "./styles.css";
 
@@ -583,6 +585,32 @@ function App() {
     }
   }
 
+  async function updateStoreItemQuantity(shoppingItemId: number, cartQuantity: number) {
+    if (!storeItemReview) return;
+    setStoreItemReviewMessage("");
+    try {
+      const result = await api<{ match: StoreItemMatch }>(
+        `/api/store-item-reviews/${storeItemReview.jobId}/quantities/${shoppingItemId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ cartQuantity })
+        }
+      );
+      setStoreItemReview((current) => current ? {
+        ...current,
+        result: {
+          ...current.result,
+          matched: current.result.matched?.map((match) =>
+            match.item.id === shoppingItemId ? result.match : match
+          )
+        }
+      } : current);
+    } catch (err) {
+      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to update the cart quantity.");
+      throw err;
+    }
+  }
+
   async function searchStoreItemsForReview(shoppingItemId: number, term: string) {
     if (!storeItemReview) {
       throw new Error("Preview store items before searching for more choices.");
@@ -756,6 +784,7 @@ function App() {
               review={storeItemReview}
               addToCart={addReviewedStoreItemsToQfc}
               selectStoreItem={selectStoreItem}
+              updateCartQuantity={updateStoreItemQuantity}
               searchStoreItems={searchStoreItemsForReview}
               removeStoreItem={removeStoreItemFromReview}
               qfcSubmitProgress={qfcSubmitProgress}
@@ -1684,6 +1713,7 @@ function StoreItemReviewPanel({
   review,
   addToCart,
   selectStoreItem,
+  updateCartQuantity,
   searchStoreItems,
   removeStoreItem,
   qfcSubmitProgress,
@@ -1692,6 +1722,7 @@ function StoreItemReviewPanel({
   review: StoreItemReview | null;
   addToCart: () => Promise<void>;
   selectStoreItem: (shoppingItemId: number, productId: string, upc: string) => Promise<void>;
+  updateCartQuantity: (shoppingItemId: number, cartQuantity: number) => Promise<void>;
   searchStoreItems: (
     shoppingItemId: number,
     term: string
@@ -1706,6 +1737,8 @@ function StoreItemReviewPanel({
   message: string;
 }) {
   const [selectingItemId, setSelectingItemId] = useState<number | null>(null);
+  const [updatingQuantityItemId, setUpdatingQuantityItemId] = useState<number | null>(null);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
   const [findingItemId, setFindingItemId] = useState<number | null>(null);
   const [searchingItemId, setSearchingItemId] = useState<number | null>(null);
   const [removingItemId, setRemovingItemId] = useState<number | null>(null);
@@ -1719,6 +1752,8 @@ function StoreItemReviewPanel({
 
   useEffect(() => {
     setFindingItemId(null);
+    setUpdatingQuantityItemId(null);
+    setQuantityDrafts({});
     setSearchingItemId(null);
     setRemovingItemId(null);
     setCustomSearchTerm("");
@@ -1733,6 +1768,36 @@ function StoreItemReviewPanel({
     } finally {
       setSelectingItemId(null);
     }
+  }
+
+  async function updateQuantity(match: StoreItemMatch, value: string) {
+    setQuantityDrafts((current) => ({ ...current, [match.item.id]: value }));
+    const cartQuantity = Number(value);
+    if (!Number.isInteger(cartQuantity) || cartQuantity < 1 || cartQuantity === match.cartQuantity) return;
+    setUpdatingQuantityItemId(match.item.id);
+    try {
+      await updateCartQuantity(match.item.id, cartQuantity);
+      setQuantityDrafts((current) => ({ ...current, [match.item.id]: String(cartQuantity) }));
+    } catch {
+      setQuantityDrafts((current) => ({ ...current, [match.item.id]: String(match.cartQuantity) }));
+    } finally {
+      setUpdatingQuantityItemId(null);
+    }
+  }
+
+  function restoreQuantityIfInvalid(match: StoreItemMatch) {
+    const draft = quantityDrafts[match.item.id];
+    const cartQuantity = Number(draft);
+    if (draft === undefined || (Number.isInteger(cartQuantity) && cartQuantity >= 1)) return;
+    setQuantityDrafts((current) => ({ ...current, [match.item.id]: String(match.cartQuantity) }));
+  }
+
+  function adjustedQuantity(match: StoreItemMatch, change: number) {
+    const draftQuantity = Number(quantityDrafts[match.item.id]);
+    const currentQuantity = Number.isInteger(draftQuantity) && draftQuantity >= 1
+      ? draftQuantity
+      : match.cartQuantity;
+    return Math.max(1, currentQuantity + change);
   }
 
   async function removeReviewItem(item: ShoppingListItem) {
@@ -1902,6 +1967,38 @@ function StoreItemReviewPanel({
                       ))}
                     </select>
                     {renderFindItemControl(match.item)}
+                    <div className="store-item-quantity">
+                      <span className="eyebrow">Cart quantity</span>
+                      <div className="store-item-number-control">
+                        <button
+                          type="button"
+                          aria-label={`Decrease cart quantity for ${match.storeItem.description}`}
+                          disabled={updatingQuantityItemId === match.item.id || adjustedQuantity(match, 0) <= 1}
+                          onClick={() => void updateQuantity(match, String(adjustedQuantity(match, -1)))}
+                        >
+                          <Minus size={18} />
+                        </button>
+                        <input
+                          aria-label={`Cart quantity for ${match.storeItem.description}`}
+                          type="number"
+                          inputMode="numeric"
+                          min="1"
+                          step="1"
+                          value={quantityDrafts[match.item.id] ?? String(match.cartQuantity)}
+                          disabled={updatingQuantityItemId === match.item.id}
+                          onChange={(event) => void updateQuantity(match, event.target.value)}
+                          onBlur={() => restoreQuantityIfInvalid(match)}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Increase cart quantity for ${match.storeItem.description}`}
+                          disabled={updatingQuantityItemId === match.item.id}
+                          onClick={() => void updateQuantity(match, String(adjustedQuantity(match, 1)))}
+                        >
+                          <Plus size={18} />
+                        </button>
+                      </div>
+                    </div>
                     <div className="store-item-selected-details">
                       {match.storeItem.imageUrl ? (
                         <img
@@ -1920,7 +2017,7 @@ function StoreItemReviewPanel({
                         <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
                         <span>
                           {match.storeItem.price === null ? "Price unavailable" : `$${match.storeItem.price.toFixed(2)}`}
-                          {match.storeItem.stockLevel ? ` · ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
+                          {match.storeItem.stockLevel ? ` · Stock: ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
                           {` · Qty ${match.cartQuantity}`}
                         </span>
                       </div>
@@ -1952,7 +2049,7 @@ function StoreItemReviewPanel({
           ) : null}
 
           <div className="panel-actions">
-            <button onClick={() => void addToCart()} disabled={!matches.length || Boolean(qfcSubmitProgress)}>
+            <button onClick={() => void addToCart()} disabled={!matches.length || Boolean(qfcSubmitProgress) || updatingQuantityItemId !== null}>
               <Send size={17} />
               {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`}
             </button>

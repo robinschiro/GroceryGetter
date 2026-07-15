@@ -946,6 +946,31 @@ app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) 
   res.json({ match, preference });
 });
 
+app.put("/api/store-item-reviews/:jobId/quantities/:shoppingItemId", (req, res) => {
+  pruneQfcSubmitJobs();
+  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
+    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
+    return;
+  }
+
+  const shoppingItemId = Number(req.params.shoppingItemId);
+  const match = previewJob.result.matched?.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
+  if (!match) {
+    res.status(404).json({ error: "The ingredient was not found in this store item review." });
+    return;
+  }
+
+  const cartQuantity = Number(req.body.cartQuantity);
+  if (!Number.isSafeInteger(cartQuantity) || cartQuantity < 1) {
+    res.status(400).json({ error: "Cart quantity must be a positive whole number." });
+    return;
+  }
+
+  match.cartQuantity = cartQuantity;
+  res.json({ match });
+});
+
 app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (req, res) => {
   pruneQfcSubmitJobs();
   const previewJob = qfcSubmitJobs.get(req.params.jobId);
