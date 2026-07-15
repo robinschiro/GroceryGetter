@@ -753,8 +753,10 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
 
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {
-    const key = row.item.trim() && row.unit.trim()
-      ? `${row.item.trim().toLowerCase()}|${row.unit.trim().toLowerCase()}`
+    const normalizedItem = row.item.trim().toLowerCase();
+    const normalizedUnit = row.unit.trim().toLowerCase();
+    const key = normalizedItem
+      ? `${normalizedItem}|${normalizedUnit}`
       : row.text.trim().toLowerCase();
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }

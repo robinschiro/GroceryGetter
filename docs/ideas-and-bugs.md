@@ -28,13 +28,13 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ### Ingredient aggregation does not combine some matching ingredients
 
-- Status: `Open`
+- Status: `Done`
 - Reported: 2026-07-14
 - Area: Weekly menu shopping-list aggregation
 - Example menu: **Mashed Eggplant Bhaji** (entree) with **Dal Rice** (starch side)
 - Expected: The Roma tomato ingredients from both recipes are combined into one shopping-list item with an aggregated quantity.
 - Actual: The Roma tomato ingredients are not combined in this case.
-- Notes: Determine whether differences in ingredient name, unit, preparation, or stored metadata prevent the items from matching.
+- Notes: Fixed by grouping ingredients by normalized item and unit even when the unit is blank. Previously, unitless ingredients fell back to their full text, so quantities such as `1 roma tomato` and `2 roma tomato` produced different grouping keys.
 
 ## Entry template
 
