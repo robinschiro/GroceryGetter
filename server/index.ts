@@ -49,6 +49,13 @@ type MenuItemInput = {
   slot: RecipeCategory;
   recipeId: number | null;
 };
+type MenuRow = {
+  id: number;
+  name: string;
+  mealCount: number;
+  isTestData: number;
+  status: string;
+};
 
 function pruneQfcSubmitJobs() {
   const cutoff = Date.now() - qfcSubmitJobTtlMs;
@@ -178,6 +185,33 @@ function buildMenuPreview(mealCount: number, includeTestData: boolean) {
     status: "preview",
     items
   };
+}
+
+function getMenu(menuId: number) {
+  const menu = queryOne<MenuRow>(
+    "SELECT id, name, meal_count AS mealCount, is_test_data AS isTestData, status FROM menus WHERE id = ?",
+    [menuId]
+  );
+  if (!menu) {
+    return null;
+  }
+
+  const items = queryAll(
+    `SELECT
+      menu_items.id,
+      menu_items.meal_number AS mealNumber,
+      menu_items.slot,
+      recipes.id AS recipeId,
+      recipes.name AS recipeName,
+      recipes.category
+    FROM menu_items
+    LEFT JOIN recipes ON recipes.id = menu_items.recipe_id
+    WHERE menu_items.menu_id = ?
+    ORDER BY menu_items.meal_number, menu_items.slot`,
+    [menuId]
+  );
+
+  return { ...menu, isTestData: Boolean(menu.isTestData), items };
 }
 
 function validateRecipeInput(input: RecipeInput) {
@@ -633,37 +667,19 @@ app.post("/api/menus", (req, res) => {
   res.status(201).json({ id: createdMenuId });
 });
 
+app.get("/api/menus/latest", (_req, res) => {
+  const latest = queryOne<{ id: number }>("SELECT id FROM menus ORDER BY created_at DESC, id DESC LIMIT 1");
+  res.json(latest ? getMenu(latest.id) : null);
+});
+
 app.get("/api/menus/:id", (req, res) => {
-  const menu = queryOne<{
-    id: number;
-    name: string;
-    mealCount: number;
-    isTestData: number;
-    status: string;
-  }>("SELECT id, name, meal_count AS mealCount, is_test_data AS isTestData, status FROM menus WHERE id = ?", [
-    req.params.id
-  ]);
+  const menuId = Number(req.params.id);
+  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
   if (!menu) {
     res.status(404).json({ error: "Menu not found." });
     return;
   }
-
-  const items = queryAll(
-      `SELECT
-        menu_items.id,
-        menu_items.meal_number AS mealNumber,
-        menu_items.slot,
-        recipes.id AS recipeId,
-        recipes.name AS recipeName,
-        recipes.category
-      FROM menu_items
-      LEFT JOIN recipes ON recipes.id = menu_items.recipe_id
-      WHERE menu_items.menu_id = ?
-      ORDER BY menu_items.meal_number, menu_items.slot`,
-      [req.params.id]
-    );
-
-  res.json({ ...menu, isTestData: Boolean(menu.isTestData), items });
+  res.json(menu);
 });
 
 app.put("/api/menu-items/:id", (req, res) => {

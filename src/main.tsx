@@ -267,9 +267,21 @@ function App() {
     setQfcStatus(await api<QfcStatus>("/api/qfc/status"));
   }
 
+  async function loadLatestMenu() {
+    const latestMenu = await api<Menu | null>("/api/menus/latest");
+    if (!latestMenu || latestMenu.id === null) return;
+
+    const latestShoppingList = await api<ShoppingListItem[]>(`/api/menus/${latestMenu.id}/shopping-list`);
+    setActiveMenu(latestMenu);
+    setShoppingList(latestShoppingList);
+    setMealCount(latestMenu.mealCount);
+    setPlannerRecipeMode(latestMenu.isTestData ? "test" : "production");
+  }
+
   useEffect(() => {
     void loadRecipes();
     void loadSettings();
+    void loadLatestMenu();
   }, []);
 
   useLayoutEffect(() => {
