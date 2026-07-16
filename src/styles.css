@@ -445,6 +445,32 @@ label {
   overflow-x: auto;
 }
 
+.unchecked-ingredients-toggle {
+  align-items: center;
+  background: #eef2ef;
+  border: 1px solid #d8dfdb;
+  color: #53625c;
+  display: flex;
+  font-weight: 700;
+  gap: 7px;
+  justify-content: flex-start;
+  min-width: 1100px;
+  padding: 9px 12px;
+  width: 100%;
+}
+
+.unchecked-ingredients-toggle:hover {
+  background: #e4ebe7;
+}
+
+.unchecked-ingredients-toggle svg {
+  transition: transform 160ms ease;
+}
+
+.unchecked-ingredients-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
 .shopping-row {
   align-items: center;
   display: grid;
@@ -929,6 +955,16 @@ label {
 :root[data-theme="dark"] .qfc-progress {
   background: #1d2621;
   border-color: #33443d;
+}
+
+:root[data-theme="dark"] .unchecked-ingredients-toggle {
+  background: #263630;
+  border-color: #33443d;
+  color: #dce8e2;
+}
+
+:root[data-theme="dark"] .unchecked-ingredients-toggle:hover {
+  background: #30453d;
 }
 
 :root[data-theme="dark"] .store-item-match-row {

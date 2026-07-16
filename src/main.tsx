@@ -1766,6 +1766,10 @@ function ShoppingListReview({
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
+  const [showUncheckedItems, setShowUncheckedItems] = useState(false);
+  const approvedItems = items.filter((item) => Boolean(item.approved));
+  const uncheckedItems = items.filter((item) => !item.approved);
+
   function patchItem(item: ShoppingListItem, patch: Partial<ShoppingListItem>) {
     const id = item.id;
     setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -1773,6 +1777,65 @@ function ShoppingListReview({
     if (item.canPersistToRecipe) {
       markRecipeMetadataDirty(id);
     }
+  }
+
+  function renderShoppingRow(item: ShoppingListItem) {
+    return (
+      <div className="shopping-row" key={item.id}>
+        <label className="compact-checkbox">
+          <input
+            type="checkbox"
+            checked={Boolean(item.approved)}
+            disabled={savingApprovalItemIds.has(item.id)}
+            onChange={(event) => void updateApproval(item.id, event.target.checked)}
+          />
+          {savingApprovalItemIds.has(item.id) ? <span className="approval-save-status">Saving...</span> : null}
+        </label>
+        <input
+          value={item.quantity}
+          disabled={savingRecipeItemIds.has(item.id)}
+          onChange={(event) => patchItem(item, { quantity: event.target.value })}
+        />
+        <input
+          value={item.unit}
+          disabled={savingRecipeItemIds.has(item.id)}
+          onChange={(event) => patchItem(item, { unit: event.target.value })}
+        />
+        <input
+          value={item.item}
+          disabled={savingRecipeItemIds.has(item.id)}
+          onChange={(event) => patchItem(item, { item: event.target.value })}
+        />
+        <input
+          value={item.text}
+          disabled={savingRecipeItemIds.has(item.id)}
+          onChange={(event) => patchItem(item, { text: event.target.value })}
+        />
+        <div className="shopping-source">
+          <span>{item.sourceRecipeNames}</span>
+          {!item.canPersistToRecipe ? (
+            <small>
+              {item.sourceOccurrenceCount
+                ? `Shopping list only - ${item.sourceOccurrenceCount} sources`
+                : "Re-aggregate to enable recipe editing"}
+            </small>
+          ) : null}
+        </div>
+        {item.canPersistToRecipe ? (
+          <button
+            className="secondary shopping-save-recipe-button"
+            type="button"
+            aria-busy={savingRecipeItemIds.has(item.id)}
+            disabled={!recipeMetadataDirtyItemIds.has(item.id) || savingRecipeItemIds.has(item.id)}
+            onClick={() => void saveToRecipe(item)}
+          >
+            {savingRecipeItemIds.has(item.id) ? "Saving..." : "Save to recipe"}
+          </button>
+        ) : (
+          <span className="shopping-persistence-status">Not saved to recipe</span>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -1785,62 +1848,23 @@ function ShoppingListReview({
       {items.length ? (
         <>
           <div className="shopping-table">
-            {items.map((item) => (
-              <div className="shopping-row" key={item.id}>
-                <label className="compact-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(item.approved)}
-                    disabled={savingApprovalItemIds.has(item.id)}
-                    onChange={(event) => void updateApproval(item.id, event.target.checked)}
-                  />
-                  {savingApprovalItemIds.has(item.id) ? <span className="approval-save-status">Saving...</span> : null}
-                </label>
-                <input
-                  value={item.quantity}
-                  disabled={savingRecipeItemIds.has(item.id)}
-                  onChange={(event) => patchItem(item, { quantity: event.target.value })}
-                />
-                <input
-                  value={item.unit}
-                  disabled={savingRecipeItemIds.has(item.id)}
-                  onChange={(event) => patchItem(item, { unit: event.target.value })}
-                />
-                <input
-                  value={item.item}
-                  disabled={savingRecipeItemIds.has(item.id)}
-                  onChange={(event) => patchItem(item, { item: event.target.value })}
-                />
-                <input
-                  value={item.text}
-                  disabled={savingRecipeItemIds.has(item.id)}
-                  onChange={(event) => patchItem(item, { text: event.target.value })}
-                />
-                <div className="shopping-source">
-                  <span>{item.sourceRecipeNames}</span>
-                  {!item.canPersistToRecipe ? (
-                    <small>
-                      {item.sourceOccurrenceCount
-                        ? `Shopping list only - ${item.sourceOccurrenceCount} sources`
-                        : "Re-aggregate to enable recipe editing"}
-                    </small>
-                  ) : null}
-                </div>
-                {item.canPersistToRecipe ? (
-                  <button
-                    className="secondary shopping-save-recipe-button"
-                    type="button"
-                    aria-busy={savingRecipeItemIds.has(item.id)}
-                    disabled={!recipeMetadataDirtyItemIds.has(item.id) || savingRecipeItemIds.has(item.id)}
-                    onClick={() => void saveToRecipe(item)}
-                  >
-                    {savingRecipeItemIds.has(item.id) ? "Saving..." : "Save to recipe"}
-                  </button>
-                ) : (
-                  <span className="shopping-persistence-status">Not saved to recipe</span>
-                )}
-              </div>
-            ))}
+            {approvedItems.map(renderShoppingRow)}
+            {uncheckedItems.length ? (
+              <>
+                <button
+                  className="unchecked-ingredients-toggle"
+                  type="button"
+                  aria-expanded={showUncheckedItems}
+                  onClick={() => setShowUncheckedItems((current) => !current)}
+                >
+                  <ChevronRight size={17} aria-hidden="true" />
+                  <span>
+                    {uncheckedItems.length} unchecked ingredient{uncheckedItems.length === 1 ? "" : "s"}
+                  </span>
+                </button>
+                {showUncheckedItems ? uncheckedItems.map(renderShoppingRow) : null}
+              </>
+            ) : null}
           </div>
           <div className="panel-actions">
             <button className="secondary" onClick={() => void clearItems()}>
