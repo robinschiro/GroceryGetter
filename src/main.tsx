@@ -73,6 +73,8 @@ type ShoppingListItem = {
   item: string;
   sourceRecipeNames: string;
   approved: number;
+  sourceOccurrenceCount: number;
+  canPersistToRecipe: number;
 };
 
 type QfcStatus = {
@@ -245,6 +247,9 @@ function App() {
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
+  const [recipeMetadataDirtyItemIds, setRecipeMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
+  const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
+  const [savingRecipeItemIds, setSavingRecipeItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState(2);
   const [plannerRecipeMode, setPlannerRecipeMode] = useState<PlannerRecipeMode>("test");
   const [message, setMessage] = useState("");
@@ -301,6 +306,7 @@ function App() {
       setActiveMenu(preview);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setRecipeMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
     } catch (err) {
@@ -329,6 +335,7 @@ function App() {
       setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setRecipeMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
       setMessage("Menu saved.");
@@ -342,6 +349,7 @@ function App() {
     setActiveMenu(null);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
+    setRecipeMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
     setMessage("");
@@ -370,6 +378,7 @@ function App() {
       });
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setRecipeMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
       return;
@@ -383,6 +392,7 @@ function App() {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
+      setRecipeMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
     }
@@ -397,6 +407,7 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
     setDirtyShoppingItemIds(new Set());
+    setRecipeMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
   }
@@ -406,6 +417,7 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
+    setRecipeMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
     setMessage("");
@@ -430,10 +442,91 @@ function App() {
     });
   }
 
+  async function updateShoppingItemApproval(itemId: number, approved: boolean) {
+    if (!activeMenu?.id || savingApprovalItemIds.has(itemId)) return;
+    const previousItem = shoppingList.find((item) => item.id === itemId);
+    if (!previousItem) return;
+
+    setMessage("");
+    setStoreItemReview(null);
+    setShoppingList((current) => current.map((item) => (
+      item.id === itemId ? { ...item, approved: approved ? 1 : 0 } : item
+    )));
+    setSavingApprovalItemIds((current) => new Set(current).add(itemId));
+
+    try {
+      await api(`/api/menus/${activeMenu.id}/shopping-list/items/${itemId}/approval`, {
+        method: "PATCH",
+        body: JSON.stringify({ approved })
+      });
+    } catch (err) {
+      setShoppingList((current) => current.map((item) => (
+        item.id === itemId ? { ...item, approved: previousItem.approved } : item
+      )));
+      setMessage(err instanceof Error ? err.message : "Unable to save ingredient approval.");
+    } finally {
+      setSavingApprovalItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  }
+
+  async function saveShoppingItemToRecipe(item: ShoppingListItem) {
+    if (!activeMenu?.id || savingRecipeItemIds.has(item.id)) return;
+
+    setMessage("");
+    setSavingRecipeItemIds((current) => new Set(current).add(item.id));
+    try {
+      const result = await api<{ item: ShoppingListItem; recipeId: number }>(
+        `/api/menus/${activeMenu.id}/shopping-list/items/${item.id}/source-ingredient`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            text: item.text,
+            quantity: item.quantity,
+            unit: item.unit,
+            item: item.item
+          })
+        }
+      );
+      setShoppingList((current) => current.map((candidate) => (
+        candidate.id === item.id ? result.item : candidate
+      )));
+      setDirtyShoppingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+      setRecipeMetadataDirtyItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+      setStoreItemReview(null);
+      await loadRecipes();
+      setMessage(`Saved ingredient metadata to ${item.sourceRecipeNames}. Re-aggregate to apply any new grouping.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to save ingredient metadata to the recipe.");
+    } finally {
+      setSavingRecipeItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
   async function previewStoreItems() {
     if (!activeMenu?.id) return;
     const menuId = activeMenu.id;
     setMessage("");
+
+    if (recipeMetadataDirtyItemIds.size) {
+      setMessage("Save eligible recipe metadata changes before matching store items.");
+      return;
+    }
 
     if (dirtyShoppingItemIds.size) {
       const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching store items?");
@@ -774,6 +867,14 @@ function App() {
                   return next;
                 });
               }}
+              markRecipeMetadataDirty={(id) => {
+                setRecipeMetadataDirtyItemIds((current) => new Set(current).add(id));
+              }}
+              recipeMetadataDirtyItemIds={recipeMetadataDirtyItemIds}
+              savingApprovalItemIds={savingApprovalItemIds}
+              savingRecipeItemIds={savingRecipeItemIds}
+              updateApproval={updateShoppingItemApproval}
+              saveToRecipe={saveShoppingItemToRecipe}
               clearItems={clearAggregatedIngredients}
               previewStoreItems={previewStoreItems}
               openQfcCartToClear={openQfcCartToClear}
@@ -1403,6 +1504,7 @@ function RecipeForm({
         {mode === "edit" ? (
           <button
             className="danger delete-recipe-button"
+            aria-busy={isSubmitting}
             disabled={isSubmitting}
             onClick={() => void deleteRecipe()}
             type="button"
@@ -1411,7 +1513,7 @@ function RecipeForm({
             Delete recipe
           </button>
         ) : null}
-        <button disabled={isSubmitting} onClick={() => void saveRecipe()} type="button">
+        <button aria-busy={isSubmitting} disabled={isSubmitting} onClick={() => void saveRecipe()} type="button">
           <Check size={17} />
           {mode === "create" ? "Save recipe" : "Update recipe"}
         </button>
@@ -1637,6 +1739,12 @@ function ShoppingListReview({
   items,
   setItems,
   markItemDirty,
+  markRecipeMetadataDirty,
+  recipeMetadataDirtyItemIds,
+  savingApprovalItemIds,
+  savingRecipeItemIds,
+  updateApproval,
+  saveToRecipe,
   clearItems,
   previewStoreItems,
   openQfcCartToClear,
@@ -1646,15 +1754,25 @@ function ShoppingListReview({
   items: ShoppingListItem[];
   setItems: (items: ShoppingListItem[]) => void;
   markItemDirty: (id: number) => void;
+  markRecipeMetadataDirty: (id: number) => void;
+  recipeMetadataDirtyItemIds: Set<number>;
+  savingApprovalItemIds: Set<number>;
+  savingRecipeItemIds: Set<number>;
+  updateApproval: (id: number, approved: boolean) => Promise<void>;
+  saveToRecipe: (item: ShoppingListItem) => Promise<void>;
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
   openQfcCartToClear: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
-  function patchItem(id: number, patch: Partial<ShoppingListItem>) {
+  function patchItem(item: ShoppingListItem, patch: Partial<ShoppingListItem>) {
+    const id = item.id;
     setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     markItemDirty(id);
+    if (item.canPersistToRecipe) {
+      markRecipeMetadataDirty(id);
+    }
   }
 
   return (
@@ -1673,14 +1791,54 @@ function ShoppingListReview({
                   <input
                     type="checkbox"
                     checked={Boolean(item.approved)}
-                    onChange={(event) => patchItem(item.id, { approved: event.target.checked ? 1 : 0 })}
+                    disabled={savingApprovalItemIds.has(item.id)}
+                    onChange={(event) => void updateApproval(item.id, event.target.checked)}
                   />
+                  {savingApprovalItemIds.has(item.id) ? <span className="approval-save-status">Saving...</span> : null}
                 </label>
-                <input value={item.quantity} onChange={(event) => patchItem(item.id, { quantity: event.target.value })} />
-                <input value={item.unit} onChange={(event) => patchItem(item.id, { unit: event.target.value })} />
-                <input value={item.item} onChange={(event) => patchItem(item.id, { item: event.target.value })} />
-                <input value={item.text} onChange={(event) => patchItem(item.id, { text: event.target.value })} />
-                <span>{item.sourceRecipeNames}</span>
+                <input
+                  value={item.quantity}
+                  disabled={savingRecipeItemIds.has(item.id)}
+                  onChange={(event) => patchItem(item, { quantity: event.target.value })}
+                />
+                <input
+                  value={item.unit}
+                  disabled={savingRecipeItemIds.has(item.id)}
+                  onChange={(event) => patchItem(item, { unit: event.target.value })}
+                />
+                <input
+                  value={item.item}
+                  disabled={savingRecipeItemIds.has(item.id)}
+                  onChange={(event) => patchItem(item, { item: event.target.value })}
+                />
+                <input
+                  value={item.text}
+                  disabled={savingRecipeItemIds.has(item.id)}
+                  onChange={(event) => patchItem(item, { text: event.target.value })}
+                />
+                <div className="shopping-source">
+                  <span>{item.sourceRecipeNames}</span>
+                  {!item.canPersistToRecipe ? (
+                    <small>
+                      {item.sourceOccurrenceCount
+                        ? `Shopping list only - ${item.sourceOccurrenceCount} sources`
+                        : "Re-aggregate to enable recipe editing"}
+                    </small>
+                  ) : null}
+                </div>
+                {item.canPersistToRecipe ? (
+                  <button
+                    className="secondary shopping-save-recipe-button"
+                    type="button"
+                    aria-busy={savingRecipeItemIds.has(item.id)}
+                    disabled={!recipeMetadataDirtyItemIds.has(item.id) || savingRecipeItemIds.has(item.id)}
+                    onClick={() => void saveToRecipe(item)}
+                  >
+                    {savingRecipeItemIds.has(item.id) ? "Saving..." : "Save to recipe"}
+                  </button>
+                ) : (
+                  <span className="shopping-persistence-status">Not saved to recipe</span>
+                )}
               </div>
             ))}
           </div>
@@ -1693,7 +1851,11 @@ function ShoppingListReview({
               <ExternalLink size={17} />
               Open cart on QFC
             </button>
-            <button onClick={() => void previewStoreItems()} disabled={Boolean(qfcSubmitProgress)}>
+            <button
+              aria-busy={Boolean(qfcSubmitProgress)}
+              onClick={() => void previewStoreItems()}
+              disabled={Boolean(qfcSubmitProgress)}
+            >
               <Send size={17} />
               {qfcSubmitProgress ? "Matching store items..." : "Review store items"}
             </button>
@@ -1819,6 +1981,7 @@ function StoreItemReviewPanel({
       <button
         className="danger store-item-remove-button"
         type="button"
+        aria-busy={removingItemId === item.id}
         disabled={removingItemId === item.id}
         onClick={() => void removeReviewItem(item)}
       >
@@ -1895,6 +2058,7 @@ function StoreItemReviewPanel({
         <div className="store-item-custom-search-actions">
           <button
             type="submit"
+            aria-busy={searchingItemId === item.id}
             disabled={!customSearchTerm.trim() || searchingItemId === item.id}
           >
             <Search size={16} />
@@ -1973,6 +2137,7 @@ function StoreItemReviewPanel({
                         <button
                           type="button"
                           aria-label={`Decrease cart quantity for ${match.storeItem.description}`}
+                          aria-busy={updatingQuantityItemId === match.item.id}
                           disabled={updatingQuantityItemId === match.item.id || adjustedQuantity(match, 0) <= 1}
                           onClick={() => void updateQuantity(match, String(adjustedQuantity(match, -1)))}
                         >
@@ -1992,6 +2157,7 @@ function StoreItemReviewPanel({
                         <button
                           type="button"
                           aria-label={`Increase cart quantity for ${match.storeItem.description}`}
+                          aria-busy={updatingQuantityItemId === match.item.id}
                           disabled={updatingQuantityItemId === match.item.id}
                           onClick={() => void updateQuantity(match, String(adjustedQuantity(match, 1)))}
                         >
@@ -2049,7 +2215,11 @@ function StoreItemReviewPanel({
           ) : null}
 
           <div className="panel-actions">
-            <button onClick={() => void addToCart()} disabled={!matches.length || Boolean(qfcSubmitProgress) || updatingQuantityItemId !== null}>
+            <button
+              aria-busy={qfcSubmitProgress?.phase === "adding"}
+              onClick={() => void addToCart()}
+              disabled={!matches.length || Boolean(qfcSubmitProgress) || updatingQuantityItemId !== null}
+            >
               <Send size={17} />
               {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`}
             </button>

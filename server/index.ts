@@ -280,6 +280,45 @@ function buildIngredientText(quantity: string, unit: string, item: string, fallb
   return parts.length ? parts.join(" ") : fallback;
 }
 
+function getShoppingListItems(menuId: number) {
+  return queryAll(
+    `SELECT
+      shopping_list_items.id,
+      shopping_list_items.text,
+      shopping_list_items.quantity,
+      shopping_list_items.unit,
+      shopping_list_items.item,
+      shopping_list_items.source_recipe_names AS sourceRecipeNames,
+      shopping_list_items.approved,
+      (
+        SELECT COUNT(*)
+        FROM shopping_list_item_sources
+        JOIN menu_items
+          ON menu_items.id = shopping_list_item_sources.menu_item_id
+          AND menu_items.menu_id = shopping_list_items.menu_id
+        JOIN recipe_ingredients
+          ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+          AND recipe_ingredients.recipe_id = menu_items.recipe_id
+        WHERE shopping_list_item_sources.shopping_list_item_id = shopping_list_items.id
+      ) AS sourceOccurrenceCount,
+      CASE WHEN (
+        SELECT COUNT(*)
+        FROM shopping_list_item_sources
+        JOIN menu_items
+          ON menu_items.id = shopping_list_item_sources.menu_item_id
+          AND menu_items.menu_id = shopping_list_items.menu_id
+        JOIN recipe_ingredients
+          ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+          AND recipe_ingredients.recipe_id = menu_items.recipe_id
+        WHERE shopping_list_item_sources.shopping_list_item_id = shopping_list_items.id
+      ) = 1 THEN 1 ELSE 0 END AS canPersistToRecipe
+    FROM shopping_list_items
+    WHERE shopping_list_items.menu_id = ?
+    ORDER BY shopping_list_items.sort_order, shopping_list_items.id`,
+    [menuId]
+  );
+}
+
 app.get("/api/recipes", (_req, res) => {
   const rows = queryAll(
       `SELECT
@@ -732,6 +771,8 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
   const menuId = Number(req.params.id);
   const rows = queryAll(
       `SELECT
+        menu_items.id AS menuItemId,
+        recipe_ingredients.id AS recipeIngredientId,
         recipe_ingredients.text,
         recipe_ingredients.quantity,
         recipe_ingredients.unit,
@@ -744,6 +785,8 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
       ORDER BY recipes.name, recipe_ingredients.sort_order`,
       [menuId]
     ) as Array<{
+      menuItemId: number;
+      recipeIngredientId: number;
       text: string;
       quantity: string;
       unit: string;
@@ -775,12 +818,20 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
       const text = canSum
         ? buildIngredientText(quantity, first.unit, first.item, first.text)
         : first.text;
-      run(
+      const shoppingListItemId = insert(
         `INSERT INTO shopping_list_items
           (menu_id, text, quantity, unit, item, source_recipe_names, sort_order)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [menuId, text, quantity, first.unit, first.item, sources, index]
       );
+      group.forEach((source) => {
+        run(
+          `INSERT INTO shopping_list_item_sources
+            (shopping_list_item_id, menu_item_id, recipe_ingredient_id)
+          VALUES (?, ?, ?)`,
+          [shoppingListItemId, source.menuItemId, source.recipeIngredientId]
+        );
+      });
     });
   });
 
@@ -788,21 +839,12 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
 });
 
 app.get("/api/menus/:id/shopping-list", (req, res) => {
-  const rows = queryAll(
-      `SELECT
-        id,
-        text,
-        quantity,
-        unit,
-        item,
-        source_recipe_names AS sourceRecipeNames,
-        approved
-      FROM shopping_list_items
-      WHERE menu_id = ?
-      ORDER BY sort_order, id`,
-      [req.params.id]
-    );
-  res.json(rows);
+  const menuId = Number(req.params.id);
+  if (!Number.isInteger(menuId)) {
+    res.status(400).json({ error: "A valid menu id is required." });
+    return;
+  }
+  res.json(getShoppingListItems(menuId));
 });
 
 app.delete("/api/menus/:id/shopping-list", (req, res) => {
@@ -852,6 +894,105 @@ app.put("/api/menus/:id/shopping-list/items", (req, res) => {
   });
 
   res.json({ ok: true, updated: items.length });
+});
+
+app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
+  const menuId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+  if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
+    res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
+    return;
+  }
+  if (typeof req.body.approved !== "boolean") {
+    res.status(400).json({ error: "Approval must be true or false." });
+    return;
+  }
+
+  const existing = queryOne<{ id: number }>(
+    "SELECT id FROM shopping_list_items WHERE id = ? AND menu_id = ?",
+    [itemId, menuId]
+  );
+  if (!existing) {
+    res.status(404).json({ error: "Shopping-list item not found for this menu." });
+    return;
+  }
+
+  run("UPDATE shopping_list_items SET approved = ? WHERE id = ? AND menu_id = ?", [
+    req.body.approved ? 1 : 0,
+    itemId,
+    menuId
+  ]);
+  saveDb();
+  res.json({ id: itemId, approved: req.body.approved ? 1 : 0 });
+});
+
+app.patch("/api/menus/:id/shopping-list/items/:itemId/source-ingredient", (req, res) => {
+  const menuId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+  if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
+    res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
+    return;
+  }
+
+  const item = String(req.body.item ?? "").trim();
+  const quantity = String(req.body.quantity ?? "").trim();
+  const unit = String(req.body.unit ?? "").trim();
+  const text = String(req.body.text ?? "").trim() || buildIngredientText(quantity, unit, item, "");
+  if (!item) {
+    res.status(400).json({ error: "Ingredient item is required before saving to a recipe." });
+    return;
+  }
+
+  const shoppingItem = queryOne<{ id: number }>(
+    "SELECT id FROM shopping_list_items WHERE id = ? AND menu_id = ?",
+    [itemId, menuId]
+  );
+  if (!shoppingItem) {
+    res.status(404).json({ error: "Shopping-list item not found for this menu." });
+    return;
+  }
+
+  const sources = queryAll<{ recipeIngredientId: number; recipeId: number }>(
+    `SELECT
+      shopping_list_item_sources.recipe_ingredient_id AS recipeIngredientId,
+      recipe_ingredients.recipe_id AS recipeId
+    FROM shopping_list_item_sources
+    JOIN menu_items
+      ON menu_items.id = shopping_list_item_sources.menu_item_id
+      AND menu_items.menu_id = ?
+    JOIN recipe_ingredients
+      ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+      AND recipe_ingredients.recipe_id = menu_items.recipe_id
+    WHERE shopping_list_item_sources.shopping_list_item_id = ?`,
+    [menuId, itemId]
+  );
+  if (sources.length !== 1) {
+    res.status(409).json({
+      error: sources.length === 0
+        ? "Re-aggregate this menu before saving ingredient metadata to a recipe."
+        : "Grouped or repeated ingredients cannot be saved back to a recipe."
+    });
+    return;
+  }
+
+  transaction(() => {
+    run(
+      `UPDATE recipe_ingredients
+      SET text = ?, quantity = ?, unit = ?, item = ?
+      WHERE id = ? AND recipe_id = ?`,
+      [text, quantity, unit, item, sources[0].recipeIngredientId, sources[0].recipeId]
+    );
+    run("UPDATE recipes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [sources[0].recipeId]);
+    run(
+      `UPDATE shopping_list_items
+      SET text = ?, quantity = ?, unit = ?, item = ?
+      WHERE id = ? AND menu_id = ?`,
+      [text, quantity, unit, item, itemId, menuId]
+    );
+  });
+
+  const updatedItem = getShoppingListItems(menuId).find((candidate) => candidate.id === itemId);
+  res.json({ item: updatedItem, recipeId: sources[0].recipeId });
 });
 
 app.post("/api/menus/:id/preview-qfc", async (req, res) => {

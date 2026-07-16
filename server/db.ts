@@ -187,6 +187,16 @@ export async function initializeDb() {
     saveDb();
   }
 
+  run(`
+    CREATE TABLE IF NOT EXISTS shopping_list_item_sources (
+      shopping_list_item_id INTEGER NOT NULL REFERENCES shopping_list_items(id) ON DELETE CASCADE,
+      menu_item_id INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+      recipe_ingredient_id INTEGER NOT NULL REFERENCES recipe_ingredients(id) ON DELETE CASCADE,
+      PRIMARY KEY (shopping_list_item_id, menu_item_id, recipe_ingredient_id)
+    )
+  `);
+  saveDb();
+
   const settings = queryOne<{ count: number }>("SELECT COUNT(*) AS count FROM settings");
   if (settings?.count === 0) {
     run("INSERT INTO settings (key, value) VALUES (?, ?)", ["preferStoreBrands", "true"]);
