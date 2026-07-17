@@ -171,6 +171,14 @@ type StoreItemPreference = {
 
 type AppView = "recipe-admin" | "qfc-api" | "planner";
 
+type AppRoute = {
+  path: string;
+  view: AppView;
+  recipeAdminTab?: RecipeAdminTab;
+  recipeId?: number;
+  qfcSettingsTab?: QfcSettingsTab;
+};
+
 const categories: Array<{ value: RecipeCategory; label: string }> = [
   { value: "entree", label: "Entree" },
   { value: "vegetable_side", label: "Vegetable side" },
@@ -215,6 +223,40 @@ const views: Array<{ id: AppView; label: string; title: string; eyebrow: string;
   { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings }
 ];
 
+const appRoutes: AppRoute[] = [
+  { path: "/planner", view: "planner" },
+  { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
+  { path: "/recipes/manage", view: "recipe-admin", recipeAdminTab: "manage" },
+  { path: "/settings/qfc/api", view: "qfc-api", qfcSettingsTab: "api" },
+  { path: "/settings/qfc/preferences", view: "qfc-api", qfcSettingsTab: "preferences" }
+];
+
+function normalizePathname(pathname: string) {
+  return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+}
+
+function routeFromPathname(pathname: string) {
+  const normalizedPathname = normalizePathname(pathname);
+  const recipeEditMatch = /^\/recipes\/manage\/([1-9]\d*)$/.exec(normalizedPathname);
+  if (recipeEditMatch) {
+    return recipeEditRoute(Number(recipeEditMatch[1]));
+  }
+  return appRoutes.find((route) => route.path === normalizedPathname) ?? appRoutes[0];
+}
+
+function recipeEditRoute(recipeId: number): AppRoute {
+  return {
+    path: `/recipes/manage/${recipeId}`,
+    view: "recipe-admin",
+    recipeAdminTab: "manage",
+    recipeId
+  };
+}
+
+function defaultRouteForView(view: AppView) {
+  return appRoutes.find((route) => route.view === view) ?? appRoutes[0];
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -240,7 +282,7 @@ function getInitialTheme(): ThemeMode {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<AppView>("planner");
+  const [activeRoute, setActiveRoute] = useState<AppRoute>(() => routeFromPathname(window.location.pathname));
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -289,6 +331,21 @@ function App() {
     void loadRecipes();
     void loadSettings();
     void loadLatestMenu();
+  }, []);
+
+  useEffect(() => {
+    function syncRouteFromUrl() {
+      const nextRoute = routeFromPathname(window.location.pathname);
+      if (window.location.pathname !== nextRoute.path) {
+        window.history.replaceState(null, "", nextRoute.path);
+      }
+      setActiveRoute(nextRoute);
+      setIsMenuOpen(false);
+    }
+
+    syncRouteFromUrl();
+    window.addEventListener("popstate", syncRouteFromUrl);
+    return () => window.removeEventListener("popstate", syncRouteFromUrl);
   }, []);
 
   useLayoutEffect(() => {
@@ -638,11 +695,19 @@ function App() {
     [recipes]
   );
 
+  const activeView = activeRoute.view;
   const currentView = views.find((view) => view.id === activeView) ?? views[0];
 
-  function selectView(view: AppView) {
-    setActiveView(view);
+  function navigate(route: AppRoute) {
+    if (window.location.pathname !== route.path) {
+      window.history.pushState(null, "", route.path);
+    }
+    setActiveRoute(route);
     setIsMenuOpen(false);
+  }
+
+  function selectView(view: AppView) {
+    navigate(defaultRouteForView(view));
   }
 
   async function selectStoreItem(shoppingItemId: number, productId: string, upc: string) {
@@ -785,7 +850,20 @@ function App() {
               {isMenuOpen ? <X size={20} /> : <MenuIcon size={20} />}
             </button>
             <div>
-              <h1>Grocery Getter</h1>
+              <h1>
+                <a
+                  className="app-title-link"
+                  href="/planner"
+                  onClick={(event) => {
+                    if (event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                      event.preventDefault();
+                      selectView("planner");
+                    }
+                  }}
+                >
+                  Grocery Getter
+                </a>
+              </h1>
               <span className="eyebrow">{currentView.eyebrow}</span>
               <h2>{currentView.title}</h2>
             </div>
@@ -828,11 +906,22 @@ function App() {
         ) : null}
 
         {activeView === "recipe-admin" ? (
-          <RecipeAdmin recipes={recipes} recipeCounts={recipeCounts} onSaved={loadRecipes} />
+          <RecipeAdmin
+            activeTab={activeRoute.recipeAdminTab ?? "create"}
+            editingRecipeId={activeRoute.recipeId ?? null}
+            onEdit={(recipeId) => navigate(recipeEditRoute(recipeId))}
+            onExitEdit={() => navigate(routeFromPathname("/recipes/manage"))}
+            onTabChange={(tab) => navigate(routeFromPathname(`/recipes/${tab}`))}
+            recipes={recipes}
+            recipeCounts={recipeCounts}
+            onSaved={loadRecipes}
+          />
         ) : null}
 
         {activeView === "qfc-api" ? (
           <StoreSettingsPanel
+            activeTab={activeRoute.qfcSettingsTab ?? "api"}
+            onTabChange={(tab) => navigate(routeFromPathname(`/settings/qfc/${tab}`))}
             status={qfcStatus}
             reloadStatus={loadSettings}
             preferStoreBrands={preferStoreBrands}
@@ -899,6 +988,8 @@ function App() {
 }
 
 function StoreSettingsPanel({
+  activeTab,
+  onTabChange,
   status,
   reloadStatus,
   preferStoreBrands,
@@ -906,6 +997,8 @@ function StoreSettingsPanel({
   storeItemPreferences,
   forgetStoreItemPreference
 }: {
+  activeTab: QfcSettingsTab;
+  onTabChange: (tab: QfcSettingsTab) => void;
   status: QfcStatus | null;
   reloadStatus: () => Promise<void>;
   preferStoreBrands: boolean;
@@ -913,7 +1006,6 @@ function StoreSettingsPanel({
   storeItemPreferences: StoreItemPreference[];
   forgetStoreItemPreference: (provider: string, ingredientKey: string) => Promise<void>;
 }) {
-  const [activeQfcTab, setActiveQfcTab] = useState<QfcSettingsTab>("api");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -1030,26 +1122,26 @@ function StoreSettingsPanel({
 
       <div className="sub-tabs" role="tablist" aria-label="QFC settings sections">
         <button
-          className={`sub-tab-button ${activeQfcTab === "api" ? "active" : ""}`}
-          onClick={() => setActiveQfcTab("api")}
+          className={`sub-tab-button ${activeTab === "api" ? "active" : ""}`}
+          onClick={() => onTabChange("api")}
           role="tab"
-          aria-selected={activeQfcTab === "api"}
+          aria-selected={activeTab === "api"}
           type="button"
         >
           QFC API Setup
         </button>
         <button
-          className={`sub-tab-button ${activeQfcTab === "preferences" ? "active" : ""}`}
-          onClick={() => setActiveQfcTab("preferences")}
+          className={`sub-tab-button ${activeTab === "preferences" ? "active" : ""}`}
+          onClick={() => onTabChange("preferences")}
           role="tab"
-          aria-selected={activeQfcTab === "preferences"}
+          aria-selected={activeTab === "preferences"}
           type="button"
         >
           Store Item Preferences
         </button>
       </div>
 
-      {activeQfcTab === "api" ? (
+      {activeTab === "api" ? (
         <div className="tab-panel" role="tabpanel">
           <div className="status-strip">
             <span className={status?.hasClientId ? "status-good" : "status-muted"}>Client ID</span>
@@ -1195,16 +1287,24 @@ function StoreSettingsPanel({
 }
 
 function RecipeAdmin({
+  activeTab,
+  editingRecipeId,
+  onEdit,
+  onExitEdit,
+  onTabChange,
   recipes,
   recipeCounts,
   onSaved
 }: {
+  activeTab: RecipeAdminTab;
+  editingRecipeId: number | null;
+  onEdit: (recipeId: number) => void;
+  onExitEdit: () => void;
+  onTabChange: (tab: RecipeAdminTab) => void;
   recipes: Recipe[];
   recipeCounts: RecipeCategoryCount[];
   onSaved: () => Promise<void>;
 }) {
-  const [activeAdminTab, setActiveAdminTab] = useState<RecipeAdminTab>("create");
-  const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
   const editingRecipe = recipes.find((recipe) => recipe.id === editingRecipeId) ?? null;
 
   async function createRecipe(payload: RecipeFormPayload) {
@@ -1225,7 +1325,7 @@ function RecipeAdmin({
       body: JSON.stringify(payload)
     });
     await onSaved();
-    setEditingRecipeId(null);
+    onExitEdit();
   }
 
   async function deleteRecipe() {
@@ -1235,7 +1335,7 @@ function RecipeAdmin({
 
     await api(`/api/recipes/${editingRecipe.id}`, { method: "DELETE" });
     await onSaved();
-    setEditingRecipeId(null);
+    onExitEdit();
   }
 
   return (
@@ -1247,40 +1347,37 @@ function RecipeAdmin({
 
       <div className="sub-tabs" role="tablist" aria-label="Recipe admin sections">
         <button
-          className={`sub-tab-button ${activeAdminTab === "create" ? "active" : ""}`}
-          onClick={() => {
-            setActiveAdminTab("create");
-            setEditingRecipeId(null);
-          }}
+          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
+          onClick={() => onTabChange("create")}
           role="tab"
-          aria-selected={activeAdminTab === "create"}
+          aria-selected={activeTab === "create"}
           type="button"
         >
           Recipe Creation
         </button>
         <button
-          className={`sub-tab-button ${activeAdminTab === "manage" ? "active" : ""}`}
-          onClick={() => setActiveAdminTab("manage")}
+          className={`sub-tab-button ${activeTab === "manage" ? "active" : ""}`}
+          onClick={() => onTabChange("manage")}
           role="tab"
-          aria-selected={activeAdminTab === "manage"}
+          aria-selected={activeTab === "manage"}
           type="button"
         >
           Recipe Management
         </button>
       </div>
 
-      {activeAdminTab === "create" ? (
+      {activeTab === "create" ? (
         <RecipeForm mode="create" onSubmit={createRecipe} />
       ) : editingRecipe ? (
         <RecipeForm
           mode="edit"
           initialRecipe={editingRecipe}
-          onCancel={() => setEditingRecipeId(null)}
+          onCancel={onExitEdit}
           onDelete={deleteRecipe}
           onSubmit={updateRecipe}
         />
       ) : (
-        <RecipeManagementList recipes={recipes} recipeCounts={recipeCounts} onEdit={setEditingRecipeId} />
+        <RecipeManagementList recipes={recipes} recipeCounts={recipeCounts} onEdit={onEdit} />
       )}
     </section>
   );
