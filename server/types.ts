@@ -39,3 +39,32 @@ export type RecipeIngredient = {
   item: string;
   sortOrder: number;
 };
+
+export type CustomShoppingListInput = {
+  name: string;
+  includeInMenuByDefault?: boolean;
+  items: Array<{
+    id?: number;
+    text?: string;
+    quantity?: string;
+    unit?: string;
+    item: string;
+  }>;
+};
+
+export type CustomShoppingList = {
+  id: number;
+  name: string;
+  includeInMenuByDefault: boolean;
+  items: CustomShoppingListItem[];
+};
+
+export type CustomShoppingListItem = {
+  id: number;
+  customShoppingListId: number;
+  text: string;
+  quantity: string;
+  unit: string;
+  item: string;
+  sortOrder: number;
+};

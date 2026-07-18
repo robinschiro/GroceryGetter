@@ -18,6 +18,10 @@ function columnExists(tableName: string, columnName: string) {
   return queryAll(`PRAGMA table_info(${tableName})`).some((column) => column.name === columnName);
 }
 
+function tableExists(tableName: string) {
+  return Boolean(queryOne("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [tableName]));
+}
+
 function columnIsNotNull(tableName: string, columnName: string) {
   return queryAll(`PRAGMA table_info(${tableName})`).some(
     (column) => column.name === columnName && column.notnull === 1
@@ -37,6 +41,26 @@ export async function initializeDb() {
   }
   db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
   db.run("PRAGMA foreign_keys = ON");
+
+  if (tableExists("shopping_list_items") && !tableExists("menu_shopping_list_items")) {
+    run("ALTER TABLE shopping_list_items RENAME TO menu_shopping_list_items");
+  }
+  if (tableExists("shopping_list_item_sources") && !tableExists("menu_shopping_list_item_recipe_sources")) {
+    run("ALTER TABLE shopping_list_item_sources RENAME TO menu_shopping_list_item_recipe_sources");
+  }
+  if (tableExists("menu_shopping_list_items") && columnExists("menu_shopping_list_items", "source_recipe_names")) {
+    run("ALTER TABLE menu_shopping_list_items RENAME COLUMN source_recipe_names TO source_names");
+  }
+  if (
+    tableExists("menu_shopping_list_item_recipe_sources")
+    && columnExists("menu_shopping_list_item_recipe_sources", "shopping_list_item_id")
+  ) {
+    run(
+      `ALTER TABLE menu_shopping_list_item_recipe_sources
+      RENAME COLUMN shopping_list_item_id TO menu_shopping_list_item_id`
+    );
+  }
+  saveDb();
 
   db.run(`
   CREATE TABLE IF NOT EXISTS recipes (
@@ -81,16 +105,40 @@ export async function initializeDb() {
     recipe_id INTEGER REFERENCES recipes(id)
   );
 
-  CREATE TABLE IF NOT EXISTS shopping_list_items (
+  CREATE TABLE IF NOT EXISTS menu_shopping_list_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
     quantity TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL DEFAULT '',
     item TEXT NOT NULL,
-    source_recipe_names TEXT NOT NULL,
+    source_names TEXT NOT NULL,
     approved INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS custom_shopping_lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    include_in_menu_by_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS custom_shopping_list_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    custom_shopping_list_id INTEGER NOT NULL REFERENCES custom_shopping_lists(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    quantity TEXT NOT NULL DEFAULT '',
+    unit TEXT NOT NULL DEFAULT '',
+    item TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS menu_custom_shopping_lists (
+    menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+    custom_shopping_list_id INTEGER NOT NULL REFERENCES custom_shopping_lists(id) ON DELETE CASCADE,
+    PRIMARY KEY (menu_id, custom_shopping_list_id)
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -113,8 +161,15 @@ export async function initializeDb() {
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (provider, ingredient_key)
   );
-`);
+  `);
   saveDb();
+
+  if (!columnExists("custom_shopping_lists", "include_in_menu_by_default")) {
+    run(
+      "ALTER TABLE custom_shopping_lists ADD COLUMN include_in_menu_by_default INTEGER NOT NULL DEFAULT 0"
+    );
+    saveDb();
+  }
 
   if (!storeItemPreferencesHaveProviderKey()) {
     run("ALTER TABLE store_item_preferences RENAME TO store_item_preferences_old");
@@ -188,11 +243,18 @@ export async function initializeDb() {
   }
 
   run(`
-    CREATE TABLE IF NOT EXISTS shopping_list_item_sources (
-      shopping_list_item_id INTEGER NOT NULL REFERENCES shopping_list_items(id) ON DELETE CASCADE,
+    CREATE TABLE IF NOT EXISTS menu_shopping_list_item_recipe_sources (
+      menu_shopping_list_item_id INTEGER NOT NULL REFERENCES menu_shopping_list_items(id) ON DELETE CASCADE,
       menu_item_id INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
       recipe_ingredient_id INTEGER NOT NULL REFERENCES recipe_ingredients(id) ON DELETE CASCADE,
-      PRIMARY KEY (shopping_list_item_id, menu_item_id, recipe_ingredient_id)
+      PRIMARY KEY (menu_shopping_list_item_id, menu_item_id, recipe_ingredient_id)
+    )
+  `);
+  run(`
+    CREATE TABLE IF NOT EXISTS menu_shopping_list_item_custom_sources (
+      menu_shopping_list_item_id INTEGER NOT NULL REFERENCES menu_shopping_list_items(id) ON DELETE CASCADE,
+      custom_shopping_list_item_id INTEGER NOT NULL REFERENCES custom_shopping_list_items(id) ON DELETE CASCADE,
+      PRIMARY KEY (menu_shopping_list_item_id, custom_shopping_list_item_id)
     )
   `);
   saveDb();

@@ -16,12 +16,12 @@ import {
   deleteStoreItemPreference
 } from "./qfcAdapter.js";
 import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
-import type { Recipe, RecipeInput } from "./types.js";
+import type { CustomShoppingList, CustomShoppingListInput, Recipe, RecipeInput } from "./types.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-const port = 5174;
+const port = Number(process.env.PORT ?? 5174);
 
 type QfcSubmitJob = {
   id: string;
@@ -55,6 +55,18 @@ type MenuRow = {
   mealCount: number;
   isTestData: number;
   status: string;
+};
+
+type AggregateSource = {
+  sourceType: "recipe" | "custom";
+  menuItemId: number | null;
+  recipeIngredientId: number | null;
+  customShoppingListItemId: number | null;
+  text: string;
+  quantity: string;
+  unit: string;
+  item: string;
+  sourceName: string;
 };
 
 function pruneQfcSubmitJobs() {
@@ -177,13 +189,21 @@ function buildMenuPreview(mealCount: number, includeTestData: boolean) {
     })
   );
 
+  const customShoppingListIds = queryAll<{ id: number }>(
+    `SELECT id
+    FROM custom_shopping_lists
+    WHERE include_in_menu_by_default = 1
+    ORDER BY name COLLATE NOCASE, id`
+  ).map((list) => list.id);
+
   return {
     id: null,
     name: `Week of ${new Date().toLocaleDateString("en-US")}`,
     mealCount,
     isTestData: includeTestData,
     status: "preview",
-    items
+    items,
+    customShoppingListIds
   };
 }
 
@@ -211,7 +231,106 @@ function getMenu(menuId: number) {
     [menuId]
   );
 
-  return { ...menu, isTestData: Boolean(menu.isTestData), items };
+  const customShoppingListIds = queryAll<{ customShoppingListId: number }>(
+    `SELECT custom_shopping_list_id AS customShoppingListId
+    FROM menu_custom_shopping_lists
+    WHERE menu_id = ?
+    ORDER BY custom_shopping_list_id`,
+    [menuId]
+  ).map((row) => row.customShoppingListId);
+
+  return { ...menu, isTestData: Boolean(menu.isTestData), items, customShoppingListIds };
+}
+
+function getCustomShoppingList(id: number): CustomShoppingList | null {
+  const list = queryOne<{ id: number; name: string; includeInMenuByDefault: number }>(
+    `SELECT
+      id,
+      name,
+      include_in_menu_by_default AS includeInMenuByDefault
+    FROM custom_shopping_lists
+    WHERE id = ?`,
+    [id]
+  );
+  if (!list) {
+    return null;
+  }
+
+  const items = queryAll(
+    `SELECT
+      id,
+      custom_shopping_list_id AS customShoppingListId,
+      text,
+      quantity,
+      unit,
+      item,
+      sort_order AS sortOrder
+    FROM custom_shopping_list_items
+    WHERE custom_shopping_list_id = ?
+    ORDER BY sort_order, id`,
+    [id]
+  ) as CustomShoppingList["items"];
+
+  return {
+    ...list,
+    includeInMenuByDefault: Boolean(list.includeInMenuByDefault),
+    items
+  };
+}
+
+function validateCustomShoppingListInput(input: CustomShoppingListInput) {
+  if (!input.name?.trim()) {
+    throw new Error("Shopping list name is required.");
+  }
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new Error("At least one shopping-list item is required.");
+  }
+  if (input.items.some((item) => !item.item?.trim())) {
+    throw new Error("Shopping-list items must include an item name.");
+  }
+}
+
+function replaceCustomShoppingListItems(listId: number, items: CustomShoppingListInput["items"]) {
+  const existingIds = new Set(
+    queryAll<{ id: number }>(
+      "SELECT id FROM custom_shopping_list_items WHERE custom_shopping_list_id = ?",
+      [listId]
+    ).map((row) => row.id)
+  );
+  const retainedIds = new Set<number>();
+
+  items.forEach((input, index) => {
+    const item = input.item.trim();
+    const quantity = input.quantity?.trim() ?? "";
+    const unit = input.unit?.trim() ?? "";
+    const text = input.text?.trim() || buildIngredientText(quantity, unit, item, item);
+    const itemId = Number(input.id);
+    if (Number.isInteger(itemId) && existingIds.has(itemId)) {
+      run(
+        `UPDATE custom_shopping_list_items
+        SET text = ?, quantity = ?, unit = ?, item = ?, sort_order = ?
+        WHERE id = ? AND custom_shopping_list_id = ?`,
+        [text, quantity, unit, item, index, itemId, listId]
+      );
+      retainedIds.add(itemId);
+    } else {
+      retainedIds.add(insert(
+        `INSERT INTO custom_shopping_list_items
+          (custom_shopping_list_id, text, quantity, unit, item, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        [listId, text, quantity, unit, item, index]
+      ));
+    }
+  });
+
+  for (const existingId of existingIds) {
+    if (!retainedIds.has(existingId)) {
+      run(
+        "DELETE FROM custom_shopping_list_items WHERE id = ? AND custom_shopping_list_id = ?",
+        [existingId, listId]
+      );
+    }
+  }
 }
 
 function validateRecipeInput(input: RecipeInput) {
@@ -283,38 +402,54 @@ function buildIngredientText(quantity: string, unit: string, item: string, fallb
 function getShoppingListItems(menuId: number) {
   return queryAll(
     `SELECT
-      shopping_list_items.id,
-      shopping_list_items.text,
-      shopping_list_items.quantity,
-      shopping_list_items.unit,
-      shopping_list_items.item,
-      shopping_list_items.source_recipe_names AS sourceRecipeNames,
-      shopping_list_items.approved,
+      menu_shopping_list_items.id,
+      menu_shopping_list_items.text,
+      menu_shopping_list_items.quantity,
+      menu_shopping_list_items.unit,
+      menu_shopping_list_items.item,
+      menu_shopping_list_items.source_names AS sourceNames,
+      menu_shopping_list_items.approved,
       (
         SELECT COUNT(*)
-        FROM shopping_list_item_sources
+        FROM menu_shopping_list_item_recipe_sources
         JOIN menu_items
-          ON menu_items.id = shopping_list_item_sources.menu_item_id
-          AND menu_items.menu_id = shopping_list_items.menu_id
+          ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
+          AND menu_items.menu_id = menu_shopping_list_items.menu_id
         JOIN recipe_ingredients
-          ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+          ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
           AND recipe_ingredients.recipe_id = menu_items.recipe_id
-        WHERE shopping_list_item_sources.shopping_list_item_id = shopping_list_items.id
+        WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = menu_shopping_list_items.id
+      ) + (
+        SELECT COUNT(*)
+        FROM menu_shopping_list_item_custom_sources
+        JOIN custom_shopping_list_items
+          ON custom_shopping_list_items.id =
+            menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
+        WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
+          menu_shopping_list_items.id
       ) AS sourceOccurrenceCount,
       CASE WHEN (
         SELECT COUNT(*)
-        FROM shopping_list_item_sources
+        FROM menu_shopping_list_item_recipe_sources
         JOIN menu_items
-          ON menu_items.id = shopping_list_item_sources.menu_item_id
-          AND menu_items.menu_id = shopping_list_items.menu_id
+          ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
+          AND menu_items.menu_id = menu_shopping_list_items.menu_id
         JOIN recipe_ingredients
-          ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+          ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
           AND recipe_ingredients.recipe_id = menu_items.recipe_id
-        WHERE shopping_list_item_sources.shopping_list_item_id = shopping_list_items.id
-      ) = 1 THEN 1 ELSE 0 END AS canPersistToRecipe
-    FROM shopping_list_items
-    WHERE shopping_list_items.menu_id = ?
-    ORDER BY shopping_list_items.sort_order, shopping_list_items.id`,
+        WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = menu_shopping_list_items.id
+      ) + (
+        SELECT COUNT(*)
+        FROM menu_shopping_list_item_custom_sources
+        JOIN custom_shopping_list_items
+          ON custom_shopping_list_items.id =
+            menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
+        WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
+          menu_shopping_list_items.id
+      ) = 1 THEN 1 ELSE 0 END AS canPersistToSource
+    FROM menu_shopping_list_items
+    WHERE menu_shopping_list_items.menu_id = ?
+    ORDER BY menu_shopping_list_items.sort_order, menu_shopping_list_items.id`,
     [menuId]
   );
 }
@@ -480,6 +615,72 @@ app.delete("/api/recipes/:id", (req, res) => {
   }
 });
 
+app.get("/api/custom-shopping-lists", (_req, res) => {
+  const lists = queryAll<{ id: number }>(
+    "SELECT id FROM custom_shopping_lists ORDER BY name COLLATE NOCASE, id"
+  );
+  res.json(lists.map((list) => getCustomShoppingList(list.id)).filter(Boolean));
+});
+
+app.post("/api/custom-shopping-lists", (req, res) => {
+  try {
+    const input = req.body as CustomShoppingListInput;
+    validateCustomShoppingListInput(input);
+    const listId = transaction(() => {
+      const id = insert(
+        `INSERT INTO custom_shopping_lists (name, include_in_menu_by_default)
+        VALUES (?, ?)`,
+        [input.name.trim(), input.includeInMenuByDefault ? 1 : 0]
+      );
+      replaceCustomShoppingListItems(id, input.items);
+      return id;
+    });
+    res.status(201).json(getCustomShoppingList(listId));
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to create the shopping list."
+    });
+  }
+});
+
+app.put("/api/custom-shopping-lists/:id", (req, res) => {
+  const listId = Number(req.params.id);
+  if (!Number.isInteger(listId) || !getCustomShoppingList(listId)) {
+    res.status(404).json({ error: "Shopping list not found." });
+    return;
+  }
+
+  try {
+    const input = req.body as CustomShoppingListInput;
+    validateCustomShoppingListInput(input);
+    transaction(() => {
+      run(
+        `UPDATE custom_shopping_lists
+        SET name = ?, include_in_menu_by_default = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+        [input.name.trim(), input.includeInMenuByDefault ? 1 : 0, listId]
+      );
+      replaceCustomShoppingListItems(listId, input.items);
+    });
+    res.json(getCustomShoppingList(listId));
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update the shopping list."
+    });
+  }
+});
+
+app.delete("/api/custom-shopping-lists/:id", (req, res) => {
+  const listId = Number(req.params.id);
+  if (!Number.isInteger(listId) || !getCustomShoppingList(listId)) {
+    res.status(404).json({ error: "Shopping list not found." });
+    return;
+  }
+  run("DELETE FROM custom_shopping_lists WHERE id = ?", [listId]);
+  saveDb();
+  res.json({ ok: true });
+});
+
 app.get("/api/settings", (_req, res) => {
   const settings = queryAll("SELECT key, value FROM settings ORDER BY key") as Array<{
     key: string;
@@ -633,6 +834,9 @@ app.post("/api/menus", (req, res) => {
   const mealCount = Number(req.body.mealCount);
   const isTestData = Boolean(req.body.isTestData);
   const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
+  const customShoppingListIds: number[] = Array.isArray(req.body.customShoppingListIds)
+    ? Array.from(new Set<number>(req.body.customShoppingListIds.map((id: unknown) => Number(id))))
+    : [];
   if (!validateMealCount(mealCount)) {
     res.status(400).json({ error: "Meal count must be between 1 and 14." });
     return;
@@ -640,6 +844,22 @@ app.post("/api/menus", (req, res) => {
 
   if (items.length !== mealCount * recipeCategories.length) {
     res.status(400).json({ error: "Saved menus must include one recipe for every meal slot." });
+    return;
+  }
+  if (customShoppingListIds.some((id) => !Number.isInteger(id))) {
+    res.status(400).json({ error: "Custom shopping-list selections are invalid." });
+    return;
+  }
+  const existingCustomListCount = customShoppingListIds.length
+    ? queryOne<{ count: number }>(
+      `SELECT COUNT(*) AS count
+      FROM custom_shopping_lists
+      WHERE id IN (${customShoppingListIds.map(() => "?").join(", ")})`,
+      customShoppingListIds
+    )?.count ?? 0
+    : 0;
+  if (existingCustomListCount !== customShoppingListIds.length) {
+    res.status(400).json({ error: "One or more selected custom shopping lists do not exist." });
     return;
   }
 
@@ -699,6 +919,12 @@ app.post("/api/menus", (req, res) => {
         item.slot,
         item.recipeId
       ]);
+    }
+    for (const customShoppingListId of customShoppingListIds) {
+      run(
+        "INSERT INTO menu_custom_shopping_lists (menu_id, custom_shopping_list_id) VALUES (?, ?)",
+        [menuId, customShoppingListId]
+      );
     }
     return menuId;
   });
@@ -767,70 +993,158 @@ app.put("/api/menu-items/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+app.put("/api/menus/:id/custom-shopping-lists", (req, res) => {
+  const menuId = Number(req.params.id);
+  const ids: number[] | null = Array.isArray(req.body.customShoppingListIds)
+    ? Array.from(new Set<number>(req.body.customShoppingListIds.map((id: unknown) => Number(id))))
+    : null;
+  if (!Number.isInteger(menuId) || !getMenu(menuId)) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+  if (!ids || ids.some((id) => !Number.isInteger(id))) {
+    res.status(400).json({ error: "Custom shopping-list selections are invalid." });
+    return;
+  }
+
+  const existingCount = ids.length
+    ? queryOne<{ count: number }>(
+      `SELECT COUNT(*) AS count
+      FROM custom_shopping_lists
+      WHERE id IN (${ids.map(() => "?").join(", ")})`,
+      ids
+    )?.count ?? 0
+    : 0;
+  if (existingCount !== ids.length) {
+    res.status(400).json({ error: "One or more selected custom shopping lists do not exist." });
+    return;
+  }
+
+  transaction(() => {
+    run("DELETE FROM menu_custom_shopping_lists WHERE menu_id = ?", [menuId]);
+    for (const id of ids) {
+      run(
+        "INSERT INTO menu_custom_shopping_lists (menu_id, custom_shopping_list_id) VALUES (?, ?)",
+        [menuId, id]
+      );
+    }
+    run("UPDATE menus SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [menuId]);
+  });
+  res.json({ customShoppingListIds: ids });
+});
+
 app.post("/api/menus/:id/aggregate", (req, res) => {
   const menuId = Number(req.params.id);
-  const rows = queryAll(
+  if (!Number.isInteger(menuId) || !getMenu(menuId)) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+
+  const recipeSources = queryAll(
       `SELECT
+        'recipe' AS sourceType,
         menu_items.id AS menuItemId,
         recipe_ingredients.id AS recipeIngredientId,
+        NULL AS customShoppingListItemId,
         recipe_ingredients.text,
         recipe_ingredients.quantity,
         recipe_ingredients.unit,
         recipe_ingredients.item,
-        recipes.name AS recipeName
+        recipes.name AS sourceName
       FROM menu_items
       JOIN recipe_ingredients ON recipe_ingredients.recipe_id = menu_items.recipe_id
       JOIN recipes ON recipes.id = menu_items.recipe_id
       WHERE menu_items.menu_id = ?
       ORDER BY recipes.name, recipe_ingredients.sort_order`,
       [menuId]
-    ) as Array<{
-      menuItemId: number;
-      recipeIngredientId: number;
-      text: string;
-      quantity: string;
-      unit: string;
-      item: string;
-      recipeName: string;
-    }>;
+    ) as AggregateSource[];
+  const customSources = queryAll(
+    `SELECT
+      'custom' AS sourceType,
+      NULL AS menuItemId,
+      NULL AS recipeIngredientId,
+      custom_shopping_list_items.id AS customShoppingListItemId,
+      custom_shopping_list_items.text,
+      custom_shopping_list_items.quantity,
+      custom_shopping_list_items.unit,
+      custom_shopping_list_items.item,
+      custom_shopping_lists.name AS sourceName
+    FROM menu_custom_shopping_lists
+    JOIN custom_shopping_lists
+      ON custom_shopping_lists.id = menu_custom_shopping_lists.custom_shopping_list_id
+    JOIN custom_shopping_list_items
+      ON custom_shopping_list_items.custom_shopping_list_id = custom_shopping_lists.id
+    WHERE menu_custom_shopping_lists.menu_id = ?
+    ORDER BY custom_shopping_lists.name COLLATE NOCASE, custom_shopping_list_items.sort_order`,
+    [menuId]
+  ) as AggregateSource[];
 
-  const grouped = new Map<string, typeof rows>();
-  for (const row of rows) {
+  const grouped = new Map<string, AggregateSource[]>();
+  for (const row of [...recipeSources, ...customSources]) {
     const normalizedItem = row.item.trim().toLowerCase();
     const normalizedUnit = row.unit.trim().toLowerCase();
-    const key = normalizedItem
+    let key = normalizedItem
       ? `${normalizedItem}|${normalizedUnit}`
       : row.text.trim().toLowerCase();
+    if (row.sourceType === "custom" && normalizedItem && !normalizedUnit) {
+      const compatibleKeys = Array.from(grouped.keys()).filter((candidate) =>
+        candidate.startsWith(`${normalizedItem}|`)
+      );
+      if (compatibleKeys.length === 1) {
+        key = compatibleKeys[0];
+      }
+    }
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
 
   transaction(() => {
-    run("DELETE FROM shopping_list_items WHERE menu_id = ?", [menuId]);
+    run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
 
     Array.from(grouped.values()).forEach((group, index) => {
       const first = group[0];
-      const sources = Array.from(new Set(group.map((item) => item.recipeName))).join(", ");
-      const parsedQuantities = group.map((item) => parseQuantity(item.quantity));
-      const canSum = parsedQuantities.every((quantity) => quantity !== null);
+      const sourceNames = Array.from(new Set(group.map((item) => item.sourceName))).join(", ");
+      const numericQuantities = group
+        .map((item) => parseQuantity(item.quantity))
+        .filter((quantity): quantity is number => quantity !== null);
+      const hasUnquantifiedCustomSource = group.some(
+        (item) => item.sourceType === "custom" && parseQuantity(item.quantity) === null
+      );
+      const canSum = numericQuantities.length > 0
+        && group.every((item) => parseQuantity(item.quantity) !== null || item.sourceType === "custom");
       const quantity = canSum
-        ? formatQuantity(parsedQuantities.reduce((sum, quantity) => sum + (quantity ?? 0), 0))
+        ? formatQuantity(numericQuantities.reduce((sum, value) => sum + value, 0))
         : first.quantity;
       const text = canSum
         ? buildIngredientText(quantity, first.unit, first.item, first.text)
-        : first.text;
-      const shoppingListItemId = insert(
-        `INSERT INTO shopping_list_items
-          (menu_id, text, quantity, unit, item, source_recipe_names, sort_order)
+        : hasUnquantifiedCustomSource && numericQuantities.length > 0
+          ? buildIngredientText(quantity, first.unit, first.item, first.text)
+          : first.text;
+      const menuShoppingListItemId = insert(
+        `INSERT INTO menu_shopping_list_items
+          (menu_id, text, quantity, unit, item, source_names, sort_order)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [menuId, text, quantity, first.unit, first.item, sources, index]
+        [menuId, text, quantity, first.unit, first.item, sourceNames, index]
       );
       group.forEach((source) => {
-        run(
-          `INSERT INTO shopping_list_item_sources
-            (shopping_list_item_id, menu_item_id, recipe_ingredient_id)
-          VALUES (?, ?, ?)`,
-          [shoppingListItemId, source.menuItemId, source.recipeIngredientId]
-        );
+        if (
+          source.sourceType === "recipe"
+          && source.menuItemId !== null
+          && source.recipeIngredientId !== null
+        ) {
+          run(
+            `INSERT INTO menu_shopping_list_item_recipe_sources
+              (menu_shopping_list_item_id, menu_item_id, recipe_ingredient_id)
+            VALUES (?, ?, ?)`,
+            [menuShoppingListItemId, source.menuItemId, source.recipeIngredientId]
+          );
+        } else if (source.customShoppingListItemId !== null) {
+          run(
+            `INSERT INTO menu_shopping_list_item_custom_sources
+              (menu_shopping_list_item_id, custom_shopping_list_item_id)
+            VALUES (?, ?)`,
+            [menuShoppingListItemId, source.customShoppingListItemId]
+          );
+        }
       });
     });
   });
@@ -848,7 +1162,7 @@ app.get("/api/menus/:id/shopping-list", (req, res) => {
 });
 
 app.delete("/api/menus/:id/shopping-list", (req, res) => {
-  run("DELETE FROM shopping_list_items WHERE menu_id = ?", [req.params.id]);
+  run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [req.params.id]);
   saveDb();
   res.json({ ok: true });
 });
@@ -877,7 +1191,7 @@ app.put("/api/menus/:id/shopping-list/items", (req, res) => {
   transaction(() => {
     for (const item of items) {
       run(
-        `UPDATE shopping_list_items
+        `UPDATE menu_shopping_list_items
           SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?
           WHERE id = ? AND menu_id = ?`,
         [
@@ -909,7 +1223,7 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
   }
 
   const existing = queryOne<{ id: number }>(
-    "SELECT id FROM shopping_list_items WHERE id = ? AND menu_id = ?",
+    "SELECT id FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
     [itemId, menuId]
   );
   if (!existing) {
@@ -917,7 +1231,7 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
     return;
   }
 
-  run("UPDATE shopping_list_items SET approved = ? WHERE id = ? AND menu_id = ?", [
+  run("UPDATE menu_shopping_list_items SET approved = ? WHERE id = ? AND menu_id = ?", [
     req.body.approved ? 1 : 0,
     itemId,
     menuId
@@ -926,7 +1240,7 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
   res.json({ id: itemId, approved: req.body.approved ? 1 : 0 });
 });
 
-app.patch("/api/menus/:id/shopping-list/items/:itemId/source-ingredient", (req, res) => {
+app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
   const menuId = Number(req.params.id);
   const itemId = Number(req.params.itemId);
   if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
@@ -939,12 +1253,12 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source-ingredient", (req, 
   const unit = String(req.body.unit ?? "").trim();
   const text = String(req.body.text ?? "").trim() || buildIngredientText(quantity, unit, item, "");
   if (!item) {
-    res.status(400).json({ error: "Ingredient item is required before saving to a recipe." });
+    res.status(400).json({ error: "An item name is required before saving to its source." });
     return;
   }
 
   const shoppingItem = queryOne<{ id: number }>(
-    "SELECT id FROM shopping_list_items WHERE id = ? AND menu_id = ?",
+    "SELECT id FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
     [itemId, menuId]
   );
   if (!shoppingItem) {
@@ -952,39 +1266,70 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source-ingredient", (req, 
     return;
   }
 
-  const sources = queryAll<{ recipeIngredientId: number; recipeId: number }>(
+  const recipeSources = queryAll<{ recipeIngredientId: number; recipeId: number }>(
     `SELECT
-      shopping_list_item_sources.recipe_ingredient_id AS recipeIngredientId,
+      menu_shopping_list_item_recipe_sources.recipe_ingredient_id AS recipeIngredientId,
       recipe_ingredients.recipe_id AS recipeId
-    FROM shopping_list_item_sources
+    FROM menu_shopping_list_item_recipe_sources
     JOIN menu_items
-      ON menu_items.id = shopping_list_item_sources.menu_item_id
+      ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
       AND menu_items.menu_id = ?
     JOIN recipe_ingredients
-      ON recipe_ingredients.id = shopping_list_item_sources.recipe_ingredient_id
+      ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
       AND recipe_ingredients.recipe_id = menu_items.recipe_id
-    WHERE shopping_list_item_sources.shopping_list_item_id = ?`,
+    WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = ?`,
     [menuId, itemId]
   );
-  if (sources.length !== 1) {
+  const customSources = queryAll<{ customShoppingListItemId: number; customShoppingListId: number }>(
+    `SELECT
+      custom_shopping_list_items.id AS customShoppingListItemId,
+      custom_shopping_list_items.custom_shopping_list_id AS customShoppingListId
+    FROM menu_shopping_list_item_custom_sources
+    JOIN custom_shopping_list_items
+      ON custom_shopping_list_items.id =
+        menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
+    WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id = ?`,
+    [itemId]
+  );
+  if (recipeSources.length + customSources.length !== 1) {
     res.status(409).json({
-      error: sources.length === 0
-        ? "Re-aggregate this menu before saving ingredient metadata to a recipe."
-        : "Grouped or repeated ingredients cannot be saved back to a recipe."
+      error: recipeSources.length + customSources.length === 0
+        ? "Re-aggregate this menu before saving changes to its source."
+        : "Grouped or repeated items cannot be saved because they have multiple sources."
     });
     return;
   }
 
   transaction(() => {
+    if (recipeSources.length === 1) {
+      run(
+        `UPDATE recipe_ingredients
+        SET text = ?, quantity = ?, unit = ?, item = ?
+        WHERE id = ? AND recipe_id = ?`,
+        [text, quantity, unit, item, recipeSources[0].recipeIngredientId, recipeSources[0].recipeId]
+      );
+      run("UPDATE recipes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [recipeSources[0].recipeId]);
+    } else {
+      run(
+        `UPDATE custom_shopping_list_items
+        SET text = ?, quantity = ?, unit = ?, item = ?
+        WHERE id = ? AND custom_shopping_list_id = ?`,
+        [
+          text,
+          quantity,
+          unit,
+          item,
+          customSources[0].customShoppingListItemId,
+          customSources[0].customShoppingListId
+        ]
+      );
+      run(
+        "UPDATE custom_shopping_lists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [customSources[0].customShoppingListId]
+      );
+    }
     run(
-      `UPDATE recipe_ingredients
-      SET text = ?, quantity = ?, unit = ?, item = ?
-      WHERE id = ? AND recipe_id = ?`,
-      [text, quantity, unit, item, sources[0].recipeIngredientId, sources[0].recipeId]
-    );
-    run("UPDATE recipes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [sources[0].recipeId]);
-    run(
-      `UPDATE shopping_list_items
+      `UPDATE menu_shopping_list_items
       SET text = ?, quantity = ?, unit = ?, item = ?
       WHERE id = ? AND menu_id = ?`,
       [text, quantity, unit, item, itemId, menuId]
@@ -992,14 +1337,18 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source-ingredient", (req, 
   });
 
   const updatedItem = getShoppingListItems(menuId).find((candidate) => candidate.id === itemId);
-  res.json({ item: updatedItem, recipeId: sources[0].recipeId });
+  res.json({
+    item: updatedItem,
+    sourceType: recipeSources.length === 1 ? "recipe" : "custom",
+    sourceId: recipeSources[0]?.recipeId ?? customSources[0].customShoppingListId
+  });
 });
 
 app.post("/api/menus/:id/preview-qfc", async (req, res) => {
   const menuId = req.params.id;
   const rows = queryAll(
-      `SELECT id, text, quantity, unit, item, source_recipe_names AS sourceRecipeNames, approved
-      FROM shopping_list_items
+      `SELECT id, text, quantity, unit, item, source_names AS sourceNames, approved
+      FROM menu_shopping_list_items
       WHERE menu_id = ? AND approved = 1
       ORDER BY sort_order, id`,
       [menuId]
@@ -1009,7 +1358,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
       quantity: string;
       unit: string;
       item: string;
-      sourceRecipeNames: string;
+      sourceNames: string;
       approved: number;
     }>;
 

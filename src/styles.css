@@ -305,6 +305,32 @@ label {
   grid-template-columns: 64px 88px 1fr 1.5fr 36px;
 }
 
+.custom-list-item-editor {
+  margin-top: 18px;
+}
+
+.custom-list-item-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) 36px 36px 36px;
+}
+
+.shopping-list-management-item {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #1b1f24;
+  min-height: auto;
+  padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.shopping-list-management-item:hover {
+  border-color: #9fb0aa;
+  color: #1b1f24;
+}
+
 .panel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -446,6 +472,36 @@ label {
   gap: 10px;
   grid-template-columns: 72px repeat(3, minmax(0, 1fr));
   padding-top: 12px;
+}
+
+.custom-list-picker {
+  border-top: 1px solid #d8dfdb;
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.custom-list-picker > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.custom-list-picker > div:first-child span {
+  color: #66746f;
+  font-size: 0.82rem;
+}
+
+.custom-list-options {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.custom-list-options .toggle-row {
+  background: #f3f6f4;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  padding: 10px;
 }
 
 .shopping-table {
@@ -1034,11 +1090,26 @@ label {
 }
 
 :root[data-theme="dark"] .recipe-list,
-:root[data-theme="dark"] .meal-block {
+:root[data-theme="dark"] .meal-block,
+:root[data-theme="dark"] .custom-list-picker {
   border-top-color: #33443d;
 }
 
-:root[data-theme="dark"] .recipe-management-item:hover {
+:root[data-theme="dark"] .custom-list-picker > div:first-child span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .custom-list-options .toggle-row {
+  background: #1d2621;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .shopping-list-management-item {
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .recipe-management-item:hover,
+:root[data-theme="dark"] .shopping-list-management-item:hover {
   background: #24332d;
   border-color: #5c766c;
   color: #eef4f0;

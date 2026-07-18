@@ -4,8 +4,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Database,
   ExternalLink,
+  ListChecks,
   Menu as MenuIcon,
   Minus,
   Moon,
@@ -36,6 +39,7 @@ type Recipe = {
 
 type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
+type ShoppingListsTab = "create" | "manage";
 type QfcSettingsTab = "api" | "preferences";
 type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
@@ -55,6 +59,7 @@ type Menu = {
   isTestData: boolean;
   status: string;
   items: MenuItem[];
+  customShoppingListIds: number[];
 };
 
 type MenuItem = {
@@ -71,10 +76,27 @@ type ShoppingListItem = {
   quantity: string;
   unit: string;
   item: string;
-  sourceRecipeNames: string;
+  sourceNames: string;
   approved: number;
   sourceOccurrenceCount: number;
-  canPersistToRecipe: number;
+  canPersistToSource: number;
+};
+
+type CustomShoppingListItem = {
+  id?: number;
+  customShoppingListId?: number;
+  text: string;
+  quantity: string;
+  unit: string;
+  item: string;
+  sortOrder?: number;
+};
+
+type CustomShoppingList = {
+  id: number;
+  name: string;
+  includeInMenuByDefault: boolean;
+  items: CustomShoppingListItem[];
 };
 
 type QfcStatus = {
@@ -169,13 +191,15 @@ type StoreItemPreference = {
   updatedAt: string;
 };
 
-type AppView = "recipe-admin" | "qfc-api" | "planner";
+type AppView = "recipe-admin" | "shopping-lists" | "qfc-api" | "planner";
 
 type AppRoute = {
   path: string;
   view: AppView;
   recipeAdminTab?: RecipeAdminTab;
   recipeId?: number;
+  shoppingListsTab?: ShoppingListsTab;
+  shoppingListId?: number;
   qfcSettingsTab?: QfcSettingsTab;
 };
 
@@ -220,6 +244,13 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
   { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
   { id: "recipe-admin", label: "Recipe Admin", title: "Recipe Admin", eyebrow: "Recipe library", icon: Database },
+  {
+    id: "shopping-lists",
+    label: "Shopping Lists",
+    title: "Shopping Lists",
+    eyebrow: "Reusable grocery templates",
+    icon: ListChecks
+  },
   { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings }
 ];
 
@@ -227,6 +258,8 @@ const appRoutes: AppRoute[] = [
   { path: "/planner", view: "planner" },
   { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
   { path: "/recipes/manage", view: "recipe-admin", recipeAdminTab: "manage" },
+  { path: "/shopping-lists/create", view: "shopping-lists", shoppingListsTab: "create" },
+  { path: "/shopping-lists/manage", view: "shopping-lists", shoppingListsTab: "manage" },
   { path: "/settings/qfc/api", view: "qfc-api", qfcSettingsTab: "api" },
   { path: "/settings/qfc/preferences", view: "qfc-api", qfcSettingsTab: "preferences" }
 ];
@@ -241,7 +274,20 @@ function routeFromPathname(pathname: string) {
   if (recipeEditMatch) {
     return recipeEditRoute(Number(recipeEditMatch[1]));
   }
+  const shoppingListEditMatch = /^\/shopping-lists\/manage\/([1-9]\d*)$/.exec(normalizedPathname);
+  if (shoppingListEditMatch) {
+    return shoppingListEditRoute(Number(shoppingListEditMatch[1]));
+  }
   return appRoutes.find((route) => route.path === normalizedPathname) ?? appRoutes[0];
+}
+
+function shoppingListEditRoute(shoppingListId: number): AppRoute {
+  return {
+    path: `/shopping-lists/manage/${shoppingListId}`,
+    view: "shopping-lists",
+    shoppingListsTab: "manage",
+    shoppingListId
+  };
 }
 
 function recipeEditRoute(recipeId: number): AppRoute {
@@ -286,12 +332,13 @@ function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
-  const [recipeMetadataDirtyItemIds, setRecipeMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
+  const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
-  const [savingRecipeItemIds, setSavingRecipeItemIds] = useState<Set<number>>(() => new Set());
+  const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState(2);
   const [plannerRecipeMode, setPlannerRecipeMode] = useState<PlannerRecipeMode>("test");
   const [message, setMessage] = useState("");
@@ -304,6 +351,10 @@ function App() {
 
   async function loadRecipes() {
     setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
+  }
+
+  async function loadCustomShoppingLists() {
+    setCustomShoppingLists(await api<CustomShoppingList[]>("/api/custom-shopping-lists"));
   }
 
   async function loadSettings() {
@@ -329,6 +380,7 @@ function App() {
 
   useEffect(() => {
     void loadRecipes();
+    void loadCustomShoppingLists();
     void loadSettings();
     void loadLatestMenu();
   }, []);
@@ -363,7 +415,7 @@ function App() {
       setActiveMenu(preview);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setRecipeMetadataDirtyItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
     } catch (err) {
@@ -386,13 +438,14 @@ function App() {
           name: activeMenu.name,
           mealCount: activeMenu.mealCount,
           isTestData: activeMenu.isTestData,
+          customShoppingListIds: activeMenu.customShoppingListIds,
           items: activeMenu.items.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
         })
       });
       setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setRecipeMetadataDirtyItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
       setMessage("Menu saved.");
@@ -406,7 +459,7 @@ function App() {
     setActiveMenu(null);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
-    setRecipeMetadataDirtyItemIds(new Set());
+    setSourceMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
     setMessage("");
@@ -435,7 +488,7 @@ function App() {
       });
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setRecipeMetadataDirtyItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
       return;
@@ -449,9 +502,31 @@ function App() {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
-      setRecipeMetadataDirtyItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
       setStoreItemReview(null);
       setStoreItemReviewMessage("");
+    }
+  }
+
+  async function updateCustomShoppingListSelection(listId: number, included: boolean) {
+    if (!activeMenu) return;
+    const nextIds = included
+      ? Array.from(new Set([...activeMenu.customShoppingListIds, listId]))
+      : activeMenu.customShoppingListIds.filter((id) => id !== listId);
+
+    setActiveMenu({ ...activeMenu, customShoppingListIds: nextIds });
+    setShoppingList([]);
+    setDirtyShoppingItemIds(new Set());
+    setSourceMetadataDirtyItemIds(new Set());
+    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
+
+    if (activeMenu.id !== null) {
+      await api(`/api/menus/${activeMenu.id}/custom-shopping-lists`, {
+        method: "PUT",
+        body: JSON.stringify({ customShoppingListIds: nextIds })
+      });
+      await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     }
   }
 
@@ -464,7 +539,7 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
     setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
     setDirtyShoppingItemIds(new Set());
-    setRecipeMetadataDirtyItemIds(new Set());
+    setSourceMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
   }
@@ -474,7 +549,7 @@ function App() {
     await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
-    setRecipeMetadataDirtyItemIds(new Set());
+    setSourceMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
     setMessage("");
@@ -530,14 +605,14 @@ function App() {
     }
   }
 
-  async function saveShoppingItemToRecipe(item: ShoppingListItem) {
-    if (!activeMenu?.id || savingRecipeItemIds.has(item.id)) return;
+  async function saveShoppingItemToSource(item: ShoppingListItem) {
+    if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return;
 
     setMessage("");
-    setSavingRecipeItemIds((current) => new Set(current).add(item.id));
+    setSavingSourceItemIds((current) => new Set(current).add(item.id));
     try {
-      const result = await api<{ item: ShoppingListItem; recipeId: number }>(
-        `/api/menus/${activeMenu.id}/shopping-list/items/${item.id}/source-ingredient`,
+      const result = await api<{ item: ShoppingListItem; sourceType: "recipe" | "custom"; sourceId: number }>(
+        `/api/menus/${activeMenu.id}/shopping-list/items/${item.id}/source`,
         {
           method: "PATCH",
           body: JSON.stringify({
@@ -556,18 +631,18 @@ function App() {
         next.delete(item.id);
         return next;
       });
-      setRecipeMetadataDirtyItemIds((current) => {
+      setSourceMetadataDirtyItemIds((current) => {
         const next = new Set(current);
         next.delete(item.id);
         return next;
       });
       setStoreItemReview(null);
-      await loadRecipes();
-      setMessage(`Saved ingredient metadata to ${item.sourceRecipeNames}. Re-aggregate to apply any new grouping.`);
+      await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
+      setMessage(`Saved item details to ${item.sourceNames}. Re-aggregate to apply any new grouping.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to save ingredient metadata to the recipe.");
+      setMessage(err instanceof Error ? err.message : "Unable to save item details to the source.");
     } finally {
-      setSavingRecipeItemIds((current) => {
+      setSavingSourceItemIds((current) => {
         const next = new Set(current);
         next.delete(item.id);
         return next;
@@ -580,8 +655,8 @@ function App() {
     const menuId = activeMenu.id;
     setMessage("");
 
-    if (recipeMetadataDirtyItemIds.size) {
-      setMessage("Save eligible recipe metadata changes before matching store items.");
+    if (sourceMetadataDirtyItemIds.size) {
+      setMessage("Save eligible source changes before matching store items.");
       return;
     }
 
@@ -879,7 +954,12 @@ function App() {
             >
               {themeMode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="icon-button" onClick={() => void loadRecipes()} aria-label="Refresh recipes" type="button">
+            <button
+              className="icon-button"
+              onClick={() => void Promise.all([loadRecipes(), loadCustomShoppingLists()])}
+              aria-label="Refresh data"
+              type="button"
+            >
               <RefreshCw size={18} />
             </button>
           </div>
@@ -918,6 +998,18 @@ function App() {
           />
         ) : null}
 
+        {activeView === "shopping-lists" ? (
+          <ShoppingListsAdmin
+            activeTab={activeRoute.shoppingListsTab ?? "create"}
+            editingListId={activeRoute.shoppingListId ?? null}
+            lists={customShoppingLists}
+            onEdit={(listId) => navigate(shoppingListEditRoute(listId))}
+            onExitEdit={() => navigate(routeFromPathname("/shopping-lists/manage"))}
+            onTabChange={(tab) => navigate(routeFromPathname(`/shopping-lists/${tab}`))}
+            onSaved={loadCustomShoppingLists}
+          />
+        ) : null}
+
         {activeView === "qfc-api" ? (
           <StoreSettingsPanel
             activeTab={activeRoute.qfcSettingsTab ?? "api"}
@@ -935,6 +1027,7 @@ function App() {
           <div className="grid planner-grid">
           <MenuBuilder
             recipes={recipes}
+            customShoppingLists={customShoppingLists}
             mealCount={mealCount}
             setMealCount={setMealCount}
             plannerRecipeMode={plannerRecipeMode}
@@ -943,6 +1036,7 @@ function App() {
             generateMenu={generateMenu}
             saveMenu={saveMenu}
             updateMenuItem={updateMenuItem}
+            updateCustomShoppingListSelection={updateCustomShoppingListSelection}
             aggregateIngredients={aggregateIngredients}
           />
             <ShoppingListReview
@@ -956,14 +1050,14 @@ function App() {
                   return next;
                 });
               }}
-              markRecipeMetadataDirty={(id) => {
-                setRecipeMetadataDirtyItemIds((current) => new Set(current).add(id));
+              markSourceMetadataDirty={(id) => {
+                setSourceMetadataDirtyItemIds((current) => new Set(current).add(id));
               }}
-              recipeMetadataDirtyItemIds={recipeMetadataDirtyItemIds}
+              sourceMetadataDirtyItemIds={sourceMetadataDirtyItemIds}
               savingApprovalItemIds={savingApprovalItemIds}
-              savingRecipeItemIds={savingRecipeItemIds}
+              savingSourceItemIds={savingSourceItemIds}
               updateApproval={updateShoppingItemApproval}
-              saveToRecipe={saveShoppingItemToRecipe}
+              saveToSource={saveShoppingItemToSource}
               clearItems={clearAggregatedIngredients}
               previewStoreItems={previewStoreItems}
               openQfcCartToClear={openQfcCartToClear}
@@ -1283,6 +1377,328 @@ function StoreSettingsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function ShoppingListsAdmin({
+  activeTab,
+  editingListId,
+  lists,
+  onEdit,
+  onExitEdit,
+  onTabChange,
+  onSaved
+}: {
+  activeTab: ShoppingListsTab;
+  editingListId: number | null;
+  lists: CustomShoppingList[];
+  onEdit: (listId: number) => void;
+  onExitEdit: () => void;
+  onTabChange: (tab: ShoppingListsTab) => void;
+  onSaved: () => Promise<void>;
+}) {
+  const editingList = lists.find((list) => list.id === editingListId) ?? null;
+
+  async function createList(payload: CustomShoppingListFormPayload) {
+    await api("/api/custom-shopping-lists", { method: "POST", body: JSON.stringify(payload) });
+    await onSaved();
+  }
+
+  async function updateList(payload: CustomShoppingListFormPayload) {
+    if (!editingList) return;
+    await api(`/api/custom-shopping-lists/${editingList.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+    await onSaved();
+    onExitEdit();
+  }
+
+  async function deleteList() {
+    if (!editingList) return;
+    await api(`/api/custom-shopping-lists/${editingList.id}`, { method: "DELETE" });
+    await onSaved();
+    onExitEdit();
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <ListChecks size={18} />
+        <h3>Shopping Lists</h3>
+      </div>
+      <div className="sub-tabs" role="tablist" aria-label="Shopping list sections">
+        <button
+          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
+          onClick={() => onTabChange("create")}
+          role="tab"
+          aria-selected={activeTab === "create"}
+          type="button"
+        >
+          Add List
+        </button>
+        <button
+          className={`sub-tab-button ${activeTab === "manage" ? "active" : ""}`}
+          onClick={() => onTabChange("manage")}
+          role="tab"
+          aria-selected={activeTab === "manage"}
+          type="button"
+        >
+          Manage Lists
+        </button>
+      </div>
+
+      {activeTab === "create" ? (
+        <CustomShoppingListForm mode="create" onSubmit={createList} />
+      ) : editingList ? (
+        <CustomShoppingListForm
+          mode="edit"
+          initialList={editingList}
+          onCancel={onExitEdit}
+          onDelete={deleteList}
+          onSubmit={updateList}
+        />
+      ) : (
+        <div className="tab-panel" role="tabpanel">
+          {lists.length ? (
+            <div className="recipe-list shopping-list-management-list">
+              {lists.map((list) => (
+                <button
+                  className="recipe-list-item shopping-list-management-item"
+                  key={list.id}
+                  onClick={() => onEdit(list.id)}
+                  type="button"
+                >
+                  <strong>{list.name}</strong>
+                  <span>
+                    {list.items.length} {list.items.length === 1 ? "item" : "items"}
+                    {list.includeInMenuByDefault ? " · Included by default" : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">No custom shopping lists have been added yet.</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+type CustomShoppingListFormPayload = {
+  name: string;
+  includeInMenuByDefault: boolean;
+  items: CustomShoppingListItem[];
+};
+
+function emptyCustomShoppingListItem(): CustomShoppingListItem {
+  return { text: "", quantity: "", unit: "", item: "" };
+}
+
+function CustomShoppingListForm({
+  mode,
+  initialList,
+  onCancel,
+  onDelete,
+  onSubmit
+}: {
+  mode: "create" | "edit";
+  initialList?: CustomShoppingList;
+  onCancel?: () => void;
+  onDelete?: () => Promise<void>;
+  onSubmit: (payload: CustomShoppingListFormPayload) => Promise<void>;
+}) {
+  const initialForm = () => ({
+    name: initialList?.name ?? "",
+    includeInMenuByDefault: initialList?.includeInMenuByDefault ?? false,
+    items: initialList?.items.length
+      ? initialList.items.map((item) => ({ ...item }))
+      : [emptyCustomShoppingListItem()]
+  });
+  const [form, setForm] = useState(initialForm);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setForm(initialForm());
+    setError("");
+  }, [initialList?.id]);
+
+  function moveItem(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= form.items.length) return;
+    setForm((current) => {
+      const items = [...current.items];
+      [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+      return { ...current, items };
+    });
+  }
+
+  async function saveList() {
+    const items = form.items
+      .map((entry) => {
+        const item = entry.item.trim();
+        return { ...entry, item, text: entry.text.trim() || item };
+      })
+      .filter((entry) => entry.item);
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        name: form.name.trim(),
+        includeInMenuByDefault: form.includeInMenuByDefault,
+        items
+      });
+      if (mode === "create") {
+        setForm({
+          name: "",
+          includeInMenuByDefault: false,
+          items: [emptyCustomShoppingListItem()]
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save the shopping list.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function deleteList() {
+    if (!onDelete || !initialList) return;
+    if (!window.confirm(`Delete “${initialList.name}”? This action cannot be undone.`)) return;
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete the shopping list.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="tab-panel" role="tabpanel">
+      {mode === "edit" ? (
+        <div className="edit-heading">
+          <div>
+            <div className="subhead">Editing shopping list</div>
+            <strong>{initialList?.name}</strong>
+          </div>
+          <button className="secondary" onClick={onCancel} type="button">
+            <X size={17} />
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      <label>
+        Name
+        <input
+          value={form.name}
+          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+          placeholder="Robin’s regulars"
+        />
+      </label>
+
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={form.includeInMenuByDefault}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              includeInMenuByDefault: event.target.checked
+            }))
+          }
+        />
+        <span>Include in new menus by default</span>
+      </label>
+
+      <div className="ingredient-editor custom-list-item-editor">
+        <div className="subhead">Items</div>
+        {form.items.map((entry, index) => (
+          <div className="custom-list-item-row" key={`${entry.id ?? "new"}-${index}`}>
+            <input
+              value={entry.item}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  items: current.items.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, item: event.target.value, text: event.target.value } : item
+                  )
+                }))
+              }
+              placeholder="Coffee"
+            />
+            <button
+              className="icon-button secondary"
+              disabled={index === 0}
+              onClick={() => moveItem(index, -1)}
+              aria-label="Move item up"
+              type="button"
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button
+              className="icon-button secondary"
+              disabled={index === form.items.length - 1}
+              onClick={() => moveItem(index, 1)}
+              aria-label="Move item down"
+              type="button"
+            >
+              <ChevronDown size={16} />
+            </button>
+            <button
+              className="icon-button"
+              onClick={() =>
+                setForm((current) => ({
+                  ...current,
+                  items: current.items.filter((_, itemIndex) => itemIndex !== index)
+                }))
+              }
+              aria-label="Remove item"
+              type="button"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        <button
+          className="secondary"
+          onClick={() =>
+            setForm((current) => ({
+              ...current,
+              items: [...current.items, emptyCustomShoppingListItem()]
+            }))
+          }
+          type="button"
+        >
+          <Plus size={17} />
+          Add item
+        </button>
+      </div>
+
+      {error ? <div className="error">{error}</div> : null}
+      <div className="panel-actions">
+        {mode === "edit" ? (
+          <button
+            className="danger delete-recipe-button"
+            disabled={isSubmitting}
+            onClick={() => void deleteList()}
+            type="button"
+          >
+            <Trash2 size={17} />
+            Delete list
+          </button>
+        ) : null}
+        <button disabled={isSubmitting} onClick={() => void saveList()} type="button">
+          <Check size={17} />
+          {mode === "create" ? "Save list" : "Update list"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1711,6 +2127,7 @@ function RecipeManagementList({
 
 function MenuBuilder({
   recipes,
+  customShoppingLists,
   mealCount,
   setMealCount,
   plannerRecipeMode,
@@ -1719,9 +2136,11 @@ function MenuBuilder({
   generateMenu,
   saveMenu,
   updateMenuItem,
+  updateCustomShoppingListSelection,
   aggregateIngredients
 }: {
   recipes: Recipe[];
+  customShoppingLists: CustomShoppingList[];
   mealCount: number;
   setMealCount: (value: number) => void;
   plannerRecipeMode: PlannerRecipeMode;
@@ -1735,6 +2154,7 @@ function MenuBuilder({
     slot: RecipeCategory,
     recipeId: number | null
   ) => Promise<void>;
+  updateCustomShoppingListSelection: (listId: number, included: boolean) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
   const plannerRecipes = recipes.filter((recipe) => recipe.isTestData === (plannerRecipeMode === "test"));
@@ -1811,6 +2231,32 @@ function MenuBuilder({
               })}
             </div>
           ))}
+          <div className="custom-list-picker">
+            <div>
+              <strong>Custom shopping lists</strong>
+              <span>Include regular groceries when ingredients are aggregated.</span>
+            </div>
+            {customShoppingLists.length ? (
+              <div className="custom-list-options">
+                {customShoppingLists.map((list) => (
+                  <label className="toggle-row" key={list.id}>
+                    <input
+                      type="checkbox"
+                      checked={activeMenu.customShoppingListIds.includes(list.id)}
+                      onChange={(event) =>
+                        void updateCustomShoppingListSelection(list.id, event.target.checked)
+                      }
+                    />
+                    <span>{list.name} ({list.items.length})</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state compact">
+                Add a custom shopping list from the Shopping Lists tab.
+              </div>
+            )}
+          </div>
           <div className="panel-actions">
             {activeMenu.id === null ? (
               <button onClick={() => void saveMenu()}>
@@ -1836,12 +2282,12 @@ function ShoppingListReview({
   items,
   setItems,
   markItemDirty,
-  markRecipeMetadataDirty,
-  recipeMetadataDirtyItemIds,
+  markSourceMetadataDirty,
+  sourceMetadataDirtyItemIds,
   savingApprovalItemIds,
-  savingRecipeItemIds,
+  savingSourceItemIds,
   updateApproval,
-  saveToRecipe,
+  saveToSource,
   clearItems,
   previewStoreItems,
   openQfcCartToClear,
@@ -1851,12 +2297,12 @@ function ShoppingListReview({
   items: ShoppingListItem[];
   setItems: (items: ShoppingListItem[]) => void;
   markItemDirty: (id: number) => void;
-  markRecipeMetadataDirty: (id: number) => void;
-  recipeMetadataDirtyItemIds: Set<number>;
+  markSourceMetadataDirty: (id: number) => void;
+  sourceMetadataDirtyItemIds: Set<number>;
   savingApprovalItemIds: Set<number>;
-  savingRecipeItemIds: Set<number>;
+  savingSourceItemIds: Set<number>;
   updateApproval: (id: number, approved: boolean) => Promise<void>;
-  saveToRecipe: (item: ShoppingListItem) => Promise<void>;
+  saveToSource: (item: ShoppingListItem) => Promise<void>;
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
   openQfcCartToClear: () => void;
@@ -1871,8 +2317,8 @@ function ShoppingListReview({
     const id = item.id;
     setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     markItemDirty(id);
-    if (item.canPersistToRecipe) {
-      markRecipeMetadataDirty(id);
+    if (item.canPersistToSource) {
+      markSourceMetadataDirty(id);
     }
   }
 
@@ -1890,46 +2336,46 @@ function ShoppingListReview({
         </label>
         <input
           value={item.quantity}
-          disabled={savingRecipeItemIds.has(item.id)}
+          disabled={savingSourceItemIds.has(item.id)}
           onChange={(event) => patchItem(item, { quantity: event.target.value })}
         />
         <input
           value={item.unit}
-          disabled={savingRecipeItemIds.has(item.id)}
+          disabled={savingSourceItemIds.has(item.id)}
           onChange={(event) => patchItem(item, { unit: event.target.value })}
         />
         <input
           value={item.item}
-          disabled={savingRecipeItemIds.has(item.id)}
+          disabled={savingSourceItemIds.has(item.id)}
           onChange={(event) => patchItem(item, { item: event.target.value })}
         />
         <input
           value={item.text}
-          disabled={savingRecipeItemIds.has(item.id)}
+          disabled={savingSourceItemIds.has(item.id)}
           onChange={(event) => patchItem(item, { text: event.target.value })}
         />
         <div className="shopping-source">
-          <span>{item.sourceRecipeNames}</span>
-          {!item.canPersistToRecipe ? (
+          <span>{item.sourceNames}</span>
+          {!item.canPersistToSource ? (
             <small>
               {item.sourceOccurrenceCount
                 ? `Shopping list only - ${item.sourceOccurrenceCount} sources`
-                : "Re-aggregate to enable recipe editing"}
+                : "Re-aggregate to enable source editing"}
             </small>
           ) : null}
         </div>
-        {item.canPersistToRecipe ? (
+        {item.canPersistToSource ? (
           <button
             className="secondary shopping-save-recipe-button"
             type="button"
-            aria-busy={savingRecipeItemIds.has(item.id)}
-            disabled={!recipeMetadataDirtyItemIds.has(item.id) || savingRecipeItemIds.has(item.id)}
-            onClick={() => void saveToRecipe(item)}
+            aria-busy={savingSourceItemIds.has(item.id)}
+            disabled={!sourceMetadataDirtyItemIds.has(item.id) || savingSourceItemIds.has(item.id)}
+            onClick={() => void saveToSource(item)}
           >
-            {savingRecipeItemIds.has(item.id) ? "Saving..." : "Save to recipe"}
+            {savingSourceItemIds.has(item.id) ? "Saving..." : "Save to source"}
           </button>
         ) : (
-          <span className="shopping-persistence-status">Not saved to recipe</span>
+          <span className="shopping-persistence-status">Multiple sources</span>
         )}
       </div>
     );
@@ -2224,7 +2670,7 @@ function StoreItemReviewPanel({
                   <div className="store-item-match-ingredient">
                     <span className="eyebrow">Aggregated ingredient</span>
                     <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
-                    <span>{match.item.sourceRecipeNames}</span>
+                    <span>{match.item.sourceNames}</span>
                     {renderRemoveButton(match.item)}
                   </div>
                   <ChevronRight className="store-item-match-arrow" size={22} aria-hidden="true" />

@@ -7,7 +7,7 @@ export type CartSubmissionItem = {
   quantity: string;
   unit: string;
   item: string;
-  sourceRecipeNames: string;
+  sourceNames: string;
   approved: number;
 };
 
