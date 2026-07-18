@@ -470,8 +470,34 @@ label {
   border-top: 1px solid #d8dfdb;
   display: grid;
   gap: 10px;
-  grid-template-columns: 72px repeat(3, minmax(0, 1fr));
+  grid-template-columns: 92px repeat(3, minmax(0, 1fr));
   padding-top: 12px;
+}
+
+.meal-heading {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.meal-heading strong {
+  padding-top: 9px;
+}
+
+.meal-heading .icon-button {
+  flex: 0 0 auto;
+}
+
+.menu-meal-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.menu-meal-actions span {
+  color: #66746f;
+  font-size: 0.82rem;
 }
 
 .custom-list-picker {
@@ -1096,6 +1122,10 @@ label {
 }
 
 :root[data-theme="dark"] .custom-list-picker > div:first-child span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .menu-meal-actions span {
   color: #b8c8c1;
 }
 

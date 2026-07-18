@@ -947,6 +947,109 @@ app.get("/api/menus/:id", (req, res) => {
   res.json(menu);
 });
 
+app.post("/api/menus/:id/meals", (req, res) => {
+  const menuId = Number(req.params.id);
+  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
+  const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
+  if (!menu) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+  if (menu.mealCount >= 14) {
+    res.status(400).json({ error: "Menus cannot include more than 14 meals." });
+    return;
+  }
+  if (items.length !== recipeCategories.length) {
+    res.status(400).json({ error: "New meals must include every meal slot." });
+    return;
+  }
+
+  const nextMealNumber = menu.mealCount + 1;
+  const seenSlots = new Set<RecipeCategory>();
+  for (const item of items) {
+    const recipeId = item.recipeId === null ? null : Number(item.recipeId);
+    if (!recipeCategories.includes(item.slot) || seenSlots.has(item.slot)) {
+      res.status(400).json({ error: "New meals include an invalid or duplicate meal slot." });
+      return;
+    }
+    seenSlots.add(item.slot);
+    if (item.slot === "entree" && recipeId === null) {
+      res.status(400).json({ error: "Entree slots must include a recipe." });
+      return;
+    }
+    if (recipeId === null) {
+      continue;
+    }
+    if (!Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "New meals include an invalid recipe selection." });
+      return;
+    }
+    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
+      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
+      [recipeId]
+    );
+    if (!recipe || recipe.category !== item.slot) {
+      res.status(400).json({ error: "New meals include a recipe that does not match its meal slot." });
+      return;
+    }
+    if (Boolean(recipe.isTestData) !== Boolean(menu.isTestData)) {
+      res.status(400).json({ error: "New meals must match the saved menu recipe type." });
+      return;
+    }
+  }
+
+  transaction(() => {
+    run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+    for (const item of items) {
+      run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
+        menuId,
+        nextMealNumber,
+        item.slot,
+        item.recipeId
+      ]);
+    }
+    run(
+      "UPDATE menus SET meal_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [nextMealNumber, menuId]
+    );
+  });
+
+  res.status(201).json(getMenu(menuId));
+});
+
+app.delete("/api/menus/:id/meals/:mealNumber", (req, res) => {
+  const menuId = Number(req.params.id);
+  const mealNumber = Number(req.params.mealNumber);
+  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
+  if (!menu) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+  if (!Number.isInteger(mealNumber) || mealNumber < 1 || mealNumber > menu.mealCount) {
+    res.status(400).json({ error: "A valid meal number is required." });
+    return;
+  }
+  if (menu.mealCount === 1) {
+    res.status(400).json({ error: "A menu must include at least one meal." });
+    return;
+  }
+
+  transaction(() => {
+    run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+    run("DELETE FROM menu_items WHERE menu_id = ? AND meal_number = ?", [menuId, mealNumber]);
+    run(
+      "UPDATE menu_items SET meal_number = meal_number - 1 WHERE menu_id = ? AND meal_number > ?",
+      [menuId, mealNumber]
+    );
+    run(
+      "UPDATE menus SET meal_count = meal_count - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [menuId]
+    );
+  });
+
+  res.json(getMenu(menuId));
+});
+
 app.put("/api/menu-items/:id", (req, res) => {
   const menuItem = queryOne<{
     slot: RecipeCategory;

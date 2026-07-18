@@ -508,6 +508,79 @@ function App() {
     }
   }
 
+  async function addMeal() {
+    if (!activeMenu || activeMenu.mealCount >= 14) return;
+
+    const nextMealNumber = activeMenu.mealCount + 1;
+    const newItems = categories.map(({ value: slot }) => {
+      const matchingRecipes = recipes.filter(
+        (recipe) => recipe.isTestData === activeMenu.isTestData && recipe.category === slot
+      );
+      const recipe = matchingRecipes[(nextMealNumber - 1) % matchingRecipes.length] ?? null;
+      return {
+        id: null,
+        mealNumber: nextMealNumber,
+        slot,
+        recipeId: recipe?.id ?? null,
+        recipeName: recipe?.name ?? null
+      };
+    });
+
+    if (newItems.find((item) => item.slot === "entree")?.recipeId === null) {
+      setMessage("Add at least one entree recipe before adding a meal.");
+      return;
+    }
+
+    setMessage("");
+    try {
+      const nextMenu = activeMenu.id === null
+        ? { ...activeMenu, mealCount: nextMealNumber, items: [...activeMenu.items, ...newItems] }
+        : await api<Menu>(`/api/menus/${activeMenu.id}/meals`, {
+          method: "POST",
+          body: JSON.stringify({
+            items: newItems.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
+          })
+        });
+      setActiveMenu(nextMenu);
+      setMealCount(nextMenu.mealCount);
+      setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to add meal.");
+    }
+  }
+
+  async function removeMeal(mealNumber: number) {
+    if (!activeMenu || activeMenu.mealCount <= 1) return;
+
+    setMessage("");
+    try {
+      const nextMenu = activeMenu.id === null
+        ? {
+          ...activeMenu,
+          mealCount: activeMenu.mealCount - 1,
+          items: activeMenu.items
+            .filter((item) => item.mealNumber !== mealNumber)
+            .map((item) => item.mealNumber > mealNumber
+              ? { ...item, mealNumber: item.mealNumber - 1 }
+              : item)
+        }
+        : await api<Menu>(`/api/menus/${activeMenu.id}/meals/${mealNumber}`, { method: "DELETE" });
+      setActiveMenu(nextMenu);
+      setMealCount(nextMenu.mealCount);
+      setShoppingList([]);
+      setDirtyShoppingItemIds(new Set());
+      setSourceMetadataDirtyItemIds(new Set());
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to remove meal.");
+    }
+  }
+
   async function updateCustomShoppingListSelection(listId: number, included: boolean) {
     if (!activeMenu) return;
     const nextIds = included
@@ -1036,6 +1109,8 @@ function App() {
             generateMenu={generateMenu}
             saveMenu={saveMenu}
             updateMenuItem={updateMenuItem}
+            addMeal={addMeal}
+            removeMeal={removeMeal}
             updateCustomShoppingListSelection={updateCustomShoppingListSelection}
             aggregateIngredients={aggregateIngredients}
           />
@@ -2136,6 +2211,8 @@ function MenuBuilder({
   generateMenu,
   saveMenu,
   updateMenuItem,
+  addMeal,
+  removeMeal,
   updateCustomShoppingListSelection,
   aggregateIngredients
 }: {
@@ -2154,6 +2231,8 @@ function MenuBuilder({
     slot: RecipeCategory,
     recipeId: number | null
   ) => Promise<void>;
+  addMeal: () => Promise<void>;
+  removeMeal: (mealNumber: number) => Promise<void>;
   updateCustomShoppingListSelection: (listId: number, included: boolean) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
@@ -2197,7 +2276,19 @@ function MenuBuilder({
         <div className="menu-table">
           {Array.from({ length: activeMenu.mealCount }, (_, index) => index + 1).map((mealNumber) => (
             <div className="meal-block" key={mealNumber}>
-              <strong>Meal {mealNumber}</strong>
+              <div className="meal-heading">
+                <strong>Meal {mealNumber}</strong>
+                <button
+                  className="icon-button danger"
+                  type="button"
+                  onClick={() => void removeMeal(mealNumber)}
+                  disabled={activeMenu.mealCount === 1}
+                  aria-label={`Remove meal ${mealNumber}`}
+                  title={activeMenu.mealCount === 1 ? "A menu must include at least one meal" : `Remove meal ${mealNumber}`}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
               {categories.map((category) => {
                 const item = activeMenu.items.find(
                   (menuItem) => menuItem.mealNumber === mealNumber && menuItem.slot === category.value
@@ -2231,6 +2322,18 @@ function MenuBuilder({
               })}
             </div>
           ))}
+          <div className="menu-meal-actions">
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => void addMeal()}
+              disabled={activeMenu.mealCount >= 14}
+            >
+              <Plus size={17} />
+              Add meal
+            </button>
+            <span>{activeMenu.mealCount} of 14 meals</span>
+          </div>
           <div className="custom-list-picker">
             <div>
               <strong>Custom shopping lists</strong>
