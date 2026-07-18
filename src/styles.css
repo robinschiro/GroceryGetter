@@ -134,6 +134,54 @@ label {
   gap: 8px;
 }
 
+.data-scope-control {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.data-scope-control span {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.data-scope-control select {
+  min-height: 38px;
+  padding: 7px 30px 7px 10px;
+}
+
+.sandbox-banner,
+.sandbox-notice {
+  background: #fff1cc;
+  border: 1px solid #d89b22;
+  border-radius: 7px;
+  color: #583b00;
+  font-weight: 700;
+  padding: 10px 13px;
+}
+
+.sandbox-banner {
+  margin-top: 12px;
+}
+
+.sandbox-notice {
+  margin-bottom: 16px;
+}
+
+.sandbox-cart-toggle {
+  background: #fff7e2;
+  border: 1px solid #d89b22;
+  border-radius: 7px;
+  padding: 11px;
+}
+
+:root[data-data-scope="sandbox"] .app-shell {
+  box-shadow: inset 0 4px 0 #d89b22;
+}
+
 .topbar-title {
   align-items: center;
   display: flex;
@@ -1119,6 +1167,14 @@ label {
 :root[data-theme="dark"] .meal-block,
 :root[data-theme="dark"] .custom-list-picker {
   border-top-color: #33443d;
+}
+
+:root[data-theme="dark"] .sandbox-banner,
+:root[data-theme="dark"] .sandbox-notice,
+:root[data-theme="dark"] .sandbox-cart-toggle {
+  background: #3a2b0c;
+  border-color: #b98420;
+  color: #ffe7ad;
 }
 
 :root[data-theme="dark"] .custom-list-picker > div:first-child span {

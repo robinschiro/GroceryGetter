@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { Recipe, RecipeCategory, RecipeInput } from "../server/types.js";
+import type { DataScope, Recipe, RecipeCategory, RecipeInput } from "../server/types.js";
 
 const categories = new Set<RecipeCategory>(["entree", "vegetable_side", "starch_side"]);
 
@@ -18,6 +18,7 @@ type ImportOptions = {
   skipExisting: boolean;
   validateOnly: boolean;
   sync: boolean;
+  dataScope: DataScope;
 };
 
 type SyncPlan = {
@@ -35,13 +36,18 @@ function readArg(name: string, fallback: string) {
 }
 
 function readOptions(): ImportOptions {
+  const dataScope = readArg("--scope", "production");
+  if (dataScope !== "production" && dataScope !== "sandbox") {
+    throw new Error("--scope must be production or sandbox.");
+  }
   return {
     apiBaseUrl: readArg("--api", "http://127.0.0.1:5174").replace(/\/$/, ""),
     filePath: path.resolve(readArg("--file", "imports/dropbox-recipes/parsed-recipes.json")),
     commit: process.argv.includes("--commit"),
     skipExisting: !process.argv.includes("--allow-duplicates"),
     validateOnly: process.argv.includes("--validate-only"),
-    sync: process.argv.includes("--sync")
+    sync: process.argv.includes("--sync"),
+    dataScope
   };
 }
 
@@ -151,8 +157,14 @@ function loadRecipes(filePath: string) {
   });
 }
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+async function api<T>(url: string, dataScope: DataScope, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      "X-Data-Scope": dataScope,
+      ...(init?.headers ?? {})
+    }
+  });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`${response.status} ${response.statusText}: ${text}`);
@@ -245,7 +257,10 @@ async function main() {
     return;
   }
 
-  const existingRecipes = await api<Array<Recipe | null>>(`${options.apiBaseUrl}/api/recipes`);
+  const existingRecipes = await api<Array<Recipe | null>>(
+    `${options.apiBaseUrl}/api/recipes`,
+    options.dataScope
+  );
   const existing = existingRecipes.filter((recipe): recipe is Recipe => Boolean(recipe));
 
   if (options.sync) {
@@ -263,7 +278,7 @@ async function main() {
     }
 
     for (const recipe of plan.newRecipes) {
-      const created = await api<Recipe>(`${options.apiBaseUrl}/api/recipes`, {
+      const created = await api<Recipe>(`${options.apiBaseUrl}/api/recipes`, options.dataScope, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(recipe)
@@ -271,11 +286,15 @@ async function main() {
       console.log(`Created #${created.id}: ${created.name}`);
     }
     for (const { existing: existingRecipe, recipe } of plan.changedRecipes) {
-      const updated = await api<Recipe>(`${options.apiBaseUrl}/api/recipes/${existingRecipe.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(recipe)
-      });
+      const updated = await api<Recipe>(
+        `${options.apiBaseUrl}/api/recipes/${existingRecipe.id}`,
+        options.dataScope,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(recipe)
+        }
+      );
       console.log(`Updated #${updated.id}: ${updated.name}`);
     }
     return;
@@ -297,7 +316,7 @@ async function main() {
   }
 
   for (const recipe of toImport) {
-    const created = await api<Recipe>(`${options.apiBaseUrl}/api/recipes`, {
+    const created = await api<Recipe>(`${options.apiBaseUrl}/api/recipes`, options.dataScope, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(recipe)

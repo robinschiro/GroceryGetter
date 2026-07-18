@@ -26,18 +26,18 @@ import {
 import "./styles.css";
 
 type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
+type DataScope = "production" | "sandbox";
 
 type Recipe = {
   id: number;
   name: string;
   category: RecipeCategory;
-  isTestData: boolean;
+  dataScope: DataScope;
   servings: number | null;
   notes: string;
   ingredients: RecipeIngredient[];
 };
 
-type PlannerRecipeMode = "test" | "production";
 type RecipeAdminTab = "create" | "manage";
 type ShoppingListsTab = "create" | "manage";
 type QfcSettingsTab = "api" | "preferences";
@@ -56,7 +56,7 @@ type Menu = {
   id: number | null;
   name: string;
   mealCount: number;
-  isTestData: boolean;
+  dataScope: DataScope;
   status: string;
   items: MenuItem[];
   customShoppingListIds: number[];
@@ -95,6 +95,7 @@ type CustomShoppingListItem = {
 type CustomShoppingList = {
   id: number;
   name: string;
+  dataScope: DataScope;
   includeInMenuByDefault: boolean;
   items: CustomShoppingListItem[];
 };
@@ -238,6 +239,7 @@ function normalizeRecipeIngredient(ingredient: RecipeIngredient): RecipeIngredie
 
 const qfcCartUrl = "https://www.qfc.com/cart";
 const themeStorageKey = "grocery-getter-theme";
+const dataScopeStorageKey = "grocery-getter-data-scope";
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -305,8 +307,12 @@ function defaultRouteForView(view: AppView) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...init
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Data-Scope": getInitialDataScope(),
+      ...(init?.headers ?? {})
+    }
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -327,9 +333,14 @@ function getInitialTheme(): ThemeMode {
   return window.localStorage.getItem(themeStorageKey) === "dark" ? "dark" : "light";
 }
 
+function getInitialDataScope(): DataScope {
+  return window.localStorage.getItem(dataScopeStorageKey) === "sandbox" ? "sandbox" : "production";
+}
+
 function App() {
   const [activeRoute, setActiveRoute] = useState<AppRoute>(() => routeFromPathname(window.location.pathname));
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
+  const [dataScope, setDataScope] = useState<DataScope>(getInitialDataScope);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
@@ -340,9 +351,9 @@ function App() {
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
   const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState(2);
-  const [plannerRecipeMode, setPlannerRecipeMode] = useState<PlannerRecipeMode>("test");
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
+  const [allowRealQfcCartMutation, setAllowRealQfcCartMutation] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
   const [qfcSubmitProgress, setQfcSubmitProgress] = useState<QfcSubmitProgress | null>(null);
   const [storeItemReview, setStoreItemReview] = useState<StoreItemReview | null>(null);
@@ -363,19 +374,23 @@ function App() {
       api<StoreItemPreference[]>("/api/store-item-preferences")
     ]);
     setPreferStoreBrands(settings.preferStoreBrands === "true");
+    setAllowRealQfcCartMutation(settings.allowRealQfcCartMutation === "true");
     setStoreItemPreferences(preferences);
     setQfcStatus(await api<QfcStatus>("/api/qfc/status"));
   }
 
   async function loadLatestMenu() {
     const latestMenu = await api<Menu | null>("/api/menus/latest");
-    if (!latestMenu || latestMenu.id === null) return;
+    if (!latestMenu || latestMenu.id === null) {
+      setActiveMenu(null);
+      setShoppingList([]);
+      return;
+    }
 
     const latestShoppingList = await api<ShoppingListItem[]>(`/api/menus/${latestMenu.id}/shopping-list`);
     setActiveMenu(latestMenu);
     setShoppingList(latestShoppingList);
     setMealCount(latestMenu.mealCount);
-    setPlannerRecipeMode(latestMenu.isTestData ? "test" : "production");
   }
 
   useEffect(() => {
@@ -383,7 +398,7 @@ function App() {
     void loadCustomShoppingLists();
     void loadSettings();
     void loadLatestMenu();
-  }, []);
+  }, [dataScope]);
 
   useEffect(() => {
     function syncRouteFromUrl() {
@@ -405,12 +420,16 @@ function App() {
     window.localStorage.setItem(themeStorageKey, themeMode);
   }, [themeMode]);
 
+  useLayoutEffect(() => {
+    document.documentElement.dataset.dataScope = dataScope;
+  }, [dataScope]);
+
   async function generateMenu() {
     setMessage("");
     try {
       const preview = await api<Menu>("/api/menus/preview", {
         method: "POST",
-        body: JSON.stringify({ mealCount, includeTestData: plannerRecipeMode === "test" })
+        body: JSON.stringify({ mealCount })
       });
       setActiveMenu(preview);
       setShoppingList([]);
@@ -437,7 +456,6 @@ function App() {
         body: JSON.stringify({
           name: activeMenu.name,
           mealCount: activeMenu.mealCount,
-          isTestData: activeMenu.isTestData,
           customShoppingListIds: activeMenu.customShoppingListIds,
           items: activeMenu.items.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
         })
@@ -454,15 +472,18 @@ function App() {
     }
   }
 
-  function updatePlannerRecipeMode(next: PlannerRecipeMode) {
-    setPlannerRecipeMode(next);
+  function updateDataScope(next: DataScope) {
+    window.localStorage.setItem(dataScopeStorageKey, next);
+    setDataScope(next);
+    setRecipes([]);
+    setCustomShoppingLists([]);
     setActiveMenu(null);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
     setSourceMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
-    setMessage("");
+    setMessage(next === "sandbox" ? "Sandbox mode is active." : "");
   }
 
   async function loadMenu(id: number) {
@@ -513,9 +534,7 @@ function App() {
 
     const nextMealNumber = activeMenu.mealCount + 1;
     const newItems = categories.map(({ value: slot }) => {
-      const matchingRecipes = recipes.filter(
-        (recipe) => recipe.isTestData === activeMenu.isTestData && recipe.category === slot
-      );
+      const matchingRecipes = recipes.filter((recipe) => recipe.category === slot);
       const recipe = matchingRecipes[(nextMealNumber - 1) % matchingRecipes.length] ?? null;
       return {
         id: null,
@@ -834,6 +853,14 @@ function App() {
     });
   }
 
+  async function updateRealQfcCartPermission(next: boolean) {
+    setAllowRealQfcCartMutation(next);
+    await api("/api/settings/allowRealQfcCartMutation", {
+      method: "PUT",
+      body: JSON.stringify({ value: String(next) })
+    });
+  }
+
   const recipeCounts = useMemo(
     () =>
       categories.map((category) => ({
@@ -1017,6 +1044,17 @@ function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            <label className="data-scope-control">
+              <span>Data</span>
+              <select
+                value={dataScope}
+                onChange={(event) => updateDataScope(event.target.value as DataScope)}
+                aria-label="Data mode"
+              >
+                <option value="production">Production</option>
+                <option value="sandbox">Sandbox</option>
+              </select>
+            </label>
             <button
               className="icon-button"
               onClick={() => setThemeMode((mode) => (mode === "dark" ? "light" : "dark"))}
@@ -1037,6 +1075,12 @@ function App() {
             </button>
           </div>
         </header>
+
+        {dataScope === "sandbox" ? (
+          <div className="sandbox-banner" role="status">
+            Sandbox mode: recipes, menus, shopping lists, and store preferences are isolated.
+          </div>
+        ) : null}
 
         {isMenuOpen ? (
           <div className="menu-panel">
@@ -1088,9 +1132,12 @@ function App() {
             activeTab={activeRoute.qfcSettingsTab ?? "api"}
             onTabChange={(tab) => navigate(routeFromPathname(`/settings/qfc/${tab}`))}
             status={qfcStatus}
+            dataScope={dataScope}
             reloadStatus={loadSettings}
             preferStoreBrands={preferStoreBrands}
             updateStoreBrandPreference={updateStoreBrandPreference}
+            allowRealQfcCartMutation={allowRealQfcCartMutation}
+            updateRealQfcCartPermission={updateRealQfcCartPermission}
             storeItemPreferences={storeItemPreferences}
             forgetStoreItemPreference={forgetStoreItemPreference}
           />
@@ -1103,8 +1150,6 @@ function App() {
             customShoppingLists={customShoppingLists}
             mealCount={mealCount}
             setMealCount={setMealCount}
-            plannerRecipeMode={plannerRecipeMode}
-            setPlannerRecipeMode={updatePlannerRecipeMode}
             activeMenu={activeMenu}
             generateMenu={generateMenu}
             saveMenu={saveMenu}
@@ -1141,6 +1186,7 @@ function App() {
             />
             <StoreItemReviewPanel
               review={storeItemReview}
+              allowRealQfcCartMutation={allowRealQfcCartMutation}
               addToCart={addReviewedStoreItemsToQfc}
               selectStoreItem={selectStoreItem}
               updateCartQuantity={updateStoreItemQuantity}
@@ -1160,18 +1206,24 @@ function StoreSettingsPanel({
   activeTab,
   onTabChange,
   status,
+  dataScope,
   reloadStatus,
   preferStoreBrands,
   updateStoreBrandPreference,
+  allowRealQfcCartMutation,
+  updateRealQfcCartPermission,
   storeItemPreferences,
   forgetStoreItemPreference
 }: {
   activeTab: QfcSettingsTab;
   onTabChange: (tab: QfcSettingsTab) => void;
   status: QfcStatus | null;
+  dataScope: DataScope;
   reloadStatus: () => Promise<void>;
   preferStoreBrands: boolean;
   updateStoreBrandPreference: (next: boolean) => Promise<void>;
+  allowRealQfcCartMutation: boolean;
+  updateRealQfcCartPermission: (next: boolean) => Promise<void>;
   storeItemPreferences: StoreItemPreference[];
   forgetStoreItemPreference: (provider: string, ingredientKey: string) => Promise<void>;
 }) {
@@ -1201,14 +1253,16 @@ function StoreSettingsPanel({
     try {
       await api("/api/qfc/settings", {
         method: "PUT",
-        body: JSON.stringify({
-          clientId: clientId.trim() || undefined,
-          clientSecret: clientSecret.trim() || undefined,
-          locationId,
-          serviceScopes,
-          customerScopes,
-          redirectUri
-        })
+        body: JSON.stringify(dataScope === "sandbox"
+          ? { locationId }
+          : {
+            clientId: clientId.trim() || undefined,
+            clientSecret: clientSecret.trim() || undefined,
+            locationId,
+            serviceScopes,
+            customerScopes,
+            redirectUri
+          })
       });
       setClientId(clientId.trim());
       setLocationId(locationId.trim());
@@ -1312,6 +1366,11 @@ function StoreSettingsPanel({
 
       {activeTab === "api" ? (
         <div className="tab-panel" role="tabpanel">
+          {dataScope === "sandbox" ? (
+            <div className="sandbox-notice">
+              Sandbox uses the real QFC catalog and shared connection. Credentials and OAuth can only be changed in production.
+            </div>
+          ) : null}
           <div className="status-strip">
             <span className={status?.hasClientId ? "status-good" : "status-muted"}>Client ID</span>
             <span className={status?.hasClientSecret ? "status-good" : "status-muted"}>Client secret</span>
@@ -1323,7 +1382,7 @@ function StoreSettingsPanel({
           <div className="qfc-grid">
             <label>
               Client ID
-              <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
+              <input value={clientId} onChange={(event) => setClientId(event.target.value)} disabled={dataScope === "sandbox"} />
             </label>
             <label>
               Client secret
@@ -1332,6 +1391,7 @@ function StoreSettingsPanel({
                 onChange={(event) => setClientSecret(event.target.value)}
                 placeholder={status?.hasClientSecret ? "Already saved" : ""}
                 type="password"
+                disabled={dataScope === "sandbox"}
               />
             </label>
             <label>
@@ -1340,15 +1400,15 @@ function StoreSettingsPanel({
             </label>
             <label>
               Service scopes
-              <input value={serviceScopes} onChange={(event) => setServiceScopes(event.target.value)} />
+              <input value={serviceScopes} onChange={(event) => setServiceScopes(event.target.value)} disabled={dataScope === "sandbox"} />
             </label>
             <label>
               Customer scopes
-              <input value={customerScopes} onChange={(event) => setCustomerScopes(event.target.value)} />
+              <input value={customerScopes} onChange={(event) => setCustomerScopes(event.target.value)} disabled={dataScope === "sandbox"} />
             </label>
             <label className="wide-field">
               Redirect URI
-              <input value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
+              <input value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} disabled={dataScope === "sandbox"} />
             </label>
           </div>
 
@@ -1357,17 +1417,17 @@ function StoreSettingsPanel({
               <RefreshCw size={17} />
               Refresh status
             </button>
-            <button className="secondary" onClick={() => void refreshCustomerOAuth()}>
+            <button className="secondary" onClick={() => void refreshCustomerOAuth()} disabled={dataScope === "sandbox"}>
               <RefreshCw size={17} />
               Refresh OAuth
             </button>
-            <button onClick={() => void startCustomerOAuth()}>
+            <button onClick={() => void startCustomerOAuth()} disabled={dataScope === "sandbox"}>
               <Send size={17} />
               Start customer OAuth
             </button>
             <button onClick={() => void saveSettings()}>
               <Check size={17} />
-              Save QFC settings
+              {dataScope === "sandbox" ? "Save sandbox location" : "Save QFC settings"}
             </button>
           </div>
 
@@ -1420,6 +1480,16 @@ function StoreSettingsPanel({
               onChange={(event) => void updateStoreBrandPreference(event.target.checked)}
             />
             <span>Prefer store brands when an ingredient has no remembered store item</span>
+          </label>
+          <label className={`toggle-row ${dataScope === "sandbox" ? "sandbox-cart-toggle" : ""}`}>
+            <input
+              type="checkbox"
+              checked={allowRealQfcCartMutation}
+              onChange={(event) => void updateRealQfcCartPermission(event.target.checked)}
+            />
+            <span>
+              Allow this {dataScope} mode to add reviewed items to the real QFC cart
+            </span>
           </label>
           <div className="store-item-preference-section">
             <div>
@@ -1877,7 +1947,6 @@ function RecipeAdmin({
 type RecipeFormPayload = {
   name: string;
   category: RecipeCategory;
-  isTestData: boolean;
   servings: number | null;
   notes: string;
   ingredients: RecipeIngredient[];
@@ -1887,7 +1956,6 @@ function recipeFormInitialState(recipe?: Recipe) {
   return {
     name: recipe?.name ?? "",
     category: recipe?.category ?? "entree",
-    isTestData: recipe?.isTestData ?? false,
     servings: recipe?.servings === null || recipe?.servings === undefined ? "" : String(recipe.servings),
     notes: recipe?.notes ?? "",
     ingredients: recipe?.ingredients.length
@@ -1936,7 +2004,6 @@ function RecipeForm({
       await onSubmit({
         name: form.name,
         category: form.category,
-        isTestData: form.isTestData,
         servings: form.servings ? Number(form.servings) : null,
         notes: form.notes,
         ingredients: savedIngredients
@@ -2019,15 +2086,6 @@ function RecipeForm({
           />
         </label>
       </div>
-
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={form.isTestData}
-          onChange={(event) => setForm((current) => ({ ...current, isTestData: event.target.checked }))}
-        />
-        <span>Mark as test data</span>
-      </label>
 
       <label>
         Notes
@@ -2191,7 +2249,7 @@ function RecipeManagementList({
               </div>
               <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
               <span>{recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}</span>
-              <span>{recipe.isTestData ? "Test" : "Non-test"}</span>
+              <span>{recipe.dataScope === "sandbox" ? "Sandbox" : "Production"}</span>
             </button>
           ))}
         </div>
@@ -2205,8 +2263,6 @@ function MenuBuilder({
   customShoppingLists,
   mealCount,
   setMealCount,
-  plannerRecipeMode,
-  setPlannerRecipeMode,
   activeMenu,
   generateMenu,
   saveMenu,
@@ -2220,8 +2276,6 @@ function MenuBuilder({
   customShoppingLists: CustomShoppingList[];
   mealCount: number;
   setMealCount: (value: number) => void;
-  plannerRecipeMode: PlannerRecipeMode;
-  setPlannerRecipeMode: (value: PlannerRecipeMode) => void;
   activeMenu: Menu | null;
   generateMenu: () => Promise<void>;
   saveMenu: () => Promise<void>;
@@ -2236,7 +2290,7 @@ function MenuBuilder({
   updateCustomShoppingListSelection: (listId: number, included: boolean) => Promise<void>;
   aggregateIngredients: () => Promise<void>;
 }) {
-  const plannerRecipes = recipes.filter((recipe) => recipe.isTestData === (plannerRecipeMode === "test"));
+  const plannerRecipes = recipes;
 
   return (
     <section className="panel">
@@ -2255,16 +2309,6 @@ function MenuBuilder({
             value={mealCount}
             onChange={(event) => setMealCount(Number(event.target.value))}
           />
-        </label>
-        <label>
-          Recipes
-          <select
-            value={plannerRecipeMode}
-            onChange={(event) => setPlannerRecipeMode(event.target.value as PlannerRecipeMode)}
-          >
-            <option value="test">Test recipes</option>
-            <option value="production">Non-test recipes</option>
-          </select>
         </label>
         <button onClick={() => void generateMenu()}>
           <Shuffle size={17} />
@@ -2543,6 +2587,7 @@ function ShoppingListReview({
 
 function StoreItemReviewPanel({
   review,
+  allowRealQfcCartMutation,
   addToCart,
   selectStoreItem,
   updateCartQuantity,
@@ -2552,6 +2597,7 @@ function StoreItemReviewPanel({
   message
 }: {
   review: StoreItemReview | null;
+  allowRealQfcCartMutation: boolean;
   addToCart: () => Promise<void>;
   selectStoreItem: (shoppingItemId: number, productId: string, upc: string) => Promise<void>;
   updateCartQuantity: (shoppingItemId: number, cartQuantity: number) => Promise<void>;
@@ -2888,10 +2934,20 @@ function StoreItemReviewPanel({
             <button
               aria-busy={qfcSubmitProgress?.phase === "adding"}
               onClick={() => void addToCart()}
-              disabled={!matches.length || Boolean(qfcSubmitProgress) || updatingQuantityItemId !== null}
+              disabled={
+                !allowRealQfcCartMutation
+                || !matches.length
+                || Boolean(qfcSubmitProgress)
+                || updatingQuantityItemId !== null
+              }
+              title={allowRealQfcCartMutation ? undefined : "Enable real cart changes in QFC preferences"}
             >
               <Send size={17} />
-              {qfcSubmitProgress?.phase === "adding" ? "Adding to QFC..." : `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`}
+              {qfcSubmitProgress?.phase === "adding"
+                ? "Adding to QFC..."
+                : allowRealQfcCartMutation
+                  ? `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`
+                  : "Real QFC cart changes disabled"}
             </button>
           </div>
           {qfcSubmitProgress?.phase === "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}

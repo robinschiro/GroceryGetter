@@ -36,10 +36,19 @@ The UI writes these server-side settings:
 
 - `krogerClientId`
 - `krogerClientSecret`
-- `krogerLocationId`
 - `krogerServiceScopes`
 - `krogerCustomerScopes`
 - `krogerRedirectUri`
+
+Production and sandbox share these connection settings and OAuth tokens. Sandbox can use the real location and product APIs, but credential and OAuth changes must be made in production mode.
+
+The following settings are stored separately for production and sandbox:
+
+- `krogerLocationId`
+- `preferStoreBrands`
+- `allowRealQfcCartMutation`
+
+Real cart mutation is disabled by default in sandbox and is enforced by the API immediately before cart submission.
 
 The current default service scope is `product.compact`.
 The current default customer scope is `cart.basic:write`.

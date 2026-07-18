@@ -4,22 +4,39 @@ import { initializeDb, insert, queryAll, queryOne, run, saveDb, transaction } fr
 import {
   addQfcMatchesToCart,
   createCustomerAuthorizationUrl,
+  deleteStoreItemPreference,
   exchangeCustomerAuthorizationCode,
   getQfcApiStatus,
+  getScopedSetting,
   getStoreItemPreferences,
+  previewQfcCart,
   refreshCustomerToken,
   saveQfcApiSettings,
   saveStoreItemPreference,
   searchLocations,
-  previewQfcCart,
   searchStoreItems,
-  deleteStoreItemPreference
+  setScopedSetting
 } from "./qfcAdapter.js";
 import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
-import type { CustomShoppingList, CustomShoppingListInput, Recipe, RecipeInput } from "./types.js";
+import type {
+  CustomShoppingList,
+  CustomShoppingListInput,
+  DataScope,
+  Recipe,
+  RecipeInput
+} from "./types.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
+app.use((req, res, next) => {
+  const rawScope = req.header("X-Data-Scope")?.trim().toLowerCase() || "production";
+  if (rawScope !== "production" && rawScope !== "sandbox") {
+    res.status(400).json({ error: "Data scope must be production or sandbox." });
+    return;
+  }
+  res.locals.dataScope = rawScope satisfies DataScope;
+  next();
+});
 
 const port = Number(process.env.PORT ?? 5174);
 
@@ -27,6 +44,7 @@ type QfcSubmitJob = {
   id: string;
   kind: "preview" | "add";
   menuId: string;
+  dataScope: DataScope;
   status: "running" | "complete" | "failed";
   progress: CartSubmissionProgress;
   result?: CartSubmissionResult;
@@ -42,7 +60,7 @@ type MenuRecipe = {
   id: number;
   name: string;
   category: RecipeCategory;
-  isTestData: number;
+  dataScope: DataScope;
 };
 type MenuItemInput = {
   mealNumber: number;
@@ -53,9 +71,13 @@ type MenuRow = {
   id: number;
   name: string;
   mealCount: number;
-  isTestData: number;
+  dataScope: DataScope;
   status: string;
 };
+
+function requestScope(res: express.Response): DataScope {
+  return res.locals.dataScope as DataScope;
+}
 
 type AggregateSource = {
   sourceType: "recipe" | "custom";
@@ -78,6 +100,11 @@ function pruneQfcSubmitJobs() {
   }
 }
 
+function getScopedQfcSubmitJob(jobId: string, dataScope: DataScope) {
+  const job = qfcSubmitJobs.get(jobId);
+  return job?.dataScope === dataScope ? job : undefined;
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -87,25 +114,23 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-type RecipeRow = Omit<Recipe, "ingredients" | "isTestData"> & {
-  isTestData: number;
-};
+type RecipeRow = Omit<Recipe, "ingredients">;
 
-function getRecipe(id: number): Recipe | null {
+function getRecipe(id: number, dataScope: DataScope): Recipe | null {
   const recipe = queryOne(
     `SELECT
       id,
       name,
       category,
-      is_test_data AS isTestData,
+      data_scope AS dataScope,
       servings,
       notes,
       source_path AS sourcePath,
       source_hash AS sourceHash,
       sync_status AS syncStatus
     FROM recipes
-    WHERE id = ?`,
-    [id]
+    WHERE id = ? AND data_scope = ?`,
+    [id, dataScope]
   ) as
     | RecipeRow
     | null;
@@ -129,7 +154,7 @@ function getRecipe(id: number): Recipe | null {
       [id]
     ) as Recipe["ingredients"];
 
-  return { ...recipe, isTestData: Boolean(recipe.isTestData), ingredients };
+  return { ...recipe, ingredients };
 }
 
 function shuffle<T>(items: T[]) {
@@ -145,10 +170,11 @@ function pick<T>(items: T[], index: number) {
   return items[index % items.length];
 }
 
-function getPlannerRecipes(includeTestData: boolean) {
-  return queryAll("SELECT id, name, category, is_test_data AS isTestData FROM recipes WHERE is_test_data = ?", [
-    includeTestData ? 1 : 0
-  ]) as MenuRecipe[];
+function getPlannerRecipes(dataScope: DataScope) {
+  return queryAll(
+    "SELECT id, name, category, data_scope AS dataScope FROM recipes WHERE data_scope = ?",
+    [dataScope]
+  ) as MenuRecipe[];
 }
 
 function getRecipesByCategory(recipes: MenuRecipe[]) {
@@ -163,8 +189,8 @@ function validateMealCount(mealCount: number) {
   return Number.isInteger(mealCount) && mealCount >= 1 && mealCount <= 14;
 }
 
-function buildMenuPreview(mealCount: number, includeTestData: boolean) {
-  const byCategory = getRecipesByCategory(getPlannerRecipes(includeTestData));
+function buildMenuPreview(mealCount: number, dataScope: DataScope) {
+  const byCategory = getRecipesByCategory(getPlannerRecipes(dataScope));
 
   if (!byCategory.entree.length) {
     return null;
@@ -192,25 +218,28 @@ function buildMenuPreview(mealCount: number, includeTestData: boolean) {
   const customShoppingListIds = queryAll<{ id: number }>(
     `SELECT id
     FROM custom_shopping_lists
-    WHERE include_in_menu_by_default = 1
+    WHERE include_in_menu_by_default = 1 AND data_scope = ?
     ORDER BY name COLLATE NOCASE, id`
+    ,
+    [dataScope]
   ).map((list) => list.id);
 
   return {
     id: null,
     name: `Week of ${new Date().toLocaleDateString("en-US")}`,
     mealCount,
-    isTestData: includeTestData,
+    dataScope,
     status: "preview",
     items,
     customShoppingListIds
   };
 }
 
-function getMenu(menuId: number) {
+function getMenu(menuId: number, dataScope: DataScope) {
   const menu = queryOne<MenuRow>(
-    "SELECT id, name, meal_count AS mealCount, is_test_data AS isTestData, status FROM menus WHERE id = ?",
-    [menuId]
+    `SELECT id, name, meal_count AS mealCount, data_scope AS dataScope, status
+    FROM menus WHERE id = ? AND data_scope = ?`,
+    [menuId, dataScope]
   );
   if (!menu) {
     return null;
@@ -239,18 +268,24 @@ function getMenu(menuId: number) {
     [menuId]
   ).map((row) => row.customShoppingListId);
 
-  return { ...menu, isTestData: Boolean(menu.isTestData), items, customShoppingListIds };
+  return { ...menu, items, customShoppingListIds };
 }
 
-function getCustomShoppingList(id: number): CustomShoppingList | null {
-  const list = queryOne<{ id: number; name: string; includeInMenuByDefault: number }>(
+function getCustomShoppingList(id: number, dataScope: DataScope): CustomShoppingList | null {
+  const list = queryOne<{
+    id: number;
+    name: string;
+    dataScope: DataScope;
+    includeInMenuByDefault: number;
+  }>(
     `SELECT
       id,
       name,
+      data_scope AS dataScope,
       include_in_menu_by_default AS includeInMenuByDefault
     FROM custom_shopping_lists
-    WHERE id = ?`,
-    [id]
+    WHERE id = ? AND data_scope = ?`,
+    [id, dataScope]
   );
   if (!list) {
     return null;
@@ -399,7 +434,7 @@ function buildIngredientText(quantity: string, unit: string, item: string, fallb
   return parts.length ? parts.join(" ") : fallback;
 }
 
-function getShoppingListItems(menuId: number) {
+function getShoppingListItems(menuId: number, dataScope: DataScope) {
   return queryAll(
     `SELECT
       menu_shopping_list_items.id,
@@ -448,45 +483,50 @@ function getShoppingListItems(menuId: number) {
           menu_shopping_list_items.id
       ) = 1 THEN 1 ELSE 0 END AS canPersistToSource
     FROM menu_shopping_list_items
-    WHERE menu_shopping_list_items.menu_id = ?
+    JOIN menus ON menus.id = menu_shopping_list_items.menu_id
+    WHERE menu_shopping_list_items.menu_id = ? AND menus.data_scope = ?
     ORDER BY menu_shopping_list_items.sort_order, menu_shopping_list_items.id`,
-    [menuId]
+    [menuId, dataScope]
   );
 }
 
 app.get("/api/recipes", (_req, res) => {
+  const dataScope = requestScope(res);
   const rows = queryAll(
       `SELECT
         id,
         name,
         category,
-        is_test_data AS isTestData,
+        data_scope AS dataScope,
         servings,
         notes,
         source_path AS sourcePath,
         source_hash AS sourceHash,
         sync_status AS syncStatus
       FROM recipes
-      ORDER BY category, name`
+      WHERE data_scope = ?
+      ORDER BY category, name`,
+      [dataScope]
     ) as RecipeRow[];
 
-  res.json(rows.map((row) => getRecipe(row.id)));
+  res.json(rows.map((row) => getRecipe(row.id, dataScope)));
 });
 
 app.post("/api/recipes", (req, res) => {
   try {
+    const dataScope = requestScope(res);
     const input = req.body as RecipeInput;
     validateRecipeInput(input);
 
     const createdRecipe = transaction(() => {
       const recipeId = insert(
         `INSERT INTO recipes
-          (name, category, is_test_data, servings, notes, source_path, source_hash, sync_status)
+          (name, category, data_scope, servings, notes, source_path, source_hash, sync_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.name.trim(),
           input.category,
-          input.isTestData ? 1 : 0,
+          dataScope,
           input.servings ?? null,
           input.notes?.trim() ?? "",
           input.sourcePath?.trim() || null,
@@ -511,7 +551,7 @@ app.post("/api/recipes", (req, res) => {
         );
       });
 
-      return getRecipe(recipeId);
+      return getRecipe(recipeId, dataScope);
     });
 
     res.status(201).json(createdRecipe);
@@ -522,13 +562,14 @@ app.post("/api/recipes", (req, res) => {
 
 app.put("/api/recipes/:id", (req, res) => {
   try {
+    const dataScope = requestScope(res);
     const recipeId = Number(req.params.id);
     if (!Number.isInteger(recipeId)) {
       res.status(400).json({ error: "Recipe id is invalid." });
       return;
     }
 
-    const existingRecipe = getRecipe(recipeId);
+    const existingRecipe = getRecipe(recipeId, dataScope);
     if (!existingRecipe) {
       res.status(404).json({ error: "Recipe not found." });
       return;
@@ -543,7 +584,6 @@ app.put("/api/recipes/:id", (req, res) => {
         SET
           name = ?,
           category = ?,
-          is_test_data = ?,
           servings = ?,
           notes = ?,
           source_path = ?,
@@ -554,7 +594,6 @@ app.put("/api/recipes/:id", (req, res) => {
         [
           input.name.trim(),
           input.category,
-          input.isTestData ? 1 : 0,
           input.servings ?? null,
           input.notes?.trim() ?? "",
           input.sourcePath?.trim() || null,
@@ -581,7 +620,7 @@ app.put("/api/recipes/:id", (req, res) => {
         );
       });
 
-      return getRecipe(recipeId);
+      return getRecipe(recipeId, dataScope);
     });
 
     res.json(updatedRecipe);
@@ -592,13 +631,14 @@ app.put("/api/recipes/:id", (req, res) => {
 
 app.delete("/api/recipes/:id", (req, res) => {
   try {
+    const dataScope = requestScope(res);
     const recipeId = Number(req.params.id);
     if (!Number.isInteger(recipeId)) {
       res.status(400).json({ error: "Recipe id is invalid." });
       return;
     }
 
-    const existingRecipe = getRecipe(recipeId);
+    const existingRecipe = getRecipe(recipeId, dataScope);
     if (!existingRecipe) {
       res.status(404).json({ error: "Recipe not found." });
       return;
@@ -616,26 +656,29 @@ app.delete("/api/recipes/:id", (req, res) => {
 });
 
 app.get("/api/custom-shopping-lists", (_req, res) => {
+  const dataScope = requestScope(res);
   const lists = queryAll<{ id: number }>(
-    "SELECT id FROM custom_shopping_lists ORDER BY name COLLATE NOCASE, id"
+    "SELECT id FROM custom_shopping_lists WHERE data_scope = ? ORDER BY name COLLATE NOCASE, id",
+    [dataScope]
   );
-  res.json(lists.map((list) => getCustomShoppingList(list.id)).filter(Boolean));
+  res.json(lists.map((list) => getCustomShoppingList(list.id, dataScope)).filter(Boolean));
 });
 
 app.post("/api/custom-shopping-lists", (req, res) => {
   try {
+    const dataScope = requestScope(res);
     const input = req.body as CustomShoppingListInput;
     validateCustomShoppingListInput(input);
     const listId = transaction(() => {
       const id = insert(
-        `INSERT INTO custom_shopping_lists (name, include_in_menu_by_default)
-        VALUES (?, ?)`,
-        [input.name.trim(), input.includeInMenuByDefault ? 1 : 0]
+        `INSERT INTO custom_shopping_lists (name, data_scope, include_in_menu_by_default)
+        VALUES (?, ?, ?)`,
+        [input.name.trim(), dataScope, input.includeInMenuByDefault ? 1 : 0]
       );
       replaceCustomShoppingListItems(id, input.items);
       return id;
     });
-    res.status(201).json(getCustomShoppingList(listId));
+    res.status(201).json(getCustomShoppingList(listId, dataScope));
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : "Unable to create the shopping list."
@@ -644,8 +687,9 @@ app.post("/api/custom-shopping-lists", (req, res) => {
 });
 
 app.put("/api/custom-shopping-lists/:id", (req, res) => {
+  const dataScope = requestScope(res);
   const listId = Number(req.params.id);
-  if (!Number.isInteger(listId) || !getCustomShoppingList(listId)) {
+  if (!Number.isInteger(listId) || !getCustomShoppingList(listId, dataScope)) {
     res.status(404).json({ error: "Shopping list not found." });
     return;
   }
@@ -662,7 +706,7 @@ app.put("/api/custom-shopping-lists/:id", (req, res) => {
       );
       replaceCustomShoppingListItems(listId, input.items);
     });
-    res.json(getCustomShoppingList(listId));
+    res.json(getCustomShoppingList(listId, dataScope));
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : "Unable to update the shopping list."
@@ -671,8 +715,9 @@ app.put("/api/custom-shopping-lists/:id", (req, res) => {
 });
 
 app.delete("/api/custom-shopping-lists/:id", (req, res) => {
+  const dataScope = requestScope(res);
   const listId = Number(req.params.id);
-  if (!Number.isInteger(listId) || !getCustomShoppingList(listId)) {
+  if (!Number.isInteger(listId) || !getCustomShoppingList(listId, dataScope)) {
     res.status(404).json({ error: "Shopping list not found." });
     return;
   }
@@ -682,7 +727,10 @@ app.delete("/api/custom-shopping-lists/:id", (req, res) => {
 });
 
 app.get("/api/settings", (_req, res) => {
-  const settings = queryAll("SELECT key, value FROM settings ORDER BY key") as Array<{
+  const settings = queryAll(
+    "SELECT key, value FROM scoped_settings WHERE data_scope = ? ORDER BY key",
+    [requestScope(res)]
+  ) as Array<{
     key: string;
     value: string;
   }>;
@@ -690,23 +738,33 @@ app.get("/api/settings", (_req, res) => {
 });
 
 app.put("/api/settings/:key", (req, res) => {
+  const key = req.params.key;
+  if (!["preferStoreBrands", "allowRealQfcCartMutation"].includes(key)) {
+    res.status(400).json({ error: "This setting cannot be changed through the scoped settings API." });
+    return;
+  }
   const value = String(req.body.value ?? "");
-  run(
-    `INSERT INTO settings (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    ,
-    [req.params.key, value]
-  );
-  saveDb();
-  res.json({ key: req.params.key, value });
+  setScopedSetting(requestScope(res), key, value);
+  res.json({ key, value });
 });
 
 app.get("/api/qfc/status", (_req, res) => {
-  res.json(getQfcApiStatus());
+  res.json(getQfcApiStatus(requestScope(res)));
 });
 
 app.put("/api/qfc/settings", (req, res) => {
+  const dataScope = requestScope(res);
+  const changesGlobalSettings = [
+    req.body.clientId,
+    req.body.clientSecret,
+    req.body.serviceScopes,
+    req.body.customerScopes,
+    req.body.redirectUri
+  ].some((value) => value !== undefined);
+  if (dataScope === "sandbox" && changesGlobalSettings) {
+    res.status(403).json({ error: "Switch to production mode to change QFC credentials or OAuth settings." });
+    return;
+  }
   res.json(saveQfcApiSettings({
     clientId: req.body.clientId,
     clientSecret: req.body.clientSecret,
@@ -714,10 +772,14 @@ app.put("/api/qfc/settings", (req, res) => {
     serviceScopes: req.body.serviceScopes,
     customerScopes: req.body.customerScopes,
     redirectUri: req.body.redirectUri
-  }));
+  }, dataScope));
 });
 
 app.post("/api/qfc/oauth/start", (_req, res) => {
+  if (requestScope(res) === "sandbox") {
+    res.status(403).json({ error: "Switch to production mode to connect a QFC customer account." });
+    return;
+  }
   try {
     res.json(createCustomerAuthorizationUrl());
   } catch (error) {
@@ -766,6 +828,10 @@ app.get("/api/qfc/oauth/callback", async (req, res) => {
 });
 
 app.post("/api/qfc/oauth/refresh", async (_req, res) => {
+  if (requestScope(res) === "sandbox") {
+    res.status(403).json({ error: "Switch to production mode to refresh QFC authorization." });
+    return;
+  }
   try {
     res.json(await refreshCustomerToken());
   } catch (error) {
@@ -798,30 +864,29 @@ app.get("/api/qfc/store-items", async (req, res) => {
       return;
     }
 
-    res.json(await searchStoreItems(term, { locationId, limit }));
+    res.json(await searchStoreItems(term, { locationId, limit, dataScope: requestScope(res) }));
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search store items." });
   }
 });
 
 app.get("/api/store-item-preferences", (_req, res) => {
-  res.json(getStoreItemPreferences());
+  res.json(getStoreItemPreferences(requestScope(res)));
 });
 
 app.delete("/api/store-item-preferences/:provider/:ingredientKey", (req, res) => {
-  deleteStoreItemPreference(req.params.provider, req.params.ingredientKey);
+  deleteStoreItemPreference(requestScope(res), req.params.provider, req.params.ingredientKey);
   res.json({ ok: true });
 });
 
 app.post("/api/menus/preview", (req, res) => {
   const mealCount = Number(req.body.mealCount ?? 5);
-  const includeTestData = Boolean(req.body.includeTestData);
   if (!validateMealCount(mealCount)) {
     res.status(400).json({ error: "Meal count must be between 1 and 14." });
     return;
   }
 
-  const preview = buildMenuPreview(mealCount, includeTestData);
+  const preview = buildMenuPreview(mealCount, requestScope(res));
   if (!preview) {
     res.status(400).json({ error: "Add at least one entree recipe before generating a menu." });
     return;
@@ -831,8 +896,8 @@ app.post("/api/menus/preview", (req, res) => {
 });
 
 app.post("/api/menus", (req, res) => {
+  const dataScope = requestScope(res);
   const mealCount = Number(req.body.mealCount);
-  const isTestData = Boolean(req.body.isTestData);
   const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
   const customShoppingListIds: number[] = Array.isArray(req.body.customShoppingListIds)
     ? Array.from(new Set<number>(req.body.customShoppingListIds.map((id: unknown) => Number(id))))
@@ -854,8 +919,8 @@ app.post("/api/menus", (req, res) => {
     ? queryOne<{ count: number }>(
       `SELECT COUNT(*) AS count
       FROM custom_shopping_lists
-      WHERE id IN (${customShoppingListIds.map(() => "?").join(", ")})`,
-      customShoppingListIds
+      WHERE data_scope = ? AND id IN (${customShoppingListIds.map(() => "?").join(", ")})`,
+      [dataScope, ...customShoppingListIds]
     )?.count ?? 0
     : 0;
   if (existingCustomListCount !== customShoppingListIds.length) {
@@ -891,26 +956,22 @@ app.post("/api/menus", (req, res) => {
       continue;
     }
 
-    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
-      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
-      [recipeId]
+    const recipe = queryOne<{ category: RecipeCategory }>(
+      "SELECT category FROM recipes WHERE id = ? AND data_scope = ?",
+      [recipeId, dataScope]
     );
     if (!recipe || recipe.category !== item.slot) {
       res.status(400).json({ error: "Menu items include a recipe that does not match its meal slot." });
-      return;
-    }
-    if (Boolean(recipe.isTestData) !== isTestData) {
-      res.status(400).json({ error: "Menu items must all match the saved menu recipe type." });
       return;
     }
   }
 
   const menuName = String(req.body.name || `Week of ${new Date().toLocaleDateString("en-US")}`);
   const createdMenuId = transaction(() => {
-    const menuId = insert("INSERT INTO menus (name, meal_count, is_test_data) VALUES (?, ?, ?)", [
+    const menuId = insert("INSERT INTO menus (name, meal_count, data_scope) VALUES (?, ?, ?)", [
       menuName,
       mealCount,
-      isTestData ? 1 : 0
+      dataScope
     ]);
     for (const item of items) {
       run("INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)", [
@@ -933,13 +994,18 @@ app.post("/api/menus", (req, res) => {
 });
 
 app.get("/api/menus/latest", (_req, res) => {
-  const latest = queryOne<{ id: number }>("SELECT id FROM menus ORDER BY created_at DESC, id DESC LIMIT 1");
-  res.json(latest ? getMenu(latest.id) : null);
+  const dataScope = requestScope(res);
+  const latest = queryOne<{ id: number }>(
+    "SELECT id FROM menus WHERE data_scope = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+    [dataScope]
+  );
+  res.json(latest ? getMenu(latest.id, dataScope) : null);
 });
 
 app.get("/api/menus/:id", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
-  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
+  const menu = Number.isInteger(menuId) ? getMenu(menuId, dataScope) : null;
   if (!menu) {
     res.status(404).json({ error: "Menu not found." });
     return;
@@ -948,8 +1014,9 @@ app.get("/api/menus/:id", (req, res) => {
 });
 
 app.post("/api/menus/:id/meals", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
-  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
+  const menu = Number.isInteger(menuId) ? getMenu(menuId, dataScope) : null;
   const items = Array.isArray(req.body.items) ? req.body.items as MenuItemInput[] : [];
   if (!menu) {
     res.status(404).json({ error: "Menu not found." });
@@ -984,16 +1051,12 @@ app.post("/api/menus/:id/meals", (req, res) => {
       res.status(400).json({ error: "New meals include an invalid recipe selection." });
       return;
     }
-    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
-      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
-      [recipeId]
+    const recipe = queryOne<{ category: RecipeCategory }>(
+      "SELECT category FROM recipes WHERE id = ? AND data_scope = ?",
+      [recipeId, dataScope]
     );
     if (!recipe || recipe.category !== item.slot) {
       res.status(400).json({ error: "New meals include a recipe that does not match its meal slot." });
-      return;
-    }
-    if (Boolean(recipe.isTestData) !== Boolean(menu.isTestData)) {
-      res.status(400).json({ error: "New meals must match the saved menu recipe type." });
       return;
     }
   }
@@ -1014,13 +1077,14 @@ app.post("/api/menus/:id/meals", (req, res) => {
     );
   });
 
-  res.status(201).json(getMenu(menuId));
+  res.status(201).json(getMenu(menuId, dataScope));
 });
 
 app.delete("/api/menus/:id/meals/:mealNumber", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   const mealNumber = Number(req.params.mealNumber);
-  const menu = Number.isInteger(menuId) ? getMenu(menuId) : null;
+  const menu = Number.isInteger(menuId) ? getMenu(menuId, dataScope) : null;
   if (!menu) {
     res.status(404).json({ error: "Menu not found." });
     return;
@@ -1047,19 +1111,19 @@ app.delete("/api/menus/:id/meals/:mealNumber", (req, res) => {
     );
   });
 
-  res.json(getMenu(menuId));
+  res.json(getMenu(menuId, dataScope));
 });
 
 app.put("/api/menu-items/:id", (req, res) => {
+  const dataScope = requestScope(res);
   const menuItem = queryOne<{
     slot: RecipeCategory;
-    isTestData: number;
   }>(
-    `SELECT menu_items.slot, menus.is_test_data AS isTestData
+    `SELECT menu_items.slot
     FROM menu_items
     JOIN menus ON menus.id = menu_items.menu_id
-    WHERE menu_items.id = ?`,
-    [req.params.id]
+    WHERE menu_items.id = ? AND menus.data_scope = ?`,
+    [req.params.id, dataScope]
   );
   if (!menuItem) {
     res.status(404).json({ error: "Menu item not found." });
@@ -1077,16 +1141,12 @@ app.put("/api/menu-items/:id", (req, res) => {
       res.status(400).json({ error: "Menu item includes an invalid recipe selection." });
       return;
     }
-    const recipe = queryOne<{ category: RecipeCategory; isTestData: number }>(
-      "SELECT category, is_test_data AS isTestData FROM recipes WHERE id = ?",
-      [recipeId]
+    const recipe = queryOne<{ category: RecipeCategory }>(
+      "SELECT category FROM recipes WHERE id = ? AND data_scope = ?",
+      [recipeId, dataScope]
     );
     if (!recipe || recipe.category !== menuItem.slot) {
       res.status(400).json({ error: "Menu item includes a recipe that does not match its meal slot." });
-      return;
-    }
-    if (Boolean(recipe.isTestData) !== Boolean(menuItem.isTestData)) {
-      res.status(400).json({ error: "Menu item must match the saved menu recipe type." });
       return;
     }
   }
@@ -1097,11 +1157,12 @@ app.put("/api/menu-items/:id", (req, res) => {
 });
 
 app.put("/api/menus/:id/custom-shopping-lists", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   const ids: number[] | null = Array.isArray(req.body.customShoppingListIds)
     ? Array.from(new Set<number>(req.body.customShoppingListIds.map((id: unknown) => Number(id))))
     : null;
-  if (!Number.isInteger(menuId) || !getMenu(menuId)) {
+  if (!Number.isInteger(menuId) || !getMenu(menuId, dataScope)) {
     res.status(404).json({ error: "Menu not found." });
     return;
   }
@@ -1114,8 +1175,8 @@ app.put("/api/menus/:id/custom-shopping-lists", (req, res) => {
     ? queryOne<{ count: number }>(
       `SELECT COUNT(*) AS count
       FROM custom_shopping_lists
-      WHERE id IN (${ids.map(() => "?").join(", ")})`,
-      ids
+      WHERE data_scope = ? AND id IN (${ids.map(() => "?").join(", ")})`,
+      [dataScope, ...ids]
     )?.count ?? 0
     : 0;
   if (existingCount !== ids.length) {
@@ -1137,8 +1198,9 @@ app.put("/api/menus/:id/custom-shopping-lists", (req, res) => {
 });
 
 app.post("/api/menus/:id/aggregate", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
-  if (!Number.isInteger(menuId) || !getMenu(menuId)) {
+  if (!Number.isInteger(menuId) || !getMenu(menuId, dataScope)) {
     res.status(404).json({ error: "Menu not found." });
     return;
   }
@@ -1256,26 +1318,42 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
 });
 
 app.get("/api/menus/:id/shopping-list", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   if (!Number.isInteger(menuId)) {
     res.status(400).json({ error: "A valid menu id is required." });
     return;
   }
-  res.json(getShoppingListItems(menuId));
+  if (!getMenu(menuId, dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+  res.json(getShoppingListItems(menuId, dataScope));
 });
 
 app.delete("/api/menus/:id/shopping-list", (req, res) => {
-  run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [req.params.id]);
+  const dataScope = requestScope(res);
+  const menuId = Number(req.params.id);
+  if (!Number.isInteger(menuId) || !getMenu(menuId, dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
+  run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
   saveDb();
   res.json({ ok: true });
 });
 
 app.put("/api/menus/:id/shopping-list/items", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   const items = req.body.items;
 
   if (!Number.isInteger(menuId)) {
     res.status(400).json({ error: "A valid menu id is required." });
+    return;
+  }
+  if (!getMenu(menuId, dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
     return;
   }
 
@@ -1314,10 +1392,15 @@ app.put("/api/menus/:id/shopping-list/items", (req, res) => {
 });
 
 app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   const itemId = Number(req.params.itemId);
   if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
     res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
+    return;
+  }
+  if (!getMenu(menuId, dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
     return;
   }
   if (typeof req.body.approved !== "boolean") {
@@ -1344,10 +1427,15 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
 });
 
 app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = Number(req.params.id);
   const itemId = Number(req.params.itemId);
   if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
     res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
+    return;
+  }
+  if (!getMenu(menuId, dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
     return;
   }
 
@@ -1380,8 +1468,10 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
     JOIN recipe_ingredients
       ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
       AND recipe_ingredients.recipe_id = menu_items.recipe_id
-    WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = ?`,
-    [menuId, itemId]
+    JOIN recipes ON recipes.id = recipe_ingredients.recipe_id
+    WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = ?
+      AND recipes.data_scope = ?`,
+    [menuId, itemId, dataScope]
   );
   const customSources = queryAll<{ customShoppingListItemId: number; customShoppingListId: number }>(
     `SELECT
@@ -1391,8 +1481,11 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
     JOIN custom_shopping_list_items
       ON custom_shopping_list_items.id =
         menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
-    WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id = ?`,
-    [itemId]
+    JOIN custom_shopping_lists
+      ON custom_shopping_lists.id = custom_shopping_list_items.custom_shopping_list_id
+    WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id = ?
+      AND custom_shopping_lists.data_scope = ?`,
+    [itemId, dataScope]
   );
   if (recipeSources.length + customSources.length !== 1) {
     res.status(409).json({
@@ -1439,7 +1532,7 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
     );
   });
 
-  const updatedItem = getShoppingListItems(menuId).find((candidate) => candidate.id === itemId);
+  const updatedItem = getShoppingListItems(menuId, dataScope).find((candidate) => candidate.id === itemId);
   res.json({
     item: updatedItem,
     sourceType: recipeSources.length === 1 ? "recipe" : "custom",
@@ -1448,7 +1541,12 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
 });
 
 app.post("/api/menus/:id/preview-qfc", async (req, res) => {
+  const dataScope = requestScope(res);
   const menuId = req.params.id;
+  if (!getMenu(Number(menuId), dataScope)) {
+    res.status(404).json({ error: "Menu not found." });
+    return;
+  }
   const rows = queryAll(
       `SELECT id, text, quantity, unit, item, source_names AS sourceNames, approved
       FROM menu_shopping_list_items
@@ -1471,6 +1569,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
     id: jobId,
     kind: "preview",
     menuId,
+    dataScope,
     status: "running",
     progress: {
       phase: "checking",
@@ -1482,7 +1581,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
   };
   qfcSubmitJobs.set(jobId, job);
 
-  void previewQfcCart(rows, (progress) => {
+  void previewQfcCart(dataScope, rows, (progress) => {
     job.progress = progress;
   })
     .then((result) => {
@@ -1511,7 +1610,7 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
 
 app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) => {
   pruneQfcSubmitJobs();
-  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  const previewJob = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
     res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
     return;
@@ -1535,7 +1634,7 @@ app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) 
   }
 
   const ingredientName = match.item.item.trim() || match.item.text.trim();
-  const preference = saveStoreItemPreference("kroger", ingredientName, storeItem);
+  const preference = saveStoreItemPreference(previewJob.dataScope, "kroger", ingredientName, storeItem);
   match.storeItem = storeItem;
   match.selectionSource = "remembered";
   res.json({ match, preference });
@@ -1543,7 +1642,7 @@ app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) 
 
 app.put("/api/store-item-reviews/:jobId/quantities/:shoppingItemId", (req, res) => {
   pruneQfcSubmitJobs();
-  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  const previewJob = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
     res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
     return;
@@ -1568,7 +1667,7 @@ app.put("/api/store-item-reviews/:jobId/quantities/:shoppingItemId", (req, res) 
 
 app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (req, res) => {
   pruneQfcSubmitJobs();
-  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  const previewJob = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
     res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
     return;
@@ -1591,7 +1690,7 @@ app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (r
   }
 
   try {
-    const results = await searchStoreItems(term, { limit: 20 });
+    const results = await searchStoreItems(term, { limit: 20, dataScope: previewJob.dataScope });
     const candidateKeys = new Set<string>();
     const candidates = results.filter((candidate) => {
       const key = `${candidate.productId}\u0000${candidate.upc}`;
@@ -1631,7 +1730,7 @@ app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (r
 
 app.delete("/api/store-item-reviews/:jobId/items/:shoppingItemId", (req, res) => {
   pruneQfcSubmitJobs();
-  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  const previewJob = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
     res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
     return;
@@ -1658,9 +1757,15 @@ app.delete("/api/store-item-reviews/:jobId/items/:shoppingItemId", (req, res) =>
 
 app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
   pruneQfcSubmitJobs();
-  const previewJob = qfcSubmitJobs.get(req.params.jobId);
+  const previewJob = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
     res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
+    return;
+  }
+  if (getScopedSetting(previewJob.dataScope, "allowRealQfcCartMutation") !== "true") {
+    res.status(403).json({
+      error: "Real QFC cart changes are disabled in this data mode. Enable them explicitly in QFC preferences."
+    });
     return;
   }
 
@@ -1669,6 +1774,7 @@ app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
     id: jobId,
     kind: "add",
     menuId: previewJob.menuId,
+    dataScope: previewJob.dataScope,
     status: "running",
     progress: {
       phase: "adding",
@@ -1690,7 +1796,11 @@ app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
   )
     .then((result) => {
       if (result.submittedItemCount > 0) {
-        run("UPDATE menus SET status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [job.menuId]);
+        run(
+          `UPDATE menus SET status = 'submitted', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND data_scope = ?`,
+          [job.menuId, job.dataScope]
+        );
         saveDb();
       }
       job.status = "complete";
@@ -1718,7 +1828,7 @@ app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
 
 app.get("/api/qfc/submit-jobs/:jobId", (req, res) => {
   pruneQfcSubmitJobs();
-  const job = qfcSubmitJobs.get(req.params.jobId);
+  const job = getScopedQfcSubmitJob(req.params.jobId, requestScope(res));
   if (!job) {
     res.status(404).json({ error: "QFC submission job was not found." });
     return;

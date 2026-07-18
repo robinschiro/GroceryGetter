@@ -35,7 +35,7 @@ Use Kroger OAuth2 tokens against Kroger API requests.
 - Service-to-service auth is the right default for Locations and Products.
 - Customer authorization is required before writing to a customer's cart.
 - Store credentials and tokens server-side only. Do not expose the client secret through Vite/client code.
-- The implemented local settings are `krogerClientId`, `krogerClientSecret`, `krogerLocationId`, `krogerServiceScopes`, `krogerCustomerScopes`, and `krogerRedirectUri`.
+- The shared integration settings are `krogerClientId`, `krogerClientSecret`, `krogerServiceScopes`, `krogerCustomerScopes`, and `krogerRedirectUri`. The selected `krogerLocationId` is stored separately for production and sandbox.
 - Customer OAuth stores `krogerCustomerOAuthState`, `krogerCustomerAccessToken`, `krogerCustomerRefreshToken`, `krogerCustomerTokenExpiresAt`, `krogerCustomerGrantedScopes`, and `krogerCustomerTokenType`.
 - The default redirect URI is `http://127.0.0.1:5174/api/qfc/oauth/callback`.
 

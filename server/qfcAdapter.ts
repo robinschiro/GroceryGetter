@@ -1,5 +1,6 @@
 import { queryAll, queryOne, run, saveDb } from "./db.js";
 import { randomUUID } from "node:crypto";
+import type { DataScope } from "./types.js";
 
 export type CartSubmissionItem = {
   id: number;
@@ -151,14 +152,14 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function getQfcApiStatus() {
+export function getQfcApiStatus(dataScope: DataScope = "production") {
   const customerExpiresAt = Number(getSetting("krogerCustomerTokenExpiresAt") || 0);
   const clientId = getSetting("krogerClientId");
   return {
     clientId,
     hasClientId: Boolean(clientId),
     hasClientSecret: Boolean(getSetting("krogerClientSecret")),
-    locationId: getSetting("krogerLocationId"),
+    locationId: getScopedSetting(dataScope, "krogerLocationId"),
     hasCustomerAccessToken: Boolean(getSetting("krogerCustomerAccessToken")),
     hasCustomerRefreshToken: Boolean(getSetting("krogerCustomerRefreshToken")),
     customerTokenExpiresAt: customerExpiresAt,
@@ -176,15 +177,33 @@ export function saveQfcApiSettings(input: {
   serviceScopes?: string;
   customerScopes?: string;
   redirectUri?: string;
-}) {
+}, dataScope: DataScope = "production") {
   if (input.clientId !== undefined) setSetting("krogerClientId", input.clientId.trim());
   if (input.clientSecret !== undefined) setSetting("krogerClientSecret", input.clientSecret.trim());
-  if (input.locationId !== undefined) setSetting("krogerLocationId", input.locationId.trim());
+  if (input.locationId !== undefined) setScopedSetting(dataScope, "krogerLocationId", input.locationId.trim());
   if (input.serviceScopes !== undefined) setSetting("krogerServiceScopes", input.serviceScopes.trim());
   if (input.customerScopes !== undefined) setSetting("krogerCustomerScopes", input.customerScopes.trim());
   if (input.redirectUri !== undefined) setSetting("krogerRedirectUri", input.redirectUri.trim());
   serviceToken = null;
-  return getQfcApiStatus();
+  return getQfcApiStatus(dataScope);
+}
+
+export function getScopedSetting(dataScope: DataScope, key: string) {
+  const row = queryOne<{ value: string }>(
+    "SELECT value FROM scoped_settings WHERE data_scope = ? AND key = ?",
+    [dataScope, key]
+  );
+  return row?.value?.trim() ?? "";
+}
+
+export function setScopedSetting(dataScope: DataScope, key: string, value: string) {
+  run(
+    `INSERT INTO scoped_settings (data_scope, key, value)
+      VALUES (?, ?, ?)
+      ON CONFLICT(data_scope, key) DO UPDATE SET value = excluded.value`,
+    [dataScope, key, value]
+  );
+  saveDb();
 }
 
 function getCustomerRedirectUri() {
@@ -378,9 +397,13 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   };
 }
 
-export async function searchStoreItems(term: string, options?: { locationId?: string; limit?: number }) {
+export async function searchStoreItems(
+  term: string,
+  options?: { locationId?: string; limit?: number; dataScope?: DataScope }
+) {
   const accessToken = await getServiceToken();
-  const locationId = options?.locationId ?? getSetting("krogerLocationId");
+  const locationId = options?.locationId
+    ?? getScopedSetting(options?.dataScope ?? "production", "krogerLocationId");
   const params = new URLSearchParams({
     "filter.term": term.trim(),
     "filter.limit": String(options?.limit ?? 10)
@@ -403,14 +426,14 @@ export async function searchStoreItems(term: string, options?: { locationId?: st
   return (response.data ?? []).map(toStoreItemCandidate);
 }
 
-function prefersStoreBrands() {
-  return getSetting("preferStoreBrands") !== "false";
+function prefersStoreBrands(dataScope: DataScope) {
+  return getScopedSetting(dataScope, "preferStoreBrands") !== "false";
 }
 
-function chooseStoreItemCandidate(candidates: StoreItemCandidate[]) {
+function chooseStoreItemCandidate(candidates: StoreItemCandidate[], dataScope: DataScope) {
   const inStock = candidates.filter((candidate) => candidate.stockLevel !== "TEMPORARILY_OUT_OF_STOCK");
   const pool = inStock.length ? inStock : candidates;
-  if (prefersStoreBrands()) {
+  if (prefersStoreBrands(dataScope)) {
     return pool.find((candidate) => candidate.isStoreBrand) ?? pool[0] ?? null;
   }
   return pool[0] ?? null;
@@ -442,7 +465,7 @@ function toStoreItemPreference(row: StoreItemPreferenceRow): StoreItemPreference
   return { ...row, isStoreBrand: Boolean(row.isStoreBrand) };
 }
 
-export function getStoreItemPreferences(): StoreItemPreference[] {
+export function getStoreItemPreferences(dataScope: DataScope): StoreItemPreference[] {
   const rows = queryAll<StoreItemPreferenceRow>(
     `SELECT
       ingredient_key AS ingredientKey,
@@ -457,12 +480,18 @@ export function getStoreItemPreferences(): StoreItemPreference[] {
       is_store_brand AS isStoreBrand,
       updated_at AS updatedAt
     FROM store_item_preferences
-    ORDER BY ingredient_name COLLATE NOCASE`
+    WHERE data_scope = ?
+    ORDER BY ingredient_name COLLATE NOCASE`,
+    [dataScope]
   );
   return rows.map(toStoreItemPreference);
 }
 
-function getStoreItemPreference(provider: string, ingredientName: string): StoreItemPreference | null {
+function getStoreItemPreference(
+  dataScope: DataScope,
+  provider: string,
+  ingredientName: string
+): StoreItemPreference | null {
   const row = queryOne<StoreItemPreferenceRow>(
     `SELECT
       ingredient_key AS ingredientKey,
@@ -477,13 +506,14 @@ function getStoreItemPreference(provider: string, ingredientName: string): Store
       is_store_brand AS isStoreBrand,
       updated_at AS updatedAt
     FROM store_item_preferences
-    WHERE provider = ? AND ingredient_key = ?`,
-    [provider, normalizeIngredientKey(ingredientName)]
+    WHERE data_scope = ? AND provider = ? AND ingredient_key = ?`,
+    [dataScope, provider, normalizeIngredientKey(ingredientName)]
   );
   return row ? toStoreItemPreference(row) : null;
 }
 
 export function saveStoreItemPreference(
+  dataScope: DataScope,
   provider: string,
   ingredientName: string,
   storeItem: StoreItemCandidate
@@ -496,10 +526,10 @@ export function saveStoreItemPreference(
 
   run(
     `INSERT INTO store_item_preferences (
-      ingredient_key, ingredient_name, provider, store_item_id, upc,
+      data_scope, ingredient_key, ingredient_name, provider, store_item_id, upc,
       description, brand, size, image_url, is_store_brand
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(provider, ingredient_key) DO UPDATE SET
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(data_scope, provider, ingredient_key) DO UPDATE SET
       ingredient_name = excluded.ingredient_name,
       provider = excluded.provider,
       store_item_id = excluded.store_item_id,
@@ -511,6 +541,7 @@ export function saveStoreItemPreference(
       is_store_brand = excluded.is_store_brand,
       updated_at = CURRENT_TIMESTAMP`,
     [
+      dataScope,
       ingredientKey,
       normalizedIngredientName,
       provider,
@@ -524,11 +555,14 @@ export function saveStoreItemPreference(
     ]
   );
   saveDb();
-  return getStoreItemPreference(provider, normalizedIngredientName)!;
+  return getStoreItemPreference(dataScope, provider, normalizedIngredientName)!;
 }
 
-export function deleteStoreItemPreference(provider: string, ingredientKey: string) {
-  run("DELETE FROM store_item_preferences WHERE provider = ? AND ingredient_key = ?", [provider, ingredientKey]);
+export function deleteStoreItemPreference(dataScope: DataScope, provider: string, ingredientKey: string) {
+  run(
+    "DELETE FROM store_item_preferences WHERE data_scope = ? AND provider = ? AND ingredient_key = ?",
+    [dataScope, provider, ingredientKey]
+  );
   saveDb();
 }
 
@@ -552,7 +586,11 @@ function distinctStoreItems(candidates: StoreItemCandidate[]) {
   );
 }
 
-async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubmissionProgressHandler) {
+async function matchCartItems(
+  dataScope: DataScope,
+  items: CartSubmissionItem[],
+  onProgress?: CartSubmissionProgressHandler
+) {
   const matched: CartSubmissionMatch[] = [];
   const skipped: CartSubmissionSkip[] = [];
 
@@ -577,8 +615,8 @@ async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubm
     }
 
     try {
-      const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10 });
-      const preference = getStoreItemPreference("kroger", searchTerm);
+      const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
+      const preference = getStoreItemPreference(dataScope, "kroger", searchTerm);
       const preferredCandidate = preference
         ? searchedCandidates.find((candidate) =>
             candidate.productId === preference.storeItemId || candidate.upc === preference.upc
@@ -587,7 +625,7 @@ async function matchCartItems(items: CartSubmissionItem[], onProgress?: CartSubm
       const candidates = distinctStoreItems(preferredCandidate
         ? [preferredCandidate, ...searchedCandidates]
         : searchedCandidates);
-      const storeItem = preferredCandidate ?? chooseStoreItemCandidate(candidates);
+      const storeItem = preferredCandidate ?? chooseStoreItemCandidate(candidates, dataScope);
       if (!storeItem) {
         skipped.push({ item, reason: "No store item candidates found." });
         continue;
@@ -638,6 +676,7 @@ async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
 }
 
 export async function previewQfcCart(
+  dataScope: DataScope,
   items: CartSubmissionItem[],
   onProgress?: CartSubmissionProgressHandler
 ): Promise<CartSubmissionResult> {
@@ -648,7 +687,7 @@ export async function previewQfcCart(
     message: "Checking store API settings..."
   });
 
-  const status = getQfcApiStatus();
+  const status = getQfcApiStatus(dataScope);
   if (!status.hasClientId || !status.hasClientSecret) {
     return {
       mode: "stub",
@@ -658,7 +697,7 @@ export async function previewQfcCart(
     };
   }
 
-  const { matched, skipped } = await matchCartItems(items, onProgress);
+  const { matched, skipped } = await matchCartItems(dataScope, items, onProgress);
   if (!matched.length) {
     return {
       mode: "api",

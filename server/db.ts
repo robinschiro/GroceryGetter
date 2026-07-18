@@ -28,10 +28,18 @@ function columnIsNotNull(tableName: string, columnName: string) {
   );
 }
 
-function storeItemPreferencesHaveProviderKey() {
+function storeItemPreferencesHaveScopeKey() {
   const columns = queryAll(`PRAGMA table_info(store_item_preferences)`);
-  return columns.some((column) => column.name === "provider" && column.pk === 1)
-    && columns.some((column) => column.name === "ingredient_key" && column.pk === 2);
+  return columns.some((column) => column.name === "data_scope" && column.pk === 1)
+    && columns.some((column) => column.name === "provider" && column.pk === 2)
+    && columns.some((column) => column.name === "ingredient_key" && column.pk === 3);
+}
+
+function customShoppingListsHaveScopedNameKey() {
+  const definition = queryOne<{ sql: string }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'custom_shopping_lists'"
+  )?.sql ?? "";
+  return /UNIQUE\s*\(\s*data_scope\s*,\s*name(?:\s+COLLATE\s+NOCASE)?\s*\)/i.test(definition);
 }
 
 export async function initializeDb() {
@@ -67,7 +75,8 @@ export async function initializeDb() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     category TEXT NOT NULL CHECK (category IN ('entree', 'vegetable_side', 'starch_side')),
-    is_test_data INTEGER NOT NULL DEFAULT 0,
+    data_scope TEXT NOT NULL DEFAULT 'production'
+      CHECK (data_scope IN ('production', 'sandbox')),
     servings INTEGER,
     notes TEXT NOT NULL DEFAULT '',
     source_path TEXT,
@@ -91,7 +100,8 @@ export async function initializeDb() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     meal_count INTEGER NOT NULL,
-    is_test_data INTEGER NOT NULL DEFAULT 0,
+    data_scope TEXT NOT NULL DEFAULT 'production'
+      CHECK (data_scope IN ('production', 'sandbox')),
     status TEXT NOT NULL DEFAULT 'draft',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -119,10 +129,13 @@ export async function initializeDb() {
 
   CREATE TABLE IF NOT EXISTS custom_shopping_lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    data_scope TEXT NOT NULL DEFAULT 'production'
+      CHECK (data_scope IN ('production', 'sandbox')),
     include_in_menu_by_default INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (data_scope, name COLLATE NOCASE)
   );
 
   CREATE TABLE IF NOT EXISTS custom_shopping_list_items (
@@ -146,7 +159,17 @@ export async function initializeDb() {
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS scoped_settings (
+    data_scope TEXT NOT NULL
+      CHECK (data_scope IN ('production', 'sandbox')),
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (data_scope, key)
+  );
+
   CREATE TABLE IF NOT EXISTS store_item_preferences (
+    data_scope TEXT NOT NULL
+      CHECK (data_scope IN ('production', 'sandbox')),
     ingredient_key TEXT NOT NULL,
     ingredient_name TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -159,7 +182,7 @@ export async function initializeDb() {
     is_store_brand INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (provider, ingredient_key)
+    PRIMARY KEY (data_scope, provider, ingredient_key)
   );
   `);
   saveDb();
@@ -171,10 +194,88 @@ export async function initializeDb() {
     saveDb();
   }
 
-  if (!storeItemPreferencesHaveProviderKey()) {
+  if (!columnExists("recipes", "data_scope")) {
+    run("ALTER TABLE recipes ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
+    if (columnExists("recipes", "is_test_data")) {
+      run("UPDATE recipes SET data_scope = CASE WHEN is_test_data = 1 THEN 'sandbox' ELSE 'production' END");
+    }
+    saveDb();
+  }
+
+  if (!columnExists("menus", "data_scope")) {
+    run("ALTER TABLE menus ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
+    if (columnExists("menus", "is_test_data")) {
+      run("UPDATE menus SET data_scope = CASE WHEN is_test_data = 1 THEN 'sandbox' ELSE 'production' END");
+    }
+    saveDb();
+  }
+
+  if (!columnExists("custom_shopping_lists", "data_scope")) {
+    run("ALTER TABLE custom_shopping_lists ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
+    saveDb();
+  }
+
+  if (!customShoppingListsHaveScopedNameKey()) {
+    run("PRAGMA foreign_keys = OFF");
+    run(`
+      CREATE TABLE custom_shopping_lists_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE,
+        data_scope TEXT NOT NULL DEFAULT 'production'
+          CHECK (data_scope IN ('production', 'sandbox')),
+        include_in_menu_by_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (data_scope, name COLLATE NOCASE)
+      )
+    `);
+    run(`
+      INSERT INTO custom_shopping_lists_new (
+        id, name, data_scope, include_in_menu_by_default, created_at, updated_at
+      )
+      SELECT id, name, data_scope, include_in_menu_by_default, created_at, updated_at
+      FROM custom_shopping_lists
+    `);
+    run("DROP TABLE custom_shopping_lists");
+    run("ALTER TABLE custom_shopping_lists_new RENAME TO custom_shopping_lists");
+    run("PRAGMA foreign_keys = ON");
+    saveDb();
+  }
+
+  const menusWithCrossScopeCustomLists = queryAll<{ menuId: number }>(
+    `SELECT DISTINCT menu_custom_shopping_lists.menu_id AS menuId
+    FROM menu_custom_shopping_lists
+    JOIN menus ON menus.id = menu_custom_shopping_lists.menu_id
+    JOIN custom_shopping_lists
+      ON custom_shopping_lists.id = menu_custom_shopping_lists.custom_shopping_list_id
+    WHERE menus.data_scope <> custom_shopping_lists.data_scope`
+  );
+  if (menusWithCrossScopeCustomLists.length) {
+    transaction(() => {
+      for (const { menuId } of menusWithCrossScopeCustomLists) {
+        run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+      }
+      run(
+        `DELETE FROM menu_custom_shopping_lists
+        WHERE EXISTS (
+          SELECT 1
+          FROM menus
+          JOIN custom_shopping_lists
+            ON custom_shopping_lists.id = menu_custom_shopping_lists.custom_shopping_list_id
+          WHERE menus.id = menu_custom_shopping_lists.menu_id
+            AND menus.data_scope <> custom_shopping_lists.data_scope
+        )`
+      );
+    });
+  }
+
+  if (!storeItemPreferencesHaveScopeKey()) {
+    const oldPreferencesHaveImageUrl = columnExists("store_item_preferences", "image_url");
     run("ALTER TABLE store_item_preferences RENAME TO store_item_preferences_old");
     run(`
       CREATE TABLE store_item_preferences (
+        data_scope TEXT NOT NULL
+          CHECK (data_scope IN ('production', 'sandbox')),
         ingredient_key TEXT NOT NULL,
         ingredient_name TEXT NOT NULL,
         provider TEXT NOT NULL,
@@ -187,17 +288,18 @@ export async function initializeDb() {
         is_store_brand INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (provider, ingredient_key)
+        PRIMARY KEY (data_scope, provider, ingredient_key)
       )
     `);
     run(`
       INSERT INTO store_item_preferences (
-        ingredient_key, ingredient_name, provider, store_item_id, upc,
+        data_scope, ingredient_key, ingredient_name, provider, store_item_id, upc,
         description, brand, size, image_url, is_store_brand, created_at, updated_at
       )
       SELECT
-        ingredient_key, ingredient_name, provider, store_item_id, upc,
-        description, brand, size, '', is_store_brand, created_at, updated_at
+        'production', ingredient_key, ingredient_name, provider, store_item_id, upc,
+        description, brand, size, ${oldPreferencesHaveImageUrl ? "image_url" : "''"},
+        is_store_brand, created_at, updated_at
       FROM store_item_preferences_old
     `);
     run("DROP TABLE store_item_preferences_old");
@@ -206,17 +308,6 @@ export async function initializeDb() {
 
   if (!columnExists("store_item_preferences", "image_url")) {
     run("ALTER TABLE store_item_preferences ADD COLUMN image_url TEXT NOT NULL DEFAULT ''");
-    saveDb();
-  }
-
-  if (!columnExists("recipes", "is_test_data")) {
-    run("ALTER TABLE recipes ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
-    run("UPDATE recipes SET is_test_data = 1");
-    saveDb();
-  }
-
-  if (!columnExists("menus", "is_test_data")) {
-    run("ALTER TABLE menus ADD COLUMN is_test_data INTEGER NOT NULL DEFAULT 0");
     saveDb();
   }
 
@@ -265,6 +356,43 @@ export async function initializeDb() {
     run("INSERT INTO settings (key, value) VALUES (?, ?)", ["qfcAdapterMode", "stub"]);
     saveDb();
   }
+
+  const productionLocationId = queryOne<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'krogerLocationId'"
+  )?.value;
+  if (productionLocationId) {
+    run(
+      `INSERT INTO scoped_settings (data_scope, key, value)
+      VALUES ('production', 'krogerLocationId', ?)
+      ON CONFLICT(data_scope, key) DO NOTHING`,
+      [productionLocationId]
+    );
+  }
+  const preferStoreBrands = queryOne<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'preferStoreBrands'"
+  )?.value ?? "true";
+  run(
+    `INSERT INTO scoped_settings (data_scope, key, value)
+    VALUES ('production', 'preferStoreBrands', ?)
+    ON CONFLICT(data_scope, key) DO NOTHING`,
+    [preferStoreBrands]
+  );
+  run(
+    `INSERT INTO scoped_settings (data_scope, key, value)
+    VALUES ('sandbox', 'preferStoreBrands', 'true')
+    ON CONFLICT(data_scope, key) DO NOTHING`
+  );
+  run(
+    `INSERT INTO scoped_settings (data_scope, key, value)
+    VALUES ('production', 'allowRealQfcCartMutation', 'true')
+    ON CONFLICT(data_scope, key) DO NOTHING`
+  );
+  run(
+    `INSERT INTO scoped_settings (data_scope, key, value)
+    VALUES ('sandbox', 'allowRealQfcCartMutation', 'false')
+    ON CONFLICT(data_scope, key) DO NOTHING`
+  );
+  saveDb();
 }
 
 export function saveDb() {
