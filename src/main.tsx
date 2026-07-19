@@ -245,7 +245,7 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 
 const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
   { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
-  { id: "recipe-admin", label: "Recipe Admin", title: "Recipe Admin", eyebrow: "Recipe library", icon: Database },
+  { id: "recipe-admin", label: "Recipes", title: "Recipes", eyebrow: "Recipe library", icon: Database },
   {
     id: "shopping-lists",
     label: "Shopping Lists",
@@ -840,7 +840,7 @@ function App() {
     }
   }
 
-  function openQfcCartToClear() {
+  function openQfcCart() {
     window.open(qfcCartUrl, "_blank", "noopener,noreferrer");
   }
 
@@ -1182,7 +1182,6 @@ function App() {
               saveToSource={saveShoppingItemToSource}
               clearItems={clearAggregatedIngredients}
               previewStoreItems={previewStoreItems}
-              openQfcCartToClear={openQfcCartToClear}
               qfcSubmitProgress={qfcSubmitProgress}
               message={message}
             />
@@ -1194,6 +1193,7 @@ function App() {
               updateCartQuantity={updateStoreItemQuantity}
               searchStoreItems={searchStoreItemsForReview}
               removeStoreItem={removeStoreItemFromReview}
+              openQfcCart={openQfcCart}
               qfcSubmitProgress={qfcSubmitProgress}
               message={storeItemReviewMessage}
             />
@@ -1905,10 +1905,10 @@ function RecipeAdmin({
     <section className="panel">
       <div className="panel-heading">
         <Database size={18} />
-        <h3>Recipe Admin</h3>
+        <h3>Recipes</h3>
       </div>
 
-      <div className="sub-tabs" role="tablist" aria-label="Recipe admin sections">
+      <div className="sub-tabs" role="tablist" aria-label="Recipe sections">
         <button
           className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
           onClick={() => onTabChange("create")}
@@ -1916,7 +1916,7 @@ function RecipeAdmin({
           aria-selected={activeTab === "create"}
           type="button"
         >
-          Recipe Creation
+          Add Recipe
         </button>
         <button
           className={`sub-tab-button ${activeTab === "manage" ? "active" : ""}`}
@@ -1925,7 +1925,7 @@ function RecipeAdmin({
           aria-selected={activeTab === "manage"}
           type="button"
         >
-          Recipe Management
+          Manage Recipes
         </button>
       </div>
 
@@ -2101,7 +2101,10 @@ function RecipeForm({
       <div className="ingredient-editor">
         <div className="subhead">Ingredients</div>
         {form.ingredients.map((ingredient, index) => (
-          <div className="ingredient-row" key={`${ingredient.id ?? "new"}-${index}`}>
+          <div
+            className={`ingredient-row ${mode === "create" ? "ingredient-row-create" : ""}`}
+            key={`${ingredient.id ?? "new"}-${index}`}
+          >
             <input
               value={ingredient.quantity}
               onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
@@ -2117,13 +2120,15 @@ function RecipeForm({
               onChange={(event) => updateIngredient(index, { item: event.target.value })}
               placeholder="rice"
             />
-            <input
-              value={ingredient.text}
-              onChange={(event) => updateIngredient(index, { text: event.target.value })}
-              placeholder="2 cups rice"
-            />
+            {mode === "edit" ? (
+              <input
+                value={ingredient.text}
+                onChange={(event) => updateIngredient(index, { text: event.target.value })}
+                placeholder="2 cups rice"
+              />
+            ) : null}
             <button
-              className="icon-button"
+              className="icon-button danger"
               onClick={() =>
                 setForm((current) => ({
                   ...current,
@@ -2439,7 +2444,6 @@ function ShoppingListReview({
   saveToSource,
   clearItems,
   previewStoreItems,
-  openQfcCartToClear,
   qfcSubmitProgress,
   message
 }: {
@@ -2454,7 +2458,6 @@ function ShoppingListReview({
   saveToSource: (item: ShoppingListItem) => Promise<void>;
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
-  openQfcCartToClear: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
@@ -2563,10 +2566,6 @@ function ShoppingListReview({
               <Trash2 size={17} />
               Clear aggregated ingredients
             </button>
-            <button className="secondary" onClick={openQfcCartToClear}>
-              <ExternalLink size={17} />
-              Open cart on QFC
-            </button>
             <button
               aria-busy={Boolean(qfcSubmitProgress)}
               onClick={() => void previewStoreItems()}
@@ -2595,6 +2594,7 @@ function StoreItemReviewPanel({
   updateCartQuantity,
   searchStoreItems,
   removeStoreItem,
+  openQfcCart,
   qfcSubmitProgress,
   message
 }: {
@@ -2613,6 +2613,7 @@ function StoreItemReviewPanel({
     resultCount: number;
   }>;
   removeStoreItem: (item: ShoppingListItem) => Promise<boolean>;
+  openQfcCart: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
@@ -2695,16 +2696,18 @@ function StoreItemReviewPanel({
   }
 
   function renderRemoveButton(item: ShoppingListItem) {
+    const itemName = item.item || item.text;
+
     return (
       <button
-        className="danger store-item-remove-button"
+        className="icon-button danger store-item-remove-button"
         type="button"
+        aria-label={`Remove ${itemName} from review`}
         aria-busy={removingItemId === item.id}
         disabled={removingItemId === item.id}
         onClick={() => void removeReviewItem(item)}
       >
         <Trash2 size={16} />
-        {removingItemId === item.id ? "Removing..." : "Remove from review"}
       </button>
     );
   }
@@ -2822,7 +2825,6 @@ function StoreItemReviewPanel({
                     <span className="eyebrow">Aggregated ingredient</span>
                     <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
                     <span>{match.item.sourceNames}</span>
-                    {renderRemoveButton(match.item)}
                   </div>
                   <ChevronRight className="store-item-match-arrow" size={22} aria-hidden="true" />
                   <div className="store-item-match-selection">
@@ -2907,6 +2909,7 @@ function StoreItemReviewPanel({
                       </div>
                     </div>
                   </div>
+                  {renderRemoveButton(match.item)}
                 </div>
               ))}
             </div>
@@ -2925,14 +2928,14 @@ function StoreItemReviewPanel({
                   </div>
                   <div className="store-item-unmatched-actions">
                     {renderFindItemControl(skip.item)}
-                    {renderRemoveButton(skip.item)}
                   </div>
+                  {renderRemoveButton(skip.item)}
                 </div>
               ))}
             </div>
           ) : null}
 
-          <div className="panel-actions">
+          <div className="panel-actions store-item-review-actions">
             <button
               aria-busy={qfcSubmitProgress?.phase === "adding"}
               onClick={() => void addToCart()}
@@ -2950,6 +2953,10 @@ function StoreItemReviewPanel({
                 : allowRealQfcCartMutation
                   ? `Add ${matches.length} reviewed store item${matches.length === 1 ? "" : "s"} to QFC`
                   : "Real QFC cart changes disabled"}
+            </button>
+            <button className="secondary" onClick={openQfcCart}>
+              <ExternalLink size={17} />
+              Open cart on QFC
             </button>
           </div>
           {qfcSubmitProgress?.phase === "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
