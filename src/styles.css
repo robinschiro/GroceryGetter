@@ -134,11 +134,18 @@ label {
   gap: 8px;
 }
 
+.topbar-button-row {
+  display: flex;
+  gap: 8px;
+  order: 2;
+}
+
 .data-scope-control {
   align-items: center;
   display: flex;
   flex-direction: row;
   gap: 7px;
+  order: 1;
 }
 
 .data-scope-control span {
@@ -1282,6 +1289,26 @@ label {
 
   .topbar {
     align-items: flex-start;
+  }
+
+  .topbar-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .topbar-button-row {
+    order: 1;
+  }
+
+  .data-scope-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 4px;
+    order: 2;
+  }
+
+  .data-scope-control span {
+    text-align: right;
   }
 
   .topbar h2 {

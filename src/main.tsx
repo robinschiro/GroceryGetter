@@ -1044,6 +1044,26 @@ function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            <div className="topbar-button-row">
+              <button
+                className="icon-button"
+                onClick={() => setThemeMode((mode) => (mode === "dark" ? "light" : "dark"))}
+                aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                aria-pressed={themeMode === "dark"}
+                title={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                type="button"
+              >
+                {themeMode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              <button
+                className="icon-button"
+                onClick={() => void Promise.all([loadRecipes(), loadCustomShoppingLists()])}
+                aria-label="Refresh data"
+                type="button"
+              >
+                <RefreshCw size={18} />
+              </button>
+            </div>
             <label className="data-scope-control">
               <span>Data</span>
               <select
@@ -1055,24 +1075,6 @@ function App() {
                 <option value="sandbox">Sandbox</option>
               </select>
             </label>
-            <button
-              className="icon-button"
-              onClick={() => setThemeMode((mode) => (mode === "dark" ? "light" : "dark"))}
-              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={themeMode === "dark"}
-              title={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              type="button"
-            >
-              {themeMode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button
-              className="icon-button"
-              onClick={() => void Promise.all([loadRecipes(), loadCustomShoppingLists()])}
-              aria-label="Refresh data"
-              type="button"
-            >
-              <RefreshCw size={18} />
-            </button>
           </div>
         </header>
 
