@@ -259,10 +259,10 @@ const views: Array<{ id: AppView; label: string; title: string; eyebrow: string;
 
 const appRoutes: AppRoute[] = [
   { path: "/planner", view: "planner" },
-  { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
   { path: "/recipes/manage", view: "recipe-admin", recipeAdminTab: "manage" },
-  { path: "/shopping-lists/create", view: "shopping-lists", shoppingListsTab: "create" },
+  { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
   { path: "/shopping-lists/manage", view: "shopping-lists", shoppingListsTab: "manage" },
+  { path: "/shopping-lists/create", view: "shopping-lists", shoppingListsTab: "create" },
   { path: "/settings/qfc/api", view: "qfc-api", qfcSettingsTab: "api" },
   { path: "/settings/qfc/preferences", view: "qfc-api", qfcSettingsTab: "preferences" }
 ];
@@ -1109,7 +1109,7 @@ function App() {
 
         {activeView === "recipe-admin" ? (
           <RecipeAdmin
-            activeTab={activeRoute.recipeAdminTab ?? "create"}
+            activeTab={activeRoute.recipeAdminTab ?? "manage"}
             editingRecipeId={activeRoute.recipeId ?? null}
             onEdit={(recipeId) => navigate(recipeEditRoute(recipeId))}
             onExitEdit={() => navigate(routeFromPathname("/recipes/manage"))}
@@ -1122,7 +1122,7 @@ function App() {
 
         {activeView === "shopping-lists" ? (
           <ShoppingListsAdmin
-            activeTab={activeRoute.shoppingListsTab ?? "create"}
+            activeTab={activeRoute.shoppingListsTab ?? "manage"}
             editingListId={activeRoute.shoppingListId ?? null}
             lists={customShoppingLists}
             onEdit={(listId) => navigate(shoppingListEditRoute(listId))}
@@ -1579,15 +1579,6 @@ function ShoppingListsAdmin({
       </div>
       <div className="sub-tabs" role="tablist" aria-label="Shopping list sections">
         <button
-          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
-          onClick={() => onTabChange("create")}
-          role="tab"
-          aria-selected={activeTab === "create"}
-          type="button"
-        >
-          Add List
-        </button>
-        <button
           className={`sub-tab-button ${activeTab === "manage" ? "active" : ""}`}
           onClick={() => onTabChange("manage")}
           role="tab"
@@ -1595,6 +1586,15 @@ function ShoppingListsAdmin({
           type="button"
         >
           Manage Lists
+        </button>
+        <button
+          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
+          onClick={() => onTabChange("create")}
+          role="tab"
+          aria-selected={activeTab === "create"}
+          type="button"
+        >
+          Add List
         </button>
       </div>
 
@@ -1933,15 +1933,6 @@ function RecipeAdmin({
 
       <div className="sub-tabs" role="tablist" aria-label="Recipe sections">
         <button
-          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
-          onClick={() => onTabChange("create")}
-          role="tab"
-          aria-selected={activeTab === "create"}
-          type="button"
-        >
-          Add Recipe
-        </button>
-        <button
           className={`sub-tab-button ${activeTab === "manage" ? "active" : ""}`}
           onClick={() => onTabChange("manage")}
           role="tab"
@@ -1949,6 +1940,15 @@ function RecipeAdmin({
           type="button"
         >
           Manage Recipes
+        </button>
+        <button
+          className={`sub-tab-button ${activeTab === "create" ? "active" : ""}`}
+          onClick={() => onTabChange("create")}
+          role="tab"
+          aria-selected={activeTab === "create"}
+          type="button"
+        >
+          Add Recipe
         </button>
       </div>
 
