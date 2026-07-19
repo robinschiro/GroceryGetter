@@ -4,6 +4,7 @@ export type DataScope = "production" | "sandbox";
 export type RecipeInput = {
   name: string;
   category: RecipeCategory;
+  includeInMenuGeneration?: boolean;
   servings?: number | null;
   notes?: string;
   sourcePath?: string;
@@ -21,6 +22,7 @@ export type Recipe = {
   id: number;
   name: string;
   category: RecipeCategory;
+  includeInMenuGeneration: boolean;
   dataScope: DataScope;
   servings: number | null;
   notes: string;

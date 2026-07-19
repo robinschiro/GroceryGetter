@@ -32,6 +32,7 @@ type Recipe = {
   id: number;
   name: string;
   category: RecipeCategory;
+  includeInMenuGeneration: boolean;
   dataScope: DataScope;
   servings: number | null;
   notes: string;
@@ -534,7 +535,9 @@ function App() {
 
     const nextMealNumber = activeMenu.mealCount + 1;
     const newItems = categories.map(({ value: slot }) => {
-      const matchingRecipes = recipes.filter((recipe) => recipe.category === slot);
+      const matchingRecipes = recipes.filter(
+        (recipe) => recipe.category === slot && recipe.includeInMenuGeneration
+      );
       const recipe = matchingRecipes[(nextMealNumber - 1) % matchingRecipes.length] ?? null;
       return {
         id: null,
@@ -546,7 +549,7 @@ function App() {
     });
 
     if (newItems.find((item) => item.slot === "entree")?.recipeId === null) {
-      setMessage("Add at least one entree recipe before adding a meal.");
+      setMessage("Select at least one entree recipe for menu generation before adding a meal.");
       return;
     }
 
@@ -1611,16 +1614,26 @@ function ShoppingListsAdmin({
             <div className="recipe-list shopping-list-management-list">
               {lists.map((list) => (
                 <button
-                  className="recipe-list-item shopping-list-management-item"
+                  className="recipe-list-item recipe-management-item shopping-list-management-item"
                   key={list.id}
                   onClick={() => onEdit(list.id)}
                   type="button"
                 >
-                  <strong>{list.name}</strong>
-                  <span>
-                    {list.items.length} {list.items.length === 1 ? "item" : "items"}
-                    {list.includeInMenuByDefault ? " · Included by default" : ""}
-                  </span>
+                  <div className="recipe-management-copy">
+                    <strong>{list.name}</strong>
+                  </div>
+                  <div className="recipe-management-meta">
+                    <span className="recipe-meta-chip">
+                      {list.items.length} {list.items.length === 1 ? "item" : "items"}
+                    </span>
+                    <span
+                      className={`recipe-meta-chip recipe-status-chip ${
+                        list.includeInMenuByDefault ? "enabled" : ""
+                      }`}
+                    >
+                      {list.includeInMenuByDefault ? "Included by default" : "Not included by default"}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -1901,6 +1914,16 @@ function RecipeAdmin({
     onExitEdit();
   }
 
+  async function toggleRecipeGeneration(recipe: Recipe) {
+    await api(`/api/recipes/${recipe.id}/menu-generation`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        includeInMenuGeneration: !recipe.includeInMenuGeneration
+      })
+    });
+    await onSaved();
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -1940,7 +1963,12 @@ function RecipeAdmin({
           onSubmit={updateRecipe}
         />
       ) : (
-        <RecipeManagementList recipes={recipes} recipeCounts={recipeCounts} onEdit={onEdit} />
+        <RecipeManagementList
+          recipes={recipes}
+          recipeCounts={recipeCounts}
+          onEdit={onEdit}
+          onToggleGeneration={toggleRecipeGeneration}
+        />
       )}
     </section>
   );
@@ -1949,6 +1977,7 @@ function RecipeAdmin({
 type RecipeFormPayload = {
   name: string;
   category: RecipeCategory;
+  includeInMenuGeneration: boolean;
   servings: number | null;
   notes: string;
   ingredients: RecipeIngredient[];
@@ -1958,6 +1987,7 @@ function recipeFormInitialState(recipe?: Recipe) {
   return {
     name: recipe?.name ?? "",
     category: recipe?.category ?? "entree",
+    includeInMenuGeneration: recipe?.includeInMenuGeneration ?? false,
     servings: recipe?.servings === null || recipe?.servings === undefined ? "" : String(recipe.servings),
     notes: recipe?.notes ?? "",
     ingredients: recipe?.ingredients.length
@@ -2006,6 +2036,7 @@ function RecipeForm({
       await onSubmit({
         name: form.name,
         category: form.category,
+        includeInMenuGeneration: form.includeInMenuGeneration,
         servings: form.servings ? Number(form.servings) : null,
         notes: form.notes,
         ingredients: savedIngredients
@@ -2088,6 +2119,20 @@ function RecipeForm({
           />
         </label>
       </div>
+
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={form.includeInMenuGeneration}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              includeInMenuGeneration: event.target.checked
+            }))
+          }
+        />
+        <span>Include in automatic menu generation</span>
+      </label>
 
       <label>
         Notes
@@ -2178,13 +2223,17 @@ function RecipeForm({
 function RecipeManagementList({
   recipes,
   recipeCounts,
-  onEdit
+  onEdit,
+  onToggleGeneration
 }: {
   recipes: Recipe[];
   recipeCounts: RecipeCategoryCount[];
   onEdit: (recipeId: number) => void;
+  onToggleGeneration: (recipe: Recipe) => Promise<void>;
 }) {
   const [managementPage, setManagementPage] = useState(0);
+  const [generationUpdateId, setGenerationUpdateId] = useState<number | null>(null);
+  const [generationUpdateError, setGenerationUpdateError] = useState("");
   const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
   const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
   const managementPageStart = currentManagementPage * recipeManagementPageSize;
@@ -2195,6 +2244,20 @@ function RecipeManagementList({
   useEffect(() => {
     setManagementPage((current) => Math.min(current, managementPageCount - 1));
   }, [managementPageCount]);
+
+  async function toggleGeneration(recipe: Recipe) {
+    setGenerationUpdateError("");
+    setGenerationUpdateId(recipe.id);
+    try {
+      await onToggleGeneration(recipe);
+    } catch (err) {
+      setGenerationUpdateError(
+        err instanceof Error ? err.message : "Unable to update menu generation."
+      );
+    } finally {
+      setGenerationUpdateId(null);
+    }
+  }
 
   return (
     <div className="tab-panel" role="tabpanel">
@@ -2239,25 +2302,49 @@ function RecipeManagementList({
         </div>
       </div>
 
+      {generationUpdateError ? <div className="error">{generationUpdateError}</div> : null}
+
       {visibleManagementRecipes.length === 0 ? (
         <div className="empty-state">No recipes have been added yet.</div>
       ) : (
         <div className="recipe-list recipe-management-list">
           {visibleManagementRecipes.map((recipe) => (
-            <button
-              key={recipe.id}
-              className="recipe-list-item recipe-management-item"
-              onClick={() => onEdit(recipe.id)}
-              type="button"
-            >
-              <div>
-                <strong>{recipe.name}</strong>
-                <span>{recipe.notes || "No notes"}</span>
+            <div key={recipe.id} className="recipe-list-item recipe-management-item">
+              <button
+                className="recipe-management-edit"
+                onClick={() => onEdit(recipe.id)}
+                aria-label={`Edit ${recipe.name}`}
+                type="button"
+              >
+                <div className="recipe-management-copy">
+                  <strong>{recipe.name}</strong>
+                  {recipe.notes ? <span>{recipe.notes}</span> : null}
+                </div>
+              </button>
+              <div className="recipe-management-meta">
+                <span className="recipe-meta-chip">
+                  {categories.find((item) => item.value === recipe.category)?.label}
+                </span>
+                <span className="recipe-meta-chip">
+                  {recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}
+                </span>
+                <button
+                  className={`recipe-meta-chip recipe-status-chip recipe-generation-toggle ${
+                    recipe.includeInMenuGeneration ? "enabled" : ""
+                  }`}
+                  aria-busy={generationUpdateId === recipe.id}
+                  aria-label={`${
+                    recipe.includeInMenuGeneration ? "Disable" : "Enable"
+                  } menu generation for ${recipe.name}`}
+                  aria-pressed={recipe.includeInMenuGeneration}
+                  disabled={generationUpdateId !== null}
+                  onClick={() => void toggleGeneration(recipe)}
+                  type="button"
+                >
+                  {recipe.includeInMenuGeneration ? "Generation on" : "Generation off"}
+                </button>
               </div>
-              <span>{categories.find((item) => item.value === recipe.category)?.label}</span>
-              <span>{recipe.servings === null ? "Servings not set" : `${recipe.servings} servings`}</span>
-              <span>{recipe.dataScope === "sandbox" ? "Sandbox" : "Production"}</span>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -2426,7 +2513,9 @@ function MenuBuilder({
           </div>
         </div>
       ) : (
-        <div className="empty-state">Add at least one entree recipe, then generate a weekly menu.</div>
+        <div className="empty-state">
+          Select at least one entree recipe for menu generation, then generate a weekly menu.
+        </div>
       )}
     </section>
   );

@@ -77,6 +77,7 @@ export async function initializeDb() {
     category TEXT NOT NULL CHECK (category IN ('entree', 'vegetable_side', 'starch_side')),
     data_scope TEXT NOT NULL DEFAULT 'production'
       CHECK (data_scope IN ('production', 'sandbox')),
+    include_in_menu_generation INTEGER NOT NULL DEFAULT 0,
     servings INTEGER,
     notes TEXT NOT NULL DEFAULT '',
     source_path TEXT,
@@ -199,6 +200,13 @@ export async function initializeDb() {
     if (columnExists("recipes", "is_test_data")) {
       run("UPDATE recipes SET data_scope = CASE WHEN is_test_data = 1 THEN 'sandbox' ELSE 'production' END");
     }
+    saveDb();
+  }
+
+  if (!columnExists("recipes", "include_in_menu_generation")) {
+    run(
+      "ALTER TABLE recipes ADD COLUMN include_in_menu_generation INTEGER NOT NULL DEFAULT 0"
+    );
     saveDb();
   }
 

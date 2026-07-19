@@ -375,21 +375,6 @@ label {
   grid-template-columns: minmax(180px, 1fr) 36px 36px 36px;
 }
 
-.shopping-list-management-item {
-  background: transparent;
-  border: 1px solid transparent;
-  color: #1b1f24;
-  min-height: auto;
-  padding: 10px;
-  text-align: left;
-  width: 100%;
-}
-
-.shopping-list-management-item:hover {
-  border-color: #9fb0aa;
-  color: #1b1f24;
-}
-
 .panel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -455,14 +440,14 @@ label {
 }
 
 .recipe-management-item {
-  align-items: start;
+  align-items: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
   color: #1b1f24;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(130px, 0.7fr) minmax(120px, 0.6fr) minmax(90px, 0.5fr);
+  grid-template-columns: minmax(220px, 1fr) auto;
   justify-content: stretch;
   min-height: auto;
   padding: 10px;
@@ -475,22 +460,79 @@ label {
   color: #1b1f24;
 }
 
-.recipe-management-item:focus-visible {
+.recipe-management-edit:focus-visible,
+.recipe-generation-toggle:focus-visible {
   outline: 2px solid #315b53;
   outline-offset: 3px;
 }
 
-.recipe-management-item > div {
+.recipe-management-edit {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: block;
+  min-height: auto;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.recipe-management-edit:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.recipe-management-copy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.recipe-management-item strong,
-.recipe-management-item span {
+.recipe-management-copy strong,
+.recipe-management-copy span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recipe-management-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.recipe-management-item .recipe-meta-chip {
+  background: #eef2ef;
+  border: 1px solid #d8dfdb;
+  border-radius: 999px;
+  color: #52615c;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.recipe-management-item .recipe-generation-toggle {
+  cursor: pointer;
+  min-height: auto;
+  width: auto;
+}
+
+.recipe-management-item .recipe-generation-toggle:hover {
+  background: #dfe7e2;
+  border-color: #9fb0aa;
+}
+
+.recipe-management-item .recipe-status-chip.enabled {
+  background: #e3f2e9;
+  border-color: #b8d9c6;
+  color: #24543a;
+}
+
+.recipe-management-item .recipe-generation-toggle.enabled:hover {
+  background: #d3ebdd;
+  border-color: #8fc2a4;
 }
 
 .edit-heading {
@@ -1106,6 +1148,12 @@ label {
   border-color: transparent;
 }
 
+:root[data-theme="dark"] .recipe-management-edit,
+:root[data-theme="dark"] .recipe-management-edit:hover {
+  background: transparent;
+  color: inherit;
+}
+
 :root[data-theme="dark"] .menu-panel,
 :root[data-theme="dark"] .panel,
 :root[data-theme="dark"] .recipe-count-summary div,
@@ -1211,10 +1259,6 @@ label {
   border-color: #33443d;
 }
 
-:root[data-theme="dark"] .shopping-list-management-item {
-  color: #eef4f0;
-}
-
 :root[data-theme="dark"] .recipe-management-item:hover,
 :root[data-theme="dark"] .shopping-list-management-item:hover {
   background: #24332d;
@@ -1226,7 +1270,30 @@ label {
   color: #b8c8c1;
 }
 
-:root[data-theme="dark"] .recipe-management-item:focus-visible {
+:root[data-theme="dark"] .recipe-management-item .recipe-meta-chip {
+  background: #263630;
+  border-color: #33443d;
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-generation-toggle:hover {
+  background: #30453d;
+  border-color: #5c766c;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-status-chip.enabled {
+  background: #173528;
+  border-color: #315b53;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-generation-toggle.enabled:hover {
+  background: #214735;
+  border-color: #4c8062;
+}
+
+:root[data-theme="dark"] .recipe-management-edit:focus-visible,
+:root[data-theme="dark"] .recipe-generation-toggle:focus-visible {
   outline-color: #68a99a;
 }
 
@@ -1276,10 +1343,6 @@ label {
   }
 
   .tool-row {
-    grid-template-columns: 1fr;
-  }
-
-  .recipe-management-item {
     grid-template-columns: 1fr;
   }
 
@@ -1354,6 +1417,15 @@ label {
   .recipe-management-header {
     align-items: stretch;
     display: grid;
+  }
+
+  .recipe-management-item {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-management-meta {
+    justify-content: flex-start;
   }
 
   .edit-heading {

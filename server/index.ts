@@ -122,6 +122,7 @@ function getRecipe(id: number, dataScope: DataScope): Recipe | null {
       id,
       name,
       category,
+      include_in_menu_generation AS includeInMenuGeneration,
       data_scope AS dataScope,
       servings,
       notes,
@@ -154,7 +155,11 @@ function getRecipe(id: number, dataScope: DataScope): Recipe | null {
       [id]
     ) as Recipe["ingredients"];
 
-  return { ...recipe, ingredients };
+  return {
+    ...recipe,
+    includeInMenuGeneration: Boolean(recipe.includeInMenuGeneration),
+    ingredients
+  };
 }
 
 function shuffle<T>(items: T[]) {
@@ -172,7 +177,9 @@ function pick<T>(items: T[], index: number) {
 
 function getPlannerRecipes(dataScope: DataScope) {
   return queryAll(
-    "SELECT id, name, category, data_scope AS dataScope FROM recipes WHERE data_scope = ?",
+    `SELECT id, name, category, data_scope AS dataScope
+    FROM recipes
+    WHERE data_scope = ? AND include_in_menu_generation = 1`,
     [dataScope]
   ) as MenuRecipe[];
 }
@@ -375,6 +382,12 @@ function validateRecipeInput(input: RecipeInput) {
   if (!["entree", "vegetable_side", "starch_side"].includes(input.category)) {
     throw new Error("Recipe category is invalid.");
   }
+  if (
+    input.includeInMenuGeneration !== undefined
+    && typeof input.includeInMenuGeneration !== "boolean"
+  ) {
+    throw new Error("Recipe menu-generation selection is invalid.");
+  }
   if (!Array.isArray(input.ingredients) || input.ingredients.length === 0) {
     throw new Error("At least one ingredient is required.");
   }
@@ -492,22 +505,13 @@ function getShoppingListItems(menuId: number, dataScope: DataScope) {
 
 app.get("/api/recipes", (_req, res) => {
   const dataScope = requestScope(res);
-  const rows = queryAll(
-      `SELECT
-        id,
-        name,
-        category,
-        data_scope AS dataScope,
-        servings,
-        notes,
-        source_path AS sourcePath,
-        source_hash AS sourceHash,
-        sync_status AS syncStatus
-      FROM recipes
-      WHERE data_scope = ?
-      ORDER BY category, name`,
-      [dataScope]
-    ) as RecipeRow[];
+  const rows = queryAll<{ id: number }>(
+    `SELECT id
+    FROM recipes
+    WHERE data_scope = ?
+    ORDER BY category, name`,
+    [dataScope]
+  );
 
   res.json(rows.map((row) => getRecipe(row.id, dataScope)));
 });
@@ -521,12 +525,13 @@ app.post("/api/recipes", (req, res) => {
     const createdRecipe = transaction(() => {
       const recipeId = insert(
         `INSERT INTO recipes
-          (name, category, data_scope, servings, notes, source_path, source_hash, sync_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          (name, category, data_scope, include_in_menu_generation, servings, notes, source_path, source_hash, sync_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.name.trim(),
           input.category,
           dataScope,
+          input.includeInMenuGeneration ? 1 : 0,
           input.servings ?? null,
           input.notes?.trim() ?? "",
           input.sourcePath?.trim() || null,
@@ -584,6 +589,7 @@ app.put("/api/recipes/:id", (req, res) => {
         SET
           name = ?,
           category = ?,
+          include_in_menu_generation = ?,
           servings = ?,
           notes = ?,
           source_path = ?,
@@ -594,6 +600,7 @@ app.put("/api/recipes/:id", (req, res) => {
         [
           input.name.trim(),
           input.category,
+          (input.includeInMenuGeneration ?? existingRecipe.includeInMenuGeneration) ? 1 : 0,
           input.servings ?? null,
           input.notes?.trim() ?? "",
           input.sourcePath?.trim() || null,
@@ -626,6 +633,44 @@ app.put("/api/recipes/:id", (req, res) => {
     res.json(updatedRecipe);
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Invalid recipe." });
+  }
+});
+
+app.patch("/api/recipes/:id/menu-generation", (req, res) => {
+  try {
+    const dataScope = requestScope(res);
+    const recipeId = Number(req.params.id);
+    if (!Number.isInteger(recipeId)) {
+      res.status(400).json({ error: "Recipe id is invalid." });
+      return;
+    }
+
+    const existingRecipe = getRecipe(recipeId, dataScope);
+    if (!existingRecipe) {
+      res.status(404).json({ error: "Recipe not found." });
+      return;
+    }
+
+    if (typeof req.body.includeInMenuGeneration !== "boolean") {
+      res.status(400).json({ error: "Recipe menu-generation selection is invalid." });
+      return;
+    }
+
+    const updatedRecipe = transaction(() => {
+      run(
+        `UPDATE recipes
+        SET include_in_menu_generation = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+        [req.body.includeInMenuGeneration ? 1 : 0, recipeId]
+      );
+      return getRecipe(recipeId, dataScope);
+    });
+
+    res.json(updatedRecipe);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Unable to update recipe menu generation."
+    });
   }
 });
 
@@ -888,7 +933,9 @@ app.post("/api/menus/preview", (req, res) => {
 
   const preview = buildMenuPreview(mealCount, requestScope(res));
   if (!preview) {
-    res.status(400).json({ error: "Add at least one entree recipe before generating a menu." });
+    res.status(400).json({
+      error: "Select at least one entree recipe for menu generation before generating a menu."
+    });
     return;
   }
 
