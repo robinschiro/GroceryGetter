@@ -698,6 +698,19 @@ label {
   gap: 3px;
 }
 
+.shopping-source-links a {
+  color: #286845;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(40, 104, 69, 0.35);
+  text-underline-offset: 2px;
+}
+
+.shopping-source-links a:hover {
+  color: #174d31;
+  text-decoration-color: currentColor;
+}
+
 .shopping-source small,
 .shopping-persistence-status {
   line-height: 1.25;
@@ -1152,6 +1165,14 @@ label {
 :root[data-theme="dark"] .recipe-management-edit:hover {
   background: transparent;
   color: inherit;
+}
+
+:root[data-theme="dark"] .shopping-source-links a {
+  color: #8ed1aa;
+}
+
+:root[data-theme="dark"] .shopping-source-links a:hover {
+  color: #b8e5c9;
 }
 
 :root[data-theme="dark"] .menu-panel,

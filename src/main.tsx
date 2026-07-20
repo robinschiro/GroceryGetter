@@ -81,6 +81,13 @@ type ShoppingListItem = {
   approved: number;
   sourceOccurrenceCount: number;
   canPersistToSource: number;
+  sourceTargets: ShoppingListSourceTarget[];
+};
+
+type ShoppingListSourceTarget = {
+  type: "recipe" | "shoppingList";
+  id: number;
+  name: string;
 };
 
 type CustomShoppingListItem = {
@@ -1167,6 +1174,11 @@ function App() {
             <ShoppingListReview
               items={shoppingList}
               setItems={setShoppingList}
+              openSource={(source) => navigate(
+                source.type === "recipe"
+                  ? recipeEditRoute(source.id)
+                  : shoppingListEditRoute(source.id)
+              )}
               markItemDirty={(id) => {
                 setStoreItemReview(null);
                 setDirtyShoppingItemIds((current) => {
@@ -2524,6 +2536,7 @@ function MenuBuilder({
 function ShoppingListReview({
   items,
   setItems,
+  openSource,
   markItemDirty,
   markSourceMetadataDirty,
   sourceMetadataDirtyItemIds,
@@ -2538,6 +2551,7 @@ function ShoppingListReview({
 }: {
   items: ShoppingListItem[];
   setItems: (items: ShoppingListItem[]) => void;
+  openSource: (source: ShoppingListSourceTarget) => void;
   markItemDirty: (id: number) => void;
   markSourceMetadataDirty: (id: number) => void;
   sourceMetadataDirtyItemIds: Set<number>;
@@ -2596,7 +2610,38 @@ function ShoppingListReview({
           onChange={(event) => patchItem(item, { text: event.target.value })}
         />
         <div className="shopping-source">
-          <span>{item.sourceNames}</span>
+          {item.sourceTargets.length ? (
+            <span className="shopping-source-links">
+              {item.sourceTargets.map((source, index) => (
+                <React.Fragment key={`${source.type}-${source.id}`}>
+                  {index ? ", " : null}
+                  <a
+                    href={
+                      source.type === "recipe"
+                        ? recipeEditRoute(source.id).path
+                        : shoppingListEditRoute(source.id).path
+                    }
+                    onClick={(event) => {
+                      if (
+                        event.button === 0
+                        && !event.altKey
+                        && !event.ctrlKey
+                        && !event.metaKey
+                        && !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        openSource(source);
+                      }
+                    }}
+                  >
+                    {source.name}
+                  </a>
+                </React.Fragment>
+              ))}
+            </span>
+          ) : (
+            <span>{item.sourceNames}</span>
+          )}
           {!item.canPersistToSource ? (
             <small>
               {item.sourceOccurrenceCount
