@@ -9,6 +9,7 @@ data/*.sqlite-shm
 data/*.sqlite-wal
 logs/
 .env
+.codex-git-commit.json
 imports/dropbox-recipes/raw/*
 !imports/dropbox-recipes/raw/.gitkeep
 imports/dropbox-recipes/review/*

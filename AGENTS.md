@@ -25,7 +25,9 @@
 - If a command needs `.cmd` shims, first prepend the managed Node directory to `PATH` for that PowerShell command.
 - Use Vite's native config loader in Codex (`--configLoader native`). The default bundled config loader invokes esbuild while loading `vite.config.*`, and this sandbox can deny esbuild reads above the workspace.
 
-## Git Pushes from Codex
+## Git Commits and Pushes from Codex
+- Do not run `git add` or `git commit` directly from the Codex shell. Write a gitignored `.codex-git-commit.json` manifest containing a single-line `commitMessage` string and a `paths` array of repository-relative paths, then use this exact standalone command: `& .\scripts\git-commit.ps1`.
+- Invoke the commit wrapper without chaining, prefixes, suffixes, or surrounding PowerShell logic. A narrow Codex rule allows this exact command to run outside the sandbox so Git can update protected `.git` files. The wrapper removes the manifest after every attempt and refuses `.git`, `.env*`, `data/`, absolute paths, and path traversal.
 - Do not run `git push` directly from the Codex shell. Use the repository wrapper with this exact standalone command: `& .\scripts\git-push.ps1`.
 - Invoke the wrapper without chaining, prefixes, suffixes, or surrounding PowerShell logic. A narrow Codex rule allows this exact command to run outside the sandbox so Git can update protected `.git` tracking refs.
 - The wrapper supports both the Codex-managed Git layout and the normal Windows Git installation, avoids the broken Schannel path, and restricts credentials to `https://github.com/robinschiro/GroceryGetter.git`.
