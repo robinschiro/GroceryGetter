@@ -710,10 +710,39 @@ label {
 
 .shopping-row {
   align-items: center;
+  background: #f8faf8;
+  border: 1px solid #d8dfdb;
+  border-radius: 8px;
+  cursor: pointer;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 64px minmax(180px, 1fr) minmax(180px, 1fr) 150px;
+  gap: 14px;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 1fr);
+  min-height: 64px;
   min-width: 580px;
+  padding: 12px 14px;
+  position: relative;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.shopping-row:hover {
+  background: #f0f5f2;
+  border-color: #b9c8c0;
+}
+
+.shopping-row:focus-visible {
+  box-shadow: 0 0 0 3px rgba(40, 104, 69, 0.22);
+  outline: 2px solid #286845;
+  outline-offset: 1px;
+}
+
+.shopping-row[aria-disabled="true"] {
+  cursor: wait;
+}
+
+.shopping-row-crossed-off .shopping-item-editor,
+.shopping-row-crossed-off .shopping-source {
+  opacity: 0.62;
+  text-decoration: line-through;
 }
 
 .shopping-item-name {
@@ -728,8 +757,26 @@ label {
 }
 
 .shopping-item-editor input {
+  flex: 1 1 auto;
   min-width: 0;
   width: 100%;
+}
+
+.shopping-item-edit-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.shopping-item-icon-button.secondary {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px;
+  width: 36px;
 }
 
 .shopping-item-quantity {
@@ -749,15 +796,11 @@ label {
   font-size: 0.82rem;
 }
 
-.shopping-row .compact-checkbox {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
 .approval-save-status {
   font-size: 0.7rem !important;
+  position: absolute;
+  right: 14px;
+  top: 4px;
 }
 
 .shopping-source {
@@ -781,11 +824,6 @@ label {
 .shopping-source small,
 .shopping-persistence-status {
   line-height: 1.25;
-}
-
-.shopping-save-recipe-button {
-  min-height: 34px;
-  padding: 7px 10px;
 }
 
 .store-item-match-list,
@@ -1284,6 +1322,21 @@ label {
 
 :root[data-theme="dark"] .unchecked-ingredients-toggle:hover {
   background: #30453d;
+}
+
+:root[data-theme="dark"] .shopping-row {
+  background: #202d27;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .shopping-row:hover {
+  background: #293a33;
+  border-color: #4c6259;
+}
+
+:root[data-theme="dark"] .shopping-row:focus-visible {
+  box-shadow: 0 0 0 3px rgba(142, 209, 170, 0.2);
+  outline-color: #8ed1aa;
 }
 
 :root[data-theme="dark"] .store-item-match-row {

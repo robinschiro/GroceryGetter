@@ -14,6 +14,7 @@ import {
   Minus,
   Moon,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -714,7 +715,7 @@ function App() {
   }
 
   async function saveShoppingItemToSource(item: ShoppingListItem) {
-    if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return;
+    if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return false;
 
     setMessage("");
     setSavingSourceItemIds((current) => new Set(current).add(item.id));
@@ -744,8 +745,10 @@ function App() {
       setStoreItemReview(null);
       await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
       setMessage(`Saved item details to ${item.sourceNames}. Re-aggregate to apply any new grouping.`);
+      return true;
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to save item details to the source.");
+      return false;
     } finally {
       setSavingSourceItemIds((current) => {
         const next = new Set(current);
@@ -1176,24 +1179,11 @@ function App() {
           />
             <ShoppingListReview
               items={shoppingList}
-              setItems={setShoppingList}
               openSource={(source) => navigate(
                 source.type === "recipe"
                   ? recipeEditRoute(source.id)
                   : shoppingListEditRoute(source.id)
               )}
-              markItemDirty={(id) => {
-                setStoreItemReview(null);
-                setDirtyShoppingItemIds((current) => {
-                  const next = new Set(current);
-                  next.add(id);
-                  return next;
-                });
-              }}
-              markSourceMetadataDirty={(id) => {
-                setSourceMetadataDirtyItemIds((current) => new Set(current).add(id));
-              }}
-              sourceMetadataDirtyItemIds={sourceMetadataDirtyItemIds}
               savingApprovalItemIds={savingApprovalItemIds}
               savingSourceItemIds={savingSourceItemIds}
               updateApproval={updateShoppingItemApproval}
@@ -2659,11 +2649,7 @@ function MenuBuilder({
 
 function ShoppingListReview({
   items,
-  setItems,
   openSource,
-  markItemDirty,
-  markSourceMetadataDirty,
-  sourceMetadataDirtyItemIds,
   savingApprovalItemIds,
   savingSourceItemIds,
   updateApproval,
@@ -2674,55 +2660,134 @@ function ShoppingListReview({
   message
 }: {
   items: ShoppingListItem[];
-  setItems: (items: ShoppingListItem[]) => void;
   openSource: (source: ShoppingListSourceTarget) => void;
-  markItemDirty: (id: number) => void;
-  markSourceMetadataDirty: (id: number) => void;
-  sourceMetadataDirtyItemIds: Set<number>;
   savingApprovalItemIds: Set<number>;
   savingSourceItemIds: Set<number>;
   updateApproval: (id: number, approved: boolean) => Promise<void>;
-  saveToSource: (item: ShoppingListItem) => Promise<void>;
+  saveToSource: (item: ShoppingListItem) => Promise<boolean>;
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
 }) {
   const [showUncheckedItems, setShowUncheckedItems] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editingItemName, setEditingItemName] = useState("");
   const approvedItems = items.filter((item) => Boolean(item.approved));
   const uncheckedItems = items.filter((item) => !item.approved);
 
-  function patchItemName(item: ShoppingListItem, nextItemName: string) {
-    setItems(items.map((candidate) => (
-      candidate.id === item.id ? { ...candidate, item: nextItemName } : candidate
-    )));
-    markItemDirty(item.id);
-    markSourceMetadataDirty(item.id);
+  function beginEditingItem(item: ShoppingListItem) {
+    setEditingItemId(item.id);
+    setEditingItemName(item.item);
+  }
+
+  function cancelEditingItem() {
+    setEditingItemId(null);
+    setEditingItemName("");
+  }
+
+  async function saveEditedItemName(item: ShoppingListItem) {
+    const nextItemName = editingItemName.trim();
+    if (!nextItemName) return;
+    if (nextItemName === item.item) {
+      cancelEditingItem();
+      return;
+    }
+
+    const saved = await saveToSource({ ...item, item: nextItemName });
+    if (saved) cancelEditingItem();
   }
 
   function renderShoppingRow(item: ShoppingListItem) {
+    const isApproved = Boolean(item.approved);
+    const isSavingApproval = savingApprovalItemIds.has(item.id);
+    const isEditing = editingItemId === item.id;
+
+    function toggleApproval() {
+      if (!isSavingApproval) {
+        void updateApproval(item.id, !isApproved);
+      }
+    }
+
     return (
-      <div className="shopping-row" key={item.id}>
-        <label className="compact-checkbox">
-          <input
-            type="checkbox"
-            checked={Boolean(item.approved)}
-            disabled={savingApprovalItemIds.has(item.id)}
-            onChange={(event) => void updateApproval(item.id, event.target.checked)}
-          />
-          {savingApprovalItemIds.has(item.id) ? <span className="approval-save-status">Saving...</span> : null}
-        </label>
+      <div
+        aria-disabled={isSavingApproval}
+        aria-label={`${isApproved ? "Cross off" : "Restore"} ${item.item}`}
+        aria-pressed={!isApproved}
+        className={`shopping-row ${isApproved ? "" : "shopping-row-crossed-off"}`}
+        key={item.id}
+        role="button"
+        tabIndex={isSavingApproval ? -1 : 0}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest("a, button, input, textarea, select")) return;
+          if (isEditing && (event.target as HTMLElement).closest(".shopping-item-editor")) return;
+          toggleApproval();
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+          event.preventDefault();
+          toggleApproval();
+        }}
+      >
         <div className="shopping-item-editor">
           {!item.unit.trim() && item.quantity.trim() ? (
             <span className="shopping-item-quantity">{item.quantity}</span>
           ) : null}
           {item.canPersistToSource ? (
-            <input
-              aria-label={`Item name for ${item.sourceNames}`}
-              value={item.item}
-              disabled={savingSourceItemIds.has(item.id)}
-              onChange={(event) => patchItemName(item, event.target.value)}
-            />
+            isEditing ? (
+              <>
+                <input
+                  autoFocus
+                  aria-label={`Item name for ${item.sourceNames}`}
+                  value={editingItemName}
+                  disabled={savingSourceItemIds.has(item.id)}
+                  onChange={(event) => setEditingItemName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void saveEditedItemName(item);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelEditingItem();
+                    }
+                  }}
+                />
+                <span className="shopping-item-edit-actions">
+                  <button
+                    className="secondary shopping-item-icon-button"
+                    type="button"
+                    aria-label={`Save item name to ${item.sourceNames}`}
+                    aria-busy={savingSourceItemIds.has(item.id)}
+                    disabled={!editingItemName.trim() || savingSourceItemIds.has(item.id)}
+                    onClick={() => void saveEditedItemName(item)}
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    className="secondary shopping-item-icon-button"
+                    type="button"
+                    aria-label={`Cancel editing item name for ${item.sourceNames}`}
+                    disabled={savingSourceItemIds.has(item.id)}
+                    onClick={cancelEditingItem}
+                  >
+                    <X size={16} />
+                  </button>
+                </span>
+              </>
+            ) : (
+              <>
+                <strong className="shopping-item-name">{item.item}</strong>
+                <button
+                  className="secondary shopping-item-icon-button"
+                  type="button"
+                  aria-label={`Edit item name for ${item.sourceNames}`}
+                  disabled={savingSourceItemIds.has(item.id)}
+                  onClick={() => beginEditingItem(item)}
+                >
+                  <Pencil size={16} />
+                </button>
+              </>
+            )
           ) : (
             <strong className="shopping-item-name">{item.item}</strong>
           )}
@@ -2761,21 +2826,7 @@ function ShoppingListReview({
             <span>{item.sourceNames}</span>
           )}
         </div>
-        {item.canPersistToSource ? (
-          <button
-            className="secondary shopping-save-recipe-button"
-            type="button"
-            aria-busy={savingSourceItemIds.has(item.id)}
-            disabled={
-              !item.item.trim()
-              || !sourceMetadataDirtyItemIds.has(item.id)
-              || savingSourceItemIds.has(item.id)
-            }
-            onClick={() => void saveToSource(item)}
-          >
-            {savingSourceItemIds.has(item.id) ? "Saving..." : "Save to source"}
-          </button>
-        ) : null}
+        {isSavingApproval ? <span className="approval-save-status">Saving...</span> : null}
       </div>
     );
   }
