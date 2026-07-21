@@ -1570,7 +1570,6 @@ function ShoppingListsAdmin({
       body: JSON.stringify(payload)
     });
     await onSaved();
-    onExitEdit();
   }
 
   async function deleteList() {
@@ -1688,6 +1687,7 @@ function CustomShoppingListForm({
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
   const [createdList, setCreatedList] = useState<CustomShoppingList | null>(null);
+  const [updatedListName, setUpdatedListName] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const itemEditorRef = useRef<HTMLDivElement>(null);
 
@@ -1695,6 +1695,7 @@ function CustomShoppingListForm({
     setForm(initialForm());
     setError("");
     setCreatedList(null);
+    setUpdatedListName(null);
   }, [initialList?.id]);
 
   function moveItem(index: number, direction: -1 | 1) {
@@ -1727,6 +1728,7 @@ function CustomShoppingListForm({
       .filter((entry) => entry.item);
     setError("");
     setCreatedList(null);
+    setUpdatedListName(null);
     setIsSubmitting(true);
     try {
       const savedList = await onSubmit({
@@ -1743,6 +1745,8 @@ function CustomShoppingListForm({
           includeInMenuByDefault: false,
           items: [emptyCustomShoppingListItem()]
         });
+      } else {
+        setUpdatedListName(form.name.trim());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save the shopping list.");
@@ -1876,6 +1880,11 @@ function CustomShoppingListForm({
           <a href={shoppingListEditRoute(createdList.id).path}>View shopping list</a>
         </div>
       ) : null}
+      {updatedListName ? (
+        <div className="success" role="status">
+          Shopping list “{updatedListName}” was updated successfully.
+        </div>
+      ) : null}
       <div className="panel-actions">
         {mode === "edit" ? (
           <button
@@ -1937,7 +1946,6 @@ function RecipeAdmin({
       body: JSON.stringify(payload)
     });
     await onSaved();
-    onExitEdit();
   }
 
   async function deleteRecipe() {
@@ -2048,6 +2056,7 @@ function RecipeForm({
   const [form, setForm] = useState(() => recipeFormInitialState(initialRecipe));
   const [error, setError] = useState("");
   const [createdRecipe, setCreatedRecipe] = useState<Recipe | null>(null);
+  const [updatedRecipeName, setUpdatedRecipeName] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const ingredientEditorRef = useRef<HTMLDivElement>(null);
 
@@ -2055,6 +2064,7 @@ function RecipeForm({
     setForm(recipeFormInitialState(initialRecipe));
     setError("");
     setCreatedRecipe(null);
+    setUpdatedRecipeName(null);
   }, [initialRecipe?.id]);
 
   function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
@@ -2078,6 +2088,7 @@ function RecipeForm({
   async function saveRecipe() {
     setError("");
     setCreatedRecipe(null);
+    setUpdatedRecipeName(null);
     const savedIngredients = form.ingredients
       .map(normalizeRecipeIngredient)
       .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
@@ -2098,6 +2109,8 @@ function RecipeForm({
           setCreatedRecipe(savedRecipe);
         }
         setForm(recipeFormInitialState());
+      } else {
+        setUpdatedRecipeName(form.name.trim());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : mode === "create" ? "Unable to save recipe." : "Unable to update recipe.");
@@ -2262,6 +2275,11 @@ function RecipeForm({
         <div className="success" role="status">
           Recipe “{createdRecipe.name}” was created successfully.{" "}
           <a href={recipeEditRoute(createdRecipe.id).path}>View recipe</a>
+        </div>
+      ) : null}
+      {updatedRecipeName ? (
+        <div className="success" role="status">
+          Recipe “{updatedRecipeName}” was updated successfully.
         </div>
       ) : null}
 
