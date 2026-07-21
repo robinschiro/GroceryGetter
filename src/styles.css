@@ -410,6 +410,30 @@ label {
   margin-right: auto;
 }
 
+.recipe-management-filters {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 240px);
+}
+
+.recipe-search-input {
+  position: relative;
+}
+
+.recipe-search-input svg {
+  color: #71817b;
+  left: 10px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.recipe-search-input input {
+  padding-left: 34px;
+}
+
 .recipe-management-header {
   align-items: center;
   display: flex;
@@ -1482,6 +1506,10 @@ label {
   .recipe-management-header {
     align-items: stretch;
     display: grid;
+  }
+
+  .recipe-management-filters {
+    grid-template-columns: 1fr;
   }
 
   .recipe-management-item {

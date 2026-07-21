@@ -2311,14 +2311,31 @@ function RecipeManagementList({
   onToggleGeneration: (recipe: Recipe) => Promise<void>;
 }) {
   const [managementPage, setManagementPage] = useState(0);
+  const [recipeSearch, setRecipeSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<RecipeCategory | "all">("all");
   const [generationUpdateId, setGenerationUpdateId] = useState<number | null>(null);
   const [generationUpdateError, setGenerationUpdateError] = useState("");
-  const managementPageCount = Math.max(1, Math.ceil(recipes.length / recipeManagementPageSize));
+  const filteredRecipes = useMemo(() => {
+    const normalizedSearch = recipeSearch.trim().toLocaleLowerCase();
+
+    return recipes.filter(
+      (recipe) =>
+        (categoryFilter === "all" || recipe.category === categoryFilter) &&
+        (!normalizedSearch || recipe.name.toLocaleLowerCase().includes(normalizedSearch))
+    );
+  }, [categoryFilter, recipeSearch, recipes]);
+  const managementPageCount = Math.max(1, Math.ceil(filteredRecipes.length / recipeManagementPageSize));
   const currentManagementPage = Math.min(managementPage, managementPageCount - 1);
   const managementPageStart = currentManagementPage * recipeManagementPageSize;
-  const visibleManagementRecipes = recipes.slice(managementPageStart, managementPageStart + recipeManagementPageSize);
-  const managementRangeStart = recipes.length === 0 ? 0 : managementPageStart + 1;
-  const managementRangeEnd = Math.min(recipes.length, managementPageStart + visibleManagementRecipes.length);
+  const visibleManagementRecipes = filteredRecipes.slice(
+    managementPageStart,
+    managementPageStart + recipeManagementPageSize
+  );
+  const managementRangeStart = filteredRecipes.length === 0 ? 0 : managementPageStart + 1;
+  const managementRangeEnd = Math.min(
+    filteredRecipes.length,
+    managementPageStart + visibleManagementRecipes.length
+  );
 
   useEffect(() => {
     setManagementPage((current) => Math.min(current, managementPageCount - 1));
@@ -2349,11 +2366,46 @@ function RecipeManagementList({
         ))}
       </div>
 
+      <div className="recipe-management-filters" aria-label="Recipe filters">
+        <label className="recipe-search-filter">
+          <span>Search recipes</span>
+          <div className="recipe-search-input">
+            <Search aria-hidden="true" size={16} />
+            <input
+              type="search"
+              value={recipeSearch}
+              onChange={(event) => {
+                setRecipeSearch(event.target.value);
+                setManagementPage(0);
+              }}
+              placeholder="Search by recipe name"
+            />
+          </div>
+        </label>
+        <label>
+          <span>Category</span>
+          <select
+            value={categoryFilter}
+            onChange={(event) => {
+              setCategoryFilter(event.target.value as RecipeCategory | "all");
+              setManagementPage(0);
+            }}
+          >
+            <option value="all">All categories</option>
+            {categories.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <div className="recipe-management-header">
         <div>
           <div className="subhead">Recipes</div>
           <span>
-            Showing {managementRangeStart}-{managementRangeEnd} of {recipes.length}
+            Showing {managementRangeStart}-{managementRangeEnd} of {filteredRecipes.length}
           </span>
         </div>
         <div className="pagination-controls" aria-label="Recipe list pagination">
@@ -2384,7 +2436,9 @@ function RecipeManagementList({
       {generationUpdateError ? <div className="error">{generationUpdateError}</div> : null}
 
       {visibleManagementRecipes.length === 0 ? (
-        <div className="empty-state">No recipes have been added yet.</div>
+        <div className="empty-state">
+          {recipes.length === 0 ? "No recipes have been added yet." : "No recipes match these filters."}
+        </div>
       ) : (
         <div className="recipe-list recipe-management-list">
           {visibleManagementRecipes.map((recipe) => (
