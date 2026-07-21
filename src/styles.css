@@ -576,23 +576,39 @@ label {
   border-top: 1px solid #d8dfdb;
   display: grid;
   gap: 10px;
-  grid-template-columns: 92px repeat(3, minmax(0, 1fr));
+  grid-template-columns: 92px repeat(3, minmax(0, 1fr)) 36px;
   padding-top: 12px;
 }
 
 .meal-heading {
-  align-items: start;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
+  display: contents;
 }
 
 .meal-heading strong {
+  grid-column: 1;
   padding-top: 9px;
+  white-space: nowrap;
 }
 
 .meal-heading .icon-button {
-  flex: 0 0 auto;
+  grid-column: -2 / -1;
+  justify-self: end;
+}
+
+.menu-slot {
+  grid-row: 1;
+}
+
+.menu-slot-entree {
+  grid-column: 2;
+}
+
+.menu-slot-vegetable_side {
+  grid-column: 3;
+}
+
+.menu-slot-starch_side {
+  grid-column: 4;
 }
 
 .menu-meal-actions {
@@ -626,7 +642,7 @@ label {
 .custom-list-options {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .custom-list-options .toggle-row {
@@ -734,7 +750,7 @@ label {
   border-radius: 8px;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.85fr) 24px minmax(0, 1fr) minmax(240px, 0.9fr);
   padding: 14px 60px 14px 16px;
   position: relative;
 }
@@ -899,7 +915,7 @@ label {
   display: grid;
   gap: 12px;
   grid-template-columns: 72px minmax(0, 1fr);
-  margin-top: 3px;
+  min-width: 0;
 }
 
 .store-item-selected-details > div:last-child {
@@ -1063,6 +1079,13 @@ label {
 .success {
   background: #e3f2e9;
   color: #24543a;
+}
+
+.success a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .qfc-progress {
@@ -1361,6 +1384,27 @@ label {
   .qfc-tools,
   .ingredient-row {
     grid-template-columns: 1fr;
+  }
+
+  .meal-heading {
+    align-items: start;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .menu-slot {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .store-item-match-row {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .store-item-match-arrow {
+    display: none;
   }
 
   .tool-row {

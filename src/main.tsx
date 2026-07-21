@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Check,
@@ -358,7 +358,7 @@ function App() {
   const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
   const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
-  const [mealCount, setMealCount] = useState(2);
+  const [mealCount, setMealCount] = useState<number | "">(2);
   const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [allowRealQfcCartMutation, setAllowRealQfcCartMutation] = useState(true);
@@ -434,6 +434,11 @@ function App() {
 
   async function generateMenu() {
     setMessage("");
+    if (mealCount === "" || mealCount < 1 || mealCount > 14) {
+      setMessage("Meal count must be between 1 and 14.");
+      return;
+    }
+
     try {
       const preview = await api<Menu>("/api/menus/preview", {
         method: "POST",
@@ -1562,8 +1567,12 @@ function ShoppingListsAdmin({
   const editingList = lists.find((list) => list.id === editingListId) ?? null;
 
   async function createList(payload: CustomShoppingListFormPayload) {
-    await api("/api/custom-shopping-lists", { method: "POST", body: JSON.stringify(payload) });
+    const createdList = await api<CustomShoppingList>("/api/custom-shopping-lists", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
     await onSaved();
+    return createdList;
   }
 
   async function updateList(payload: CustomShoppingListFormPayload) {
@@ -1679,7 +1688,7 @@ function CustomShoppingListForm({
   initialList?: CustomShoppingList;
   onCancel?: () => void;
   onDelete?: () => Promise<void>;
-  onSubmit: (payload: CustomShoppingListFormPayload) => Promise<void>;
+  onSubmit: (payload: CustomShoppingListFormPayload) => Promise<CustomShoppingList | void>;
 }) {
   const initialForm = () => ({
     name: initialList?.name ?? "",
@@ -1690,11 +1699,14 @@ function CustomShoppingListForm({
   });
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
+  const [createdList, setCreatedList] = useState<CustomShoppingList | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const itemEditorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setForm(initialForm());
     setError("");
+    setCreatedList(null);
   }, [initialList?.id]);
 
   function moveItem(index: number, direction: -1 | 1) {
@@ -1707,6 +1719,17 @@ function CustomShoppingListForm({
     });
   }
 
+  function addItem() {
+    setForm((current) => ({
+      ...current,
+      items: [...current.items, emptyCustomShoppingListItem()]
+    }));
+    window.requestAnimationFrame(() => {
+      const itemInputs = itemEditorRef.current?.querySelectorAll<HTMLInputElement>(".custom-list-item-input");
+      itemInputs?.[itemInputs.length - 1]?.focus();
+    });
+  }
+
   async function saveList() {
     const items = form.items
       .map((entry) => {
@@ -1715,14 +1738,18 @@ function CustomShoppingListForm({
       })
       .filter((entry) => entry.item);
     setError("");
+    setCreatedList(null);
     setIsSubmitting(true);
     try {
-      await onSubmit({
+      const savedList = await onSubmit({
         name: form.name.trim(),
         includeInMenuByDefault: form.includeInMenuByDefault,
         items
       });
       if (mode === "create") {
+        if (savedList) {
+          setCreatedList(savedList);
+        }
         setForm({
           name: "",
           includeInMenuByDefault: false,
@@ -1788,11 +1815,12 @@ function CustomShoppingListForm({
         <span>Include in new menus by default</span>
       </label>
 
-      <div className="ingredient-editor custom-list-item-editor">
+      <div className="ingredient-editor custom-list-item-editor" ref={itemEditorRef}>
         <div className="subhead">Items</div>
         {form.items.map((entry, index) => (
           <div className="custom-list-item-row" key={`${entry.id ?? "new"}-${index}`}>
             <input
+              className="custom-list-item-input"
               value={entry.item}
               onChange={(event) =>
                 setForm((current) => ({
@@ -1802,6 +1830,12 @@ function CustomShoppingListForm({
                   )
                 }))
               }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  addItem();
+                }
+              }}
               placeholder="Coffee"
             />
             <button
@@ -1839,12 +1873,7 @@ function CustomShoppingListForm({
         ))}
         <button
           className="secondary"
-          onClick={() =>
-            setForm((current) => ({
-              ...current,
-              items: [...current.items, emptyCustomShoppingListItem()]
-            }))
-          }
+          onClick={addItem}
           type="button"
         >
           <Plus size={17} />
@@ -1853,6 +1882,12 @@ function CustomShoppingListForm({
       </div>
 
       {error ? <div className="error">{error}</div> : null}
+      {createdList ? (
+        <div className="success" role="status">
+          Shopping list “{createdList.name}” was created successfully.{" "}
+          <a href={shoppingListEditRoute(createdList.id).path}>View shopping list</a>
+        </div>
+      ) : null}
       <div className="panel-actions">
         {mode === "edit" ? (
           <button
@@ -1896,11 +1931,12 @@ function RecipeAdmin({
   const editingRecipe = recipes.find((recipe) => recipe.id === editingRecipeId) ?? null;
 
   async function createRecipe(payload: RecipeFormPayload) {
-    await api("/api/recipes", {
+    const createdRecipe = await api<Recipe>("/api/recipes", {
       method: "POST",
       body: JSON.stringify(payload)
     });
     await onSaved();
+    return createdRecipe;
   }
 
   async function updateRecipe(payload: RecipeFormPayload) {
@@ -1999,7 +2035,7 @@ function recipeFormInitialState(recipe?: Recipe) {
   return {
     name: recipe?.name ?? "",
     category: recipe?.category ?? "entree",
-    includeInMenuGeneration: recipe?.includeInMenuGeneration ?? false,
+    includeInMenuGeneration: recipe?.includeInMenuGeneration ?? true,
     servings: recipe?.servings === null || recipe?.servings === undefined ? "" : String(recipe.servings),
     notes: recipe?.notes ?? "",
     ingredients: recipe?.ingredients.length
@@ -2019,15 +2055,18 @@ function RecipeForm({
   initialRecipe?: Recipe;
   onCancel?: () => void;
   onDelete?: () => Promise<void>;
-  onSubmit: (payload: RecipeFormPayload) => Promise<void>;
+  onSubmit: (payload: RecipeFormPayload) => Promise<Recipe | void>;
 }) {
   const [form, setForm] = useState(() => recipeFormInitialState(initialRecipe));
   const [error, setError] = useState("");
+  const [createdRecipe, setCreatedRecipe] = useState<Recipe | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const ingredientEditorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setForm(recipeFormInitialState(initialRecipe));
     setError("");
+    setCreatedRecipe(null);
   }, [initialRecipe?.id]);
 
   function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
@@ -2037,15 +2076,27 @@ function RecipeForm({
     }));
   }
 
+  function addIngredient() {
+    setForm((current) => ({
+      ...current,
+      ingredients: [...current.ingredients, emptyIngredient()]
+    }));
+    window.requestAnimationFrame(() => {
+      const itemInputs = ingredientEditorRef.current?.querySelectorAll<HTMLInputElement>(".ingredient-item-input");
+      itemInputs?.[itemInputs.length - 1]?.focus();
+    });
+  }
+
   async function saveRecipe() {
     setError("");
+    setCreatedRecipe(null);
     const savedIngredients = form.ingredients
       .map(normalizeRecipeIngredient)
       .filter((ingredient): ingredient is RecipeIngredient => ingredient !== null);
 
     try {
       setIsSubmitting(true);
-      await onSubmit({
+      const savedRecipe = await onSubmit({
         name: form.name,
         category: form.category,
         includeInMenuGeneration: form.includeInMenuGeneration,
@@ -2055,6 +2106,9 @@ function RecipeForm({
       });
 
       if (mode === "create") {
+        if (savedRecipe) {
+          setCreatedRecipe(savedRecipe);
+        }
         setForm(recipeFormInitialState());
       }
     } catch (err) {
@@ -2155,7 +2209,7 @@ function RecipeForm({
         />
       </label>
 
-      <div className="ingredient-editor">
+      <div className="ingredient-editor" ref={ingredientEditorRef}>
         <div className="subhead">Ingredients</div>
         {form.ingredients.map((ingredient, index) => (
           <div
@@ -2173,8 +2227,15 @@ function RecipeForm({
               placeholder="cups"
             />
             <input
+              className="ingredient-item-input"
               value={ingredient.item}
               onChange={(event) => updateIngredient(index, { item: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  addIngredient();
+                }
+              }}
               placeholder="rice"
             />
             {mode === "edit" ? (
@@ -2201,7 +2262,7 @@ function RecipeForm({
         ))}
         <button
           className="secondary"
-          onClick={() => setForm((current) => ({ ...current, ingredients: [...current.ingredients, emptyIngredient()] }))}
+          onClick={addIngredient}
           type="button"
         >
           Add ingredient
@@ -2209,6 +2270,12 @@ function RecipeForm({
       </div>
 
       {error ? <div className="error">{error}</div> : null}
+      {createdRecipe ? (
+        <div className="success" role="status">
+          Recipe “{createdRecipe.name}” was created successfully.{" "}
+          <a href={recipeEditRoute(createdRecipe.id).path}>View recipe</a>
+        </div>
+      ) : null}
 
       <div className="panel-actions">
         {mode === "edit" ? (
@@ -2380,8 +2447,8 @@ function MenuBuilder({
 }: {
   recipes: Recipe[];
   customShoppingLists: CustomShoppingList[];
-  mealCount: number;
-  setMealCount: (value: number) => void;
+  mealCount: number | "";
+  setMealCount: (value: number | "") => void;
   activeMenu: Menu | null;
   generateMenu: () => Promise<void>;
   saveMenu: () => Promise<void>;
@@ -2413,10 +2480,15 @@ function MenuBuilder({
             min={1}
             max={14}
             value={mealCount}
-            onChange={(event) => setMealCount(Number(event.target.value))}
+            onChange={(event) =>
+              setMealCount(event.target.value === "" ? "" : Number(event.target.value))
+            }
           />
         </label>
-        <button onClick={() => void generateMenu()}>
+        <button
+          disabled={mealCount === "" || mealCount < 1 || mealCount > 14}
+          onClick={() => void generateMenu()}
+        >
           <Shuffle size={17} />
           Generate
         </button>
@@ -2444,7 +2516,7 @@ function MenuBuilder({
                   (menuItem) => menuItem.mealNumber === mealNumber && menuItem.slot === category.value
                 );
                 return (
-                  <label key={category.value}>
+                  <label className={`menu-slot menu-slot-${category.value}`} key={category.value}>
                     {category.label}
                     <select
                       value={item?.recipeId ?? ""}
@@ -3019,28 +3091,28 @@ function StoreItemReviewPanel({
                         </button>
                       </div>
                     </div>
-                    <div className="store-item-selected-details">
-                      {match.storeItem.imageUrl ? (
-                        <img
-                          className="store-item-thumbnail"
-                          src={match.storeItem.imageUrl}
-                          alt=""
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="store-item-thumbnail placeholder" aria-hidden="true">
-                          <Package size={28} />
-                        </div>
-                      )}
-                      <div>
-                        <strong>{match.storeItem.description}</strong>
-                        <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
-                        <span>
-                          {match.storeItem.price === null ? "Price unavailable" : `$${match.storeItem.price.toFixed(2)}`}
-                          {match.storeItem.stockLevel ? ` · Stock: ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
-                          {` · Qty ${match.cartQuantity}`}
-                        </span>
+                  </div>
+                  <div className="store-item-selected-details">
+                    {match.storeItem.imageUrl ? (
+                      <img
+                        className="store-item-thumbnail"
+                        src={match.storeItem.imageUrl}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="store-item-thumbnail placeholder" aria-hidden="true">
+                        <Package size={28} />
                       </div>
+                    )}
+                    <div>
+                      <strong>{match.storeItem.description}</strong>
+                      <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
+                      <span>
+                        {match.storeItem.price === null ? "Price unavailable" : `$${match.storeItem.price.toFixed(2)}`}
+                        {match.storeItem.stockLevel ? ` · Stock: ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
+                        {` · Qty ${match.cartQuantity}`}
+                      </span>
                     </div>
                   </div>
                   {renderRemoveButton(match.item)}

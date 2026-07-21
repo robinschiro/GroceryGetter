@@ -1379,7 +1379,13 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
   transaction(() => {
     run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
 
-    Array.from(grouped.values()).forEach((group, index) => {
+    const sortedGroups = Array.from(grouped.values()).sort((left, right) => {
+      const leftName = left[0].item.trim() || left[0].text.trim();
+      const rightName = right[0].item.trim() || right[0].text.trim();
+      return leftName.localeCompare(rightName, undefined, { sensitivity: "base" });
+    });
+
+    sortedGroups.forEach((group, index) => {
       const first = group[0];
       const sourceNames = Array.from(new Set(group.map((item) => item.sourceName))).join(", ");
       const numericQuantities = group
