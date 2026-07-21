@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  BookmarkPlus,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -723,9 +724,6 @@ function App() {
         {
           method: "PATCH",
           body: JSON.stringify({
-            text: item.text,
-            quantity: item.quantity,
-            unit: item.unit,
             item: item.item
           })
         }
@@ -2694,13 +2692,12 @@ function ShoppingListReview({
   const approvedItems = items.filter((item) => Boolean(item.approved));
   const uncheckedItems = items.filter((item) => !item.approved);
 
-  function patchItem(item: ShoppingListItem, patch: Partial<ShoppingListItem>) {
-    const id = item.id;
-    setItems(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-    markItemDirty(id);
-    if (item.canPersistToSource) {
-      markSourceMetadataDirty(id);
-    }
+  function patchItemName(item: ShoppingListItem, nextItemName: string) {
+    setItems(items.map((candidate) => (
+      candidate.id === item.id ? { ...candidate, item: nextItemName } : candidate
+    )));
+    markItemDirty(item.id);
+    markSourceMetadataDirty(item.id);
   }
 
   function renderShoppingRow(item: ShoppingListItem) {
@@ -2715,26 +2712,21 @@ function ShoppingListReview({
           />
           {savingApprovalItemIds.has(item.id) ? <span className="approval-save-status">Saving...</span> : null}
         </label>
-        <input
-          value={item.quantity}
-          disabled={savingSourceItemIds.has(item.id)}
-          onChange={(event) => patchItem(item, { quantity: event.target.value })}
-        />
-        <input
-          value={item.unit}
-          disabled={savingSourceItemIds.has(item.id)}
-          onChange={(event) => patchItem(item, { unit: event.target.value })}
-        />
-        <input
-          value={item.item}
-          disabled={savingSourceItemIds.has(item.id)}
-          onChange={(event) => patchItem(item, { item: event.target.value })}
-        />
-        <input
-          value={item.text}
-          disabled={savingSourceItemIds.has(item.id)}
-          onChange={(event) => patchItem(item, { text: event.target.value })}
-        />
+        <div className="shopping-item-editor">
+          {!item.unit.trim() && item.quantity.trim() ? (
+            <span className="shopping-item-quantity">{item.quantity}</span>
+          ) : null}
+          {item.canPersistToSource ? (
+            <input
+              aria-label={`Item name for ${item.sourceNames}`}
+              value={item.item}
+              disabled={savingSourceItemIds.has(item.id)}
+              onChange={(event) => patchItemName(item, event.target.value)}
+            />
+          ) : (
+            <strong className="shopping-item-name">{item.item}</strong>
+          )}
+        </div>
         <div className="shopping-source">
           {item.sourceTargets.length ? (
             <span className="shopping-source-links">
@@ -2768,27 +2760,22 @@ function ShoppingListReview({
           ) : (
             <span>{item.sourceNames}</span>
           )}
-          {!item.canPersistToSource ? (
-            <small>
-              {item.sourceOccurrenceCount
-                ? `Shopping list only - ${item.sourceOccurrenceCount} sources`
-                : "Re-aggregate to enable source editing"}
-            </small>
-          ) : null}
         </div>
         {item.canPersistToSource ? (
           <button
             className="secondary shopping-save-recipe-button"
             type="button"
             aria-busy={savingSourceItemIds.has(item.id)}
-            disabled={!sourceMetadataDirtyItemIds.has(item.id) || savingSourceItemIds.has(item.id)}
+            disabled={
+              !item.item.trim()
+              || !sourceMetadataDirtyItemIds.has(item.id)
+              || savingSourceItemIds.has(item.id)
+            }
             onClick={() => void saveToSource(item)}
           >
             {savingSourceItemIds.has(item.id) ? "Saving..." : "Save to source"}
           </button>
-        ) : (
-          <span className="shopping-persistence-status">Multiple sources</span>
-        )}
+        ) : null}
       </div>
     );
   }
@@ -2903,6 +2890,10 @@ function StoreItemReviewPanel({
 
   async function updateSelection(match: StoreItemMatch, selection: string) {
     const [productId, upc] = JSON.parse(selection) as [string, string];
+    await rememberSelection(match, productId, upc);
+  }
+
+  async function rememberSelection(match: StoreItemMatch, productId: string, upc: string) {
     setSelectingItemId(match.item.id);
     try {
       await selectStoreItem(match.item.id, productId, upc);
@@ -3110,7 +3101,33 @@ function StoreItemReviewPanel({
                         </option>
                       ))}
                     </select>
-                    {renderFindItemControl(match.item)}
+                    <div className="store-item-selection-actions">
+                      {renderFindItemControl(match.item)}
+                      {findingItemId !== match.item.id ? (
+                        <button
+                          className="secondary icon-button store-item-remember-button"
+                          type="button"
+                          aria-label={`Remember selected store item for ${match.item.item || match.item.text}`}
+                          title={
+                            match.selectionSource === "remembered"
+                              ? "This store item is already remembered"
+                              : "Remember the selected store item"
+                          }
+                          aria-busy={selectingItemId === match.item.id}
+                          disabled={
+                            selectingItemId === match.item.id
+                            || match.selectionSource === "remembered"
+                          }
+                          onClick={() => void rememberSelection(
+                            match,
+                            match.storeItem.productId,
+                            match.storeItem.upc
+                          )}
+                        >
+                          <BookmarkPlus size={17} aria-hidden="true" />
+                        </button>
+                      ) : null}
+                    </div>
                     <div className="store-item-quantity">
                       <span className="eyebrow">Cart quantity</span>
                       <div className="store-item-number-control">

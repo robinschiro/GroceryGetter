@@ -395,17 +395,13 @@ function validateRecipeInput(input: RecipeInput) {
 
 function parseQuantity(value: string): number | null {
   const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
+  if (!trimmed) return null;
 
   const parts = trimmed.split(/\s+/);
   if (parts.length === 2) {
     const whole = Number(parts[0]);
     const fraction = parseQuantity(parts[1]);
-    if (Number.isFinite(whole) && fraction !== null) {
-      return whole + fraction;
-    }
+    if (Number.isFinite(whole) && fraction !== null) return whole + fraction;
   }
 
   if (trimmed.includes("/")) {
@@ -419,10 +415,8 @@ function parseQuantity(value: string): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function formatQuantity(value: number): string {
-  if (Number.isInteger(value)) {
-    return String(value);
-  }
+function formatQuantity(value: number) {
+  if (Number.isInteger(value)) return String(value);
 
   const commonFractions = [
     [0.25, "1/4"],
@@ -435,16 +429,55 @@ function formatQuantity(value: number): string {
   const remainder = value - whole;
   const match = commonFractions.find(([decimal]) => Math.abs(remainder - decimal) < 0.01);
 
-  if (match) {
-    return whole > 0 ? `${whole} ${match[1]}` : match[1];
-  }
-
+  if (match) return whole > 0 ? `${whole} ${match[1]}` : match[1];
   return Number(value.toFixed(2)).toString();
 }
 
 function buildIngredientText(quantity: string, unit: string, item: string, fallback: string) {
   const parts = [quantity, unit, item].map((part) => part.trim()).filter(Boolean);
   return parts.length ? parts.join(" ") : fallback;
+}
+
+const irregularIngredientSingulars: Record<string, string> = {
+  berries: "berry",
+  brownies: "brownie",
+  cookies: "cookie",
+  halves: "half",
+  knives: "knife",
+  leaves: "leaf",
+  loaves: "loaf",
+  pies: "pie",
+  potatoes: "potato",
+  smoothies: "smoothie",
+  tomatoes: "tomato",
+  veggies: "veggie"
+};
+
+const ingredientWordsEndingInS = new Set([
+  "asparagus",
+  "couscous",
+  "hummus",
+  "molasses"
+]);
+
+function singularizeIngredientWord(word: string) {
+  const irregular = irregularIngredientSingulars[word];
+  if (irregular) return irregular;
+  if (ingredientWordsEndingInS.has(word)) return word;
+  if (word.endsWith("oes") && word.length > 4) return word.slice(0, -2);
+  if (/(?:ches|shes|sses|xes|zes)$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith("ies") && word.length > 4) {
+    return `${word.slice(0, -3)}y`;
+  }
+  if (word.endsWith("s") && !/(?:ss|us|is|ous)$/.test(word)) return word.slice(0, -1);
+  return word;
+}
+
+function normalizeAggregateItem(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  const [name, ...qualifiers] = normalized.split(",");
+  const singularName = name.replace(/[a-z]+(?=[^a-z]*$)/, (word) => singularizeIngredientWord(word));
+  return [singularName, ...qualifiers].join(",");
 }
 
 function getShoppingListItems(menuId: number, dataScope: DataScope) {
@@ -1360,19 +1393,8 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
 
   const grouped = new Map<string, AggregateSource[]>();
   for (const row of [...recipeSources, ...customSources]) {
-    const normalizedItem = row.item.trim().toLowerCase();
-    const normalizedUnit = row.unit.trim().toLowerCase();
-    let key = normalizedItem
-      ? `${normalizedItem}|${normalizedUnit}`
-      : row.text.trim().toLowerCase();
-    if (row.sourceType === "custom" && normalizedItem && !normalizedUnit) {
-      const compatibleKeys = Array.from(grouped.keys()).filter((candidate) =>
-        candidate.startsWith(`${normalizedItem}|`)
-      );
-      if (compatibleKeys.length === 1) {
-        key = compatibleKeys[0];
-      }
-    }
+    const normalizedItem = normalizeAggregateItem(row.item);
+    const key = normalizedItem || normalizeAggregateItem(row.text);
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
 
@@ -1388,27 +1410,18 @@ app.post("/api/menus/:id/aggregate", (req, res) => {
     sortedGroups.forEach((group, index) => {
       const first = group[0];
       const sourceNames = Array.from(new Set(group.map((item) => item.sourceName))).join(", ");
-      const numericQuantities = group
-        .map((item) => parseQuantity(item.quantity))
-        .filter((quantity): quantity is number => quantity !== null);
-      const hasUnquantifiedCustomSource = group.some(
-        (item) => item.sourceType === "custom" && parseQuantity(item.quantity) === null
-      );
-      const canSum = numericQuantities.length > 0
-        && group.every((item) => parseQuantity(item.quantity) !== null || item.sourceType === "custom");
-      const quantity = canSum
-        ? formatQuantity(numericQuantities.reduce((sum, value) => sum + value, 0))
-        : first.quantity;
-      const text = canSum
-        ? buildIngredientText(quantity, first.unit, first.item, first.text)
-        : hasUnquantifiedCustomSource && numericQuantities.length > 0
-          ? buildIngredientText(quantity, first.unit, first.item, first.text)
-          : first.text;
+      const item = first.item.trim() || first.text.trim();
+      const quantities = group.map((source) => parseQuantity(source.quantity));
+      const canSumUnitlessQuantities = group.every((source) => !source.unit.trim())
+        && quantities.every((quantity): quantity is number => quantity !== null);
+      const quantity = canSumUnitlessQuantities
+        ? formatQuantity(quantities.reduce<number>((sum, value) => sum + value, 0))
+        : "";
       const menuShoppingListItemId = insert(
         `INSERT INTO menu_shopping_list_items
           (menu_id, text, quantity, unit, item, source_names, sort_order)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [menuId, text, quantity, first.unit, first.item, sourceNames, index]
+        [menuId, item, quantity, "", item, sourceNames, index]
       );
       group.forEach((source) => {
         if (
@@ -1560,16 +1573,13 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
   }
 
   const item = String(req.body.item ?? "").trim();
-  const quantity = String(req.body.quantity ?? "").trim();
-  const unit = String(req.body.unit ?? "").trim();
-  const text = String(req.body.text ?? "").trim() || buildIngredientText(quantity, unit, item, "");
   if (!item) {
     res.status(400).json({ error: "An item name is required before saving to its source." });
     return;
   }
 
-  const shoppingItem = queryOne<{ id: number }>(
-    "SELECT id FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
+  const shoppingItem = queryOne<{ id: number; quantity: string; unit: string }>(
+    "SELECT id, quantity, unit FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
     [itemId, menuId]
   );
   if (!shoppingItem) {
@@ -1620,20 +1630,17 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
     if (recipeSources.length === 1) {
       run(
         `UPDATE recipe_ingredients
-        SET text = ?, quantity = ?, unit = ?, item = ?
+        SET item = ?
         WHERE id = ? AND recipe_id = ?`,
-        [text, quantity, unit, item, recipeSources[0].recipeIngredientId, recipeSources[0].recipeId]
+        [item, recipeSources[0].recipeIngredientId, recipeSources[0].recipeId]
       );
       run("UPDATE recipes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [recipeSources[0].recipeId]);
     } else {
       run(
         `UPDATE custom_shopping_list_items
-        SET text = ?, quantity = ?, unit = ?, item = ?
+        SET item = ?
         WHERE id = ? AND custom_shopping_list_id = ?`,
         [
-          text,
-          quantity,
-          unit,
           item,
           customSources[0].customShoppingListItemId,
           customSources[0].customShoppingListId
@@ -1648,7 +1655,7 @@ app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
       `UPDATE menu_shopping_list_items
       SET text = ?, quantity = ?, unit = ?, item = ?
       WHERE id = ? AND menu_id = ?`,
-      [text, quantity, unit, item, itemId, menuId]
+      [item, shoppingItem.quantity, shoppingItem.unit, item, itemId, menuId]
     );
   });
 
