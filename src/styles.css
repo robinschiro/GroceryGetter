@@ -803,6 +803,33 @@ label {
   top: 4px;
 }
 
+.store-search-status {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.store-search-spinner {
+  animation: store-search-spin 800ms linear infinite;
+}
+
+.store-search-spinner-prominent {
+  color: #286845;
+  flex: 0 0 auto;
+}
+
+@keyframes store-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .store-search-spinner {
+    animation: none;
+  }
+}
+
 .shopping-source {
   display: grid;
   gap: 3px;

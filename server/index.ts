@@ -1674,21 +1674,8 @@ app.post("/api/menus/:id/preview-qfc", async (req, res) => {
     res.status(404).json({ error: "Menu not found." });
     return;
   }
-  const rows = queryAll(
-      `SELECT id, text, quantity, unit, item, source_names AS sourceNames, approved
-      FROM menu_shopping_list_items
-      WHERE menu_id = ? AND approved = 1
-      ORDER BY sort_order, id`,
-      [menuId]
-    ) as Array<{
-      id: number;
-      text: string;
-      quantity: string;
-      unit: string;
-      item: string;
-      sourceNames: string;
-      approved: number;
-    }>;
+  const rows = getShoppingListItems(Number(menuId), dataScope)
+    .filter((item) => Boolean(item.approved));
 
   pruneQfcSubmitJobs();
   const jobId = randomUUID();
@@ -1804,10 +1791,16 @@ app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (r
   const matches = previewJob.result.matched ?? [];
   const skipped = previewJob.result.skipped ?? [];
   let match = matches.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
-  const skip = skipped.find((candidateSkip) => candidateSkip.item.id === shoppingItemId);
+  let skip = skipped.find((candidateSkip) => candidateSkip.item.id === shoppingItemId);
+  let restoredItem = null;
   if (!match && !skip) {
-    res.status(404).json({ error: "The ingredient was not found in this store item review." });
-    return;
+    restoredItem = getShoppingListItems(Number(previewJob.menuId), previewJob.dataScope)
+      .find((candidate) => candidate.id === shoppingItemId && candidate.approved);
+    if (!restoredItem) {
+      res.status(404).json({ error: "The ingredient was not found in this store item review." });
+      return;
+    }
+    skip = { item: restoredItem, reason: "No store item has been selected." };
   }
 
   const term = String(req.body.term ?? "").trim();
@@ -1826,6 +1819,11 @@ app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (r
       return true;
     });
 
+    if (restoredItem) {
+      previewJob.result.items = [...previewJob.result.items, restoredItem]
+        .sort((left, right) => left.id - right.id);
+    }
+
     if (candidates.length) {
       if (match) {
         match.candidates = candidates;
@@ -1842,10 +1840,14 @@ app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (r
         previewJob.result.matched = [...matches, match].sort((left, right) => left.item.id - right.item.id);
         previewJob.result.skipped = skipped.filter((candidateSkip) => candidateSkip.item.id !== shoppingItemId);
       }
+    } else if (restoredItem && skip) {
+      skip.reason = `No store items found for "${term}".`;
+      previewJob.result.skipped = [...skipped, skip].sort((left, right) => left.item.id - right.item.id);
     }
 
     res.json({
       match: match ?? null,
+      items: previewJob.result.items,
       matched: previewJob.result.matched ?? matches,
       skipped: previewJob.result.skipped ?? skipped,
       resultCount: candidates.length

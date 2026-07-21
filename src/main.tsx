@@ -10,6 +10,7 @@ import {
   Database,
   ExternalLink,
   ListChecks,
+  LoaderCircle,
   Menu as MenuIcon,
   Minus,
   Moon,
@@ -188,6 +189,21 @@ type StoreItemReview = {
   result: NonNullable<QfcSubmitJob["result"]>;
 };
 
+type StoreItemReviewRemoval = {
+  removedItem: ShoppingListItem;
+  items: ShoppingListItem[];
+  matched: StoreItemMatch[];
+  skipped: QfcCartSkip[];
+};
+
+type StoreItemReviewSearchResult = {
+  match: StoreItemMatch | null;
+  items: ShoppingListItem[];
+  matched: StoreItemMatch[];
+  skipped: QfcCartSkip[];
+  resultCount: number;
+};
+
 type StoreItemPreference = {
   ingredientKey: string;
   ingredientName: string;
@@ -359,6 +375,7 @@ function App() {
   const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
   const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
+  const [searchingStoreItemIds, setSearchingStoreItemIds] = useState<Set<number>>(() => new Set());
   const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState<number | "">(2);
   const [message, setMessage] = useState("");
@@ -687,19 +704,84 @@ function App() {
     if (!activeMenu?.id || savingApprovalItemIds.has(itemId)) return;
     const previousItem = shoppingList.find((item) => item.id === itemId);
     if (!previousItem) return;
+    const currentReview = storeItemReview;
 
     setMessage("");
-    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
     setShoppingList((current) => current.map((item) => (
       item.id === itemId ? { ...item, approved: approved ? 1 : 0 } : item
     )));
     setSavingApprovalItemIds((current) => new Set(current).add(itemId));
+    if (approved && currentReview) {
+      setSearchingStoreItemIds((current) => new Set(current).add(itemId));
+    }
 
     try {
       await api(`/api/menus/${activeMenu.id}/shopping-list/items/${itemId}/approval`, {
         method: "PATCH",
         body: JSON.stringify({ approved })
       });
+
+      if (
+        !approved
+        && currentReview
+        && currentReview.result.items.some((reviewItem) => reviewItem.id === itemId)
+      ) {
+        try {
+          const result = await api<StoreItemReviewRemoval>(
+            `/api/store-item-reviews/${currentReview.jobId}/items/${itemId}`,
+            { method: "DELETE" }
+          );
+          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? {
+            ...review,
+            result: {
+              ...review.result,
+              items: result.items,
+              matched: result.matched,
+              skipped: result.skipped
+            }
+          } : review);
+        } catch (err) {
+          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? null : review);
+          setStoreItemReviewMessage(
+            err instanceof Error
+              ? `The ingredient was removed, but the store item review could not be updated: ${err.message}`
+              : "The ingredient was removed, but the store item review could not be updated. Preview store items again."
+          );
+        }
+      }
+
+      if (approved && currentReview) {
+        try {
+          const result = await api<StoreItemReviewSearchResult>(
+            `/api/store-item-reviews/${currentReview.jobId}/items/${itemId}/search`,
+            {
+              method: "POST",
+              body: JSON.stringify({ term: previousItem.item || previousItem.text })
+            }
+          );
+          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? {
+            ...review,
+            result: {
+              ...review.result,
+              items: result.items,
+              matched: result.matched,
+              skipped: result.skipped
+            }
+          } : review);
+          setStoreItemReviewMessage(
+            result.match
+              ? `Added ${previousItem.item || previousItem.text} back to the store item review.`
+              : `Added ${previousItem.item || previousItem.text} back to the review, but no store items were found.`
+          );
+        } catch (err) {
+          setStoreItemReviewMessage(
+            err instanceof Error
+              ? `The ingredient was re-added, but its store item search failed: ${err.message}`
+              : "The ingredient was re-added, but its store item search failed."
+          );
+        }
+      }
     } catch (err) {
       setShoppingList((current) => current.map((item) => (
         item.id === itemId ? { ...item, approved: previousItem.approved } : item
@@ -707,6 +789,11 @@ function App() {
       setMessage(err instanceof Error ? err.message : "Unable to save ingredient approval.");
     } finally {
       setSavingApprovalItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
+      setSearchingStoreItemIds((current) => {
         const next = new Set(current);
         next.delete(itemId);
         return next;
@@ -965,12 +1052,7 @@ function App() {
       throw new Error("Preview store items before searching for more choices.");
     }
 
-    const result = await api<{
-      match: StoreItemMatch | null;
-      matched: StoreItemMatch[];
-      skipped: QfcCartSkip[];
-      resultCount: number;
-    }>(
+    const result = await api<StoreItemReviewSearchResult>(
       `/api/store-item-reviews/${storeItemReview.jobId}/items/${shoppingItemId}/search`,
       {
         method: "POST",
@@ -981,6 +1063,7 @@ function App() {
       ...current,
       result: {
         ...current.result,
+        items: result.items,
         matched: result.matched,
         skipped: result.skipped
       }
@@ -996,12 +1079,10 @@ function App() {
 
     setStoreItemReviewMessage("");
     try {
-      const result = await api<{
-        removedItem: ShoppingListItem;
-        items: ShoppingListItem[];
-        matched: StoreItemMatch[];
-        skipped: QfcCartSkip[];
-      }>(`/api/store-item-reviews/${storeItemReview.jobId}/items/${item.id}`, { method: "DELETE" });
+      const result = await api<StoreItemReviewRemoval>(
+        `/api/store-item-reviews/${storeItemReview.jobId}/items/${item.id}`,
+        { method: "DELETE" }
+      );
       setStoreItemReview((current) => current ? {
         ...current,
         result: {
@@ -1185,6 +1266,7 @@ function App() {
                   : shoppingListEditRoute(source.id)
               )}
               savingApprovalItemIds={savingApprovalItemIds}
+              searchingStoreItemIds={searchingStoreItemIds}
               savingSourceItemIds={savingSourceItemIds}
               updateApproval={updateShoppingItemApproval}
               saveToSource={saveShoppingItemToSource}
@@ -1201,6 +1283,11 @@ function App() {
               updateCartQuantity={updateStoreItemQuantity}
               searchStoreItems={searchStoreItemsForReview}
               removeStoreItem={removeStoreItemFromReview}
+              openSource={(source) => navigate(
+                source.type === "recipe"
+                  ? recipeEditRoute(source.id)
+                  : shoppingListEditRoute(source.id)
+              )}
               openQfcCart={openQfcCart}
               qfcSubmitProgress={qfcSubmitProgress}
               message={storeItemReviewMessage}
@@ -2669,6 +2756,7 @@ function ShoppingListReview({
   items,
   openSource,
   savingApprovalItemIds,
+  searchingStoreItemIds,
   savingSourceItemIds,
   updateApproval,
   saveToSource,
@@ -2680,6 +2768,7 @@ function ShoppingListReview({
   items: ShoppingListItem[];
   openSource: (source: ShoppingListSourceTarget) => void;
   savingApprovalItemIds: Set<number>;
+  searchingStoreItemIds: Set<number>;
   savingSourceItemIds: Set<number>;
   updateApproval: (id: number, approved: boolean) => Promise<void>;
   saveToSource: (item: ShoppingListItem) => Promise<boolean>;
@@ -2719,6 +2808,7 @@ function ShoppingListReview({
   function renderShoppingRow(item: ShoppingListItem) {
     const isApproved = Boolean(item.approved);
     const isSavingApproval = savingApprovalItemIds.has(item.id);
+    const isSearchingStoreItems = searchingStoreItemIds.has(item.id);
     const isEditing = editingItemId === item.id;
 
     function toggleApproval() {
@@ -2748,6 +2838,13 @@ function ShoppingListReview({
         }}
       >
         <div className="shopping-item-editor">
+          {isSearchingStoreItems ? (
+            <LoaderCircle
+              className="store-search-spinner store-search-spinner-prominent"
+              size={20}
+              aria-hidden="true"
+            />
+          ) : null}
           {!item.unit.trim() && item.quantity.trim() ? (
             <span className="shopping-item-quantity">{item.quantity}</span>
           ) : null}
@@ -2844,7 +2941,11 @@ function ShoppingListReview({
             <span>{item.sourceNames}</span>
           )}
         </div>
-        {isSavingApproval ? <span className="approval-save-status">Saving...</span> : null}
+        {isSearchingStoreItems ? (
+          <span className="approval-save-status store-search-status" role="status">
+            Searching store items...
+          </span>
+        ) : isSavingApproval ? <span className="approval-save-status">Saving...</span> : null}
       </div>
     );
   }
@@ -2910,6 +3011,7 @@ function StoreItemReviewPanel({
   updateCartQuantity,
   searchStoreItems,
   removeStoreItem,
+  openSource,
   openQfcCart,
   qfcSubmitProgress,
   message
@@ -2929,6 +3031,7 @@ function StoreItemReviewPanel({
     resultCount: number;
   }>;
   removeStoreItem: (item: ShoppingListItem) => Promise<boolean>;
+  openSource: (source: ShoppingListSourceTarget) => void;
   openQfcCart: () => void;
   qfcSubmitProgress: QfcSubmitProgress | null;
   message: string;
@@ -3029,6 +3132,43 @@ function StoreItemReviewPanel({
       >
         <Trash2 size={16} />
       </button>
+    );
+  }
+
+  function renderSourceLinks(item: ShoppingListItem) {
+    if (!item.sourceTargets?.length) {
+      return <span>{item.sourceNames}</span>;
+    }
+
+    return (
+      <span className="shopping-source-links">
+        {item.sourceTargets.map((source, index) => (
+          <React.Fragment key={`${source.type}-${source.id}`}>
+            {index ? ", " : null}
+            <a
+              href={
+                source.type === "recipe"
+                  ? recipeEditRoute(source.id).path
+                  : shoppingListEditRoute(source.id).path
+              }
+              onClick={(event) => {
+                if (
+                  event.button === 0
+                  && !event.altKey
+                  && !event.ctrlKey
+                  && !event.metaKey
+                  && !event.shiftKey
+                ) {
+                  event.preventDefault();
+                  openSource(source);
+                }
+              }}
+            >
+              {source.name}
+            </a>
+          </React.Fragment>
+        ))}
+      </span>
     );
   }
 
@@ -3144,7 +3284,7 @@ function StoreItemReviewPanel({
                   <div className="store-item-match-ingredient">
                     <span className="eyebrow">Aggregated ingredient</span>
                     <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
-                    <span>{match.item.sourceNames}</span>
+                    {renderSourceLinks(match.item)}
                   </div>
                   <ChevronRight className="store-item-match-arrow" size={22} aria-hidden="true" />
                   <div className="store-item-match-selection">
@@ -3270,6 +3410,7 @@ function StoreItemReviewPanel({
                 <div className="store-item-unmatched-row" key={skip.item.id}>
                   <div>
                     <strong>{skip.item.text || skip.item.item}</strong>
+                    {renderSourceLinks(skip.item)}
                     <span>{skip.reason}</span>
                   </div>
                   <div className="store-item-unmatched-actions">
