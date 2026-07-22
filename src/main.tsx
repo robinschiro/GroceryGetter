@@ -2908,6 +2908,7 @@ function ShoppingListReview({
           )}
         </div>
         <div className="shopping-source">
+          <span className="shopping-source-label">Used in</span>
           {item.sourceTargets.length ? (
             <span className="shopping-source-links">
               {item.sourceTargets.map((source, index) => (

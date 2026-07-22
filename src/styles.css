@@ -833,6 +833,11 @@ label {
 .shopping-source {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.shopping-source-label {
+  display: none;
 }
 
 .shopping-source-links a {
@@ -1624,6 +1629,34 @@ label {
 
   .store-item-unmatched-actions {
     justify-content: flex-start;
+  }
+
+  .shopping-table {
+    overflow-x: visible;
+  }
+
+  .shopping-row {
+    align-items: start;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .unchecked-ingredients-toggle {
+    min-width: 0;
+  }
+
+  .shopping-source-label {
+    display: block;
+    font-size: 0.7rem !important;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .shopping-source-links {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
   }
 
   .recipe-management-header {
