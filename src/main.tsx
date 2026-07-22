@@ -1253,9 +1253,11 @@ function App() {
             generateMenu={generateMenu}
             saveMenu={saveMenu}
             updateMenuItem={updateMenuItem}
+            editRecipe={(recipeId) => navigate(recipeEditRoute(recipeId))}
             addMeal={addMeal}
             removeMeal={removeMeal}
             updateCustomShoppingListSelection={updateCustomShoppingListSelection}
+            editCustomShoppingList={(listId) => navigate(shoppingListEditRoute(listId))}
             aggregateIngredients={aggregateIngredients}
           />
             <ShoppingListReview
@@ -2587,9 +2589,11 @@ function MenuBuilder({
   generateMenu,
   saveMenu,
   updateMenuItem,
+  editRecipe,
   addMeal,
   removeMeal,
   updateCustomShoppingListSelection,
+  editCustomShoppingList,
   aggregateIngredients
 }: {
   recipes: Recipe[];
@@ -2605,9 +2609,11 @@ function MenuBuilder({
     slot: RecipeCategory,
     recipeId: number | null
   ) => Promise<void>;
+  editRecipe: (recipeId: number) => void;
   addMeal: () => Promise<void>;
   removeMeal: (mealNumber: number) => Promise<void>;
   updateCustomShoppingListSelection: (listId: number, included: boolean) => Promise<void>;
+  editCustomShoppingList: (listId: number) => void;
   aggregateIngredients: () => Promise<void>;
 }) {
   const plannerRecipes = recipes;
@@ -2663,30 +2669,43 @@ function MenuBuilder({
                   (menuItem) => menuItem.mealNumber === mealNumber && menuItem.slot === category.value
                 );
                 return (
-                  <label className={`menu-slot menu-slot-${category.value}`} key={category.value}>
-                    {category.label}
-                    <select
-                      value={item?.recipeId ?? ""}
-                      onChange={(event) =>
-                        item &&
-                        void updateMenuItem(
-                          item.id,
-                          mealNumber,
-                          category.value,
-                          event.target.value === "" ? null : Number(event.target.value)
-                        )
-                      }
-                    >
-                      {category.value !== "entree" ? <option value="">None</option> : null}
-                      {plannerRecipes
-                        .filter((recipe) => recipe.category === category.value)
-                        .map((recipe) => (
-                          <option key={recipe.id} value={recipe.id}>
-                            {recipe.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
+                  <div className={`menu-slot menu-slot-${category.value}`} key={category.value}>
+                    <label htmlFor={`meal-${mealNumber}-${category.value}`}>{category.label}</label>
+                    <div className="planner-selector-row">
+                      <select
+                        id={`meal-${mealNumber}-${category.value}`}
+                        value={item?.recipeId ?? ""}
+                        onChange={(event) =>
+                          item &&
+                          void updateMenuItem(
+                            item.id,
+                            mealNumber,
+                            category.value,
+                            event.target.value === "" ? null : Number(event.target.value)
+                          )
+                        }
+                      >
+                        {category.value !== "entree" ? <option value="">None</option> : null}
+                        {plannerRecipes
+                          .filter((recipe) => recipe.category === category.value)
+                          .map((recipe) => (
+                            <option key={recipe.id} value={recipe.id}>
+                              {recipe.name}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        className="icon-button secondary planner-edit-button"
+                        type="button"
+                        onClick={() => item?.recipeId && editRecipe(item.recipeId)}
+                        disabled={!item?.recipeId}
+                        aria-label={item?.recipeName ? `Edit ${item.recipeName}` : `No ${category.label.toLowerCase()} selected`}
+                        title={item?.recipeName ? `Edit ${item.recipeName}` : `Select a ${category.label.toLowerCase()} to edit`}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -2711,16 +2730,27 @@ function MenuBuilder({
             {customShoppingLists.length ? (
               <div className="custom-list-options">
                 {customShoppingLists.map((list) => (
-                  <label className="toggle-row" key={list.id}>
-                    <input
-                      type="checkbox"
-                      checked={activeMenu.customShoppingListIds.includes(list.id)}
-                      onChange={(event) =>
-                        void updateCustomShoppingListSelection(list.id, event.target.checked)
-                      }
-                    />
-                    <span>{list.name} ({list.items.length})</span>
-                  </label>
+                  <div className="custom-list-option" key={list.id}>
+                    <label className="toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={activeMenu.customShoppingListIds.includes(list.id)}
+                        onChange={(event) =>
+                          void updateCustomShoppingListSelection(list.id, event.target.checked)
+                        }
+                      />
+                      <span>{list.name} ({list.items.length})</span>
+                    </label>
+                    <button
+                      className="icon-button secondary planner-edit-button"
+                      type="button"
+                      onClick={() => editCustomShoppingList(list.id)}
+                      aria-label={`Edit ${list.name}`}
+                      title={`Edit ${list.name}`}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (

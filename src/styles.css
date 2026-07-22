@@ -620,7 +620,20 @@ label {
 }
 
 .menu-slot {
+  display: grid;
+  gap: 6px;
   grid-row: 1;
+}
+
+.planner-selector-row {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+}
+
+.planner-edit-button {
+  min-height: 36px;
 }
 
 .menu-slot-entree {
@@ -669,10 +682,14 @@ label {
   grid-template-columns: 1fr;
 }
 
-.custom-list-options .toggle-row {
+.custom-list-option {
+  align-items: center;
   background: #f3f6f4;
   border: 1px solid #d8dfdb;
   border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 36px;
   padding: 10px;
 }
 
@@ -1450,7 +1467,7 @@ label {
   color: #b8c8c1;
 }
 
-:root[data-theme="dark"] .custom-list-options .toggle-row {
+:root[data-theme="dark"] .custom-list-option {
   background: #1d2621;
   border-color: #33443d;
 }

@@ -8,7 +8,7 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ### Add edit shortcuts to planner recipe and custom-list selectors
 
-- Status: `Idea`
+- Status: `Done`
 - Reported: 2026-07-20
 - Area: Planner
 - Description: Add an edit button beside each recipe dropdown during menu generation and beside each custom shopping list in the planner.
