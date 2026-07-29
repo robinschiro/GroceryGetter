@@ -72,7 +72,8 @@ Phase 4 QFC extraction started on 2026-07-29:
 - Kroger integration now lives in `server/infrastructure/kroger` and receives both its database and `KrogerClient` explicitly; the characterization server constructs it with `FakeKrogerClient`.
 - Database creation/schema/persistence now lives in `server/infrastructure/database`; the process-wide default database and deprecated global query helpers were removed.
 - QFC HTTP calls now live behind `src/features/qfc/api.ts`; settings/OAuth/catalog UI, store-item review UI, and submission-progress UI now live under `src/features/qfc`.
-- QFC router workflow and frontend orchestration state remain to be split into focused modules.
+- QFC settings, preview polling, approval/review synchronization, remembered selections, quantities, removal, and cart-submission state now live in `src/features/qfc/useQfc.ts`.
+- QFC router workflow remains to be split into a focused service, and feature-specific style ownership remains to be completed.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 

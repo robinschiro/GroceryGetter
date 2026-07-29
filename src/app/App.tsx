@@ -1,25 +1,13 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus,
-  Check,
-  ChevronRight,
   Database,
-  ExternalLink,
   ListChecks,
-  LoaderCircle,
   Menu as MenuIcon,
-  Minus,
   Moon,
-  Package,
-  Pencil,
-  Plus,
   RefreshCw,
-  Search,
-  Send,
   Settings,
   Shuffle,
   Sun,
-  Trash2,
   X
 } from "lucide-react";
 import {
@@ -33,18 +21,7 @@ import {
 import type {
   CustomShoppingList,
   DataScope,
-  Menu,
-  MenuItem,
-  QfcCartSkip,
-  QfcStatus,
-  QfcSubmitJob,
-  QfcSubmitProgress,
-  Recipe,
-  RecipeCategory,
-  ShoppingListItem,
-  ShoppingListSourceTarget,
-  StoreItemMatch,
-  StoreItemPreference
+  Recipe
 } from "../../shared/contracts/index.js";
 import { createApiClient } from "../shared/apiClient.js";
 import { listRecipes } from "../features/recipes/api.js";
@@ -57,38 +34,15 @@ import { ShoppingListsPage } from "../features/shoppingLists/ShoppingListsPage.j
 import { MenuBuilder } from "../features/planner/MenuBuilder.js";
 import { ShoppingListReview } from "../features/planner/ShoppingListReview.js";
 import { usePlanner } from "../features/planner/usePlanner.js";
-import { QfcSubmitProgressBar } from "../features/qfc/QfcSubmitProgressBar.js";
 import { StoreSettingsPanel } from "../features/qfc/StoreSettingsPanel.js";
-import {
-  StoreItemReviewPanel,
-  type StoreItemReview
-} from "../features/qfc/StoreItemReviewPanel.js";
-import {
-  deleteStoreItemPreference as deleteStoreItemPreferenceRequest,
-  getQfcSubmitJob,
-  loadQfcSettings,
-  removeStoreItemFromReview as removeStoreItemFromReviewRequest,
-  searchStoreItemsForReview as searchStoreItemsForReviewRequest,
-  selectStoreItem as selectStoreItemRequest,
-  startAddToCart,
-  startStoreItemPreview,
-  updateScopedSetting,
-  updateStoreItemQuantity as updateStoreItemQuantityRequest,
-  type StoreItemReviewRemoval,
-  type StoreItemReviewSearchResult
-} from "../features/qfc/api.js";
-import {
-  updateShoppingListApproval
-} from "../features/planner/api.js";
+import { StoreItemReviewPanel } from "../features/qfc/StoreItemReviewPanel.js";
+import { useQfc } from "../features/qfc/useQfc.js";
 
 type ThemeMode = "light" | "dark";
 
 const categories = recipeCategories;
-const qfcCartUrl = "https://www.qfc.com/cart";
 const themeStorageKey = "grocery-getter-theme";
 const dataScopeStorageKey = "grocery-getter-data-scope";
-
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
   { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
@@ -119,15 +73,7 @@ export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
-  const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
-  const [searchingStoreItemIds, setSearchingStoreItemIds] = useState<Set<number>>(() => new Set());
-  const [preferStoreBrands, setPreferStoreBrands] = useState(true);
-  const [allowRealQfcCartMutation, setAllowRealQfcCartMutation] = useState(true);
-  const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
-  const [qfcSubmitProgress, setQfcSubmitProgress] = useState<QfcSubmitProgress | null>(null);
-  const [storeItemReview, setStoreItemReview] = useState<StoreItemReview | null>(null);
-  const [storeItemReviewMessage, setStoreItemReviewMessage] = useState("");
-  const [storeItemPreferences, setStoreItemPreferences] = useState<StoreItemPreference[]>([]);
+  const invalidateStoreReviewRef = useRef<() => void>(() => undefined);
   const {
     activeMenu,
     addMeal,
@@ -158,11 +104,44 @@ export function App() {
     onSourcesChanged: async () => {
       await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
     },
-    onStoreReviewInvalidated: () => {
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-    }
+    onStoreReviewInvalidated: () => invalidateStoreReviewRef.current()
   });
+  const {
+    addReviewedStoreItemsToQfc,
+    allowRealQfcCartMutation,
+    forgetStoreItemPreference,
+    invalidateStoreReview,
+    loadSettings,
+    openQfcCart,
+    preferStoreBrands,
+    previewStoreItems,
+    qfcStatus,
+    qfcSubmitProgress,
+    removeStoreItemFromReview,
+    reset: resetQfc,
+    savingApprovalItemIds,
+    searchingStoreItemIds,
+    searchStoreItemsForReview,
+    selectStoreItem,
+    storeItemPreferences,
+    storeItemReview,
+    storeItemReviewMessage,
+    updateRealQfcCartPermission,
+    updateShoppingItemApproval,
+    updateStoreBrandPreference,
+    updateStoreItemQuantity
+  } = useQfc({
+    api,
+    menuId: activeMenu?.id ?? null,
+    shoppingList,
+    setShoppingList,
+    dirtyShoppingItemIds,
+    sourceMetadataDirtyItemIds,
+    saveDirtyShoppingItems,
+    loadMenu,
+    setPlannerMessage: setMessage
+  });
+  invalidateStoreReviewRef.current = invalidateStoreReview;
 
   async function loadRecipes() {
     setRecipes(await listRecipes(api));
@@ -170,14 +149,6 @@ export function App() {
 
   async function loadCustomShoppingLists() {
     setCustomShoppingLists(await listShoppingLists(api));
-  }
-
-  async function loadSettings() {
-    const { settings, preferences, status } = await loadQfcSettings(api);
-    setPreferStoreBrands(settings.preferStoreBrands === "true");
-    setAllowRealQfcCartMutation(settings.allowRealQfcCartMutation === "true");
-    setStoreItemPreferences(preferences);
-    setQfcStatus(status);
   }
 
   useEffect(() => {
@@ -217,213 +188,7 @@ export function App() {
     setRecipes([]);
     setCustomShoppingLists([]);
     resetPlanner(next === "sandbox" ? "Sandbox mode is active." : "");
-    setStoreItemReview(null);
-    setStoreItemReviewMessage("");
-  }
-
-  async function updateShoppingItemApproval(itemId: number, approved: boolean) {
-    if (!activeMenu?.id || savingApprovalItemIds.has(itemId)) return;
-    const previousItem = shoppingList.find((item) => item.id === itemId);
-    if (!previousItem) return;
-    const currentReview = storeItemReview;
-
-    setMessage("");
-    setStoreItemReviewMessage("");
-    setShoppingList((current) => current.map((item) => (
-      item.id === itemId ? { ...item, approved: approved ? 1 : 0 } : item
-    )));
-    setSavingApprovalItemIds((current) => new Set(current).add(itemId));
-    if (approved && currentReview) {
-      setSearchingStoreItemIds((current) => new Set(current).add(itemId));
-    }
-
-    try {
-      await updateShoppingListApproval(api, activeMenu.id, itemId, approved);
-
-      if (
-        !approved
-        && currentReview
-        && currentReview.result.items.some((reviewItem) => reviewItem.id === itemId)
-      ) {
-        try {
-          const result = await removeStoreItemFromReviewRequest(api, currentReview.jobId, itemId);
-          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? {
-            ...review,
-            result: {
-              ...review.result,
-              items: result.items,
-              matched: result.matched,
-              skipped: result.skipped
-            }
-          } : review);
-        } catch (err) {
-          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? null : review);
-          setStoreItemReviewMessage(
-            err instanceof Error
-              ? `The ingredient was removed, but the store item review could not be updated: ${err.message}`
-              : "The ingredient was removed, but the store item review could not be updated. Preview store items again."
-          );
-        }
-      }
-
-      if (approved && currentReview) {
-        try {
-          const result = await searchStoreItemsForReviewRequest(
-            api,
-            currentReview.jobId,
-            itemId,
-            previousItem.item || previousItem.text
-          );
-          setStoreItemReview((review) => review?.jobId === currentReview.jobId ? {
-            ...review,
-            result: {
-              ...review.result,
-              items: result.items,
-              matched: result.matched,
-              skipped: result.skipped
-            }
-          } : review);
-          setStoreItemReviewMessage(
-            result.match
-              ? `Added ${previousItem.item || previousItem.text} back to the store item review.`
-              : `Added ${previousItem.item || previousItem.text} back to the review, but no store items were found.`
-          );
-        } catch (err) {
-          setStoreItemReviewMessage(
-            err instanceof Error
-              ? `The ingredient was re-added, but its store item search failed: ${err.message}`
-              : "The ingredient was re-added, but its store item search failed."
-          );
-        }
-      }
-    } catch (err) {
-      setShoppingList((current) => current.map((item) => (
-        item.id === itemId ? { ...item, approved: previousItem.approved } : item
-      )));
-      setMessage(err instanceof Error ? err.message : "Unable to save ingredient approval.");
-    } finally {
-      setSavingApprovalItemIds((current) => {
-        const next = new Set(current);
-        next.delete(itemId);
-        return next;
-      });
-      setSearchingStoreItemIds((current) => {
-        const next = new Set(current);
-        next.delete(itemId);
-        return next;
-      });
-    }
-  }
-
-  async function previewStoreItems() {
-    if (!activeMenu?.id) return;
-    const menuId = activeMenu.id;
-    setMessage("");
-
-    if (sourceMetadataDirtyItemIds.size) {
-      setMessage("Save eligible source changes before matching store items.");
-      return;
-    }
-
-    if (dirtyShoppingItemIds.size) {
-      const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching store items?");
-      if (!shouldSave) {
-        setMessage("Store item matching canceled. Save or discard ingredient changes first.");
-        return;
-      }
-
-      try {
-        setMessage("Saving ingredient changes...");
-        await saveDirtyShoppingItems();
-      } catch (err) {
-        setMessage(err instanceof Error ? err.message : "Unable to save ingredient changes.");
-        return;
-      }
-    }
-
-    setMessage("");
-    setQfcSubmitProgress({
-      phase: "checking",
-      processedItems: 0,
-      totalItems: shoppingList.filter((item) => item.approved).length,
-      message: "Starting store item matching..."
-    });
-
-    try {
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-      const started = await startStoreItemPreview(api, menuId);
-      setQfcSubmitProgress(started.progress);
-
-      let job = started;
-      while (job.status === "running") {
-        await wait(600);
-        job = await getQfcSubmitJob(api, started.id);
-        setQfcSubmitProgress(job.progress);
-      }
-
-      if (job.status === "failed") {
-        throw new Error(job.error ?? "Store item matching failed.");
-      }
-
-      setMessage(job.result?.message ?? job.progress.message);
-      if (job.result) {
-        setStoreItemReview({ jobId: started.id, result: job.result });
-      }
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Store item matching failed.");
-    } finally {
-      setQfcSubmitProgress(null);
-    }
-  }
-
-  async function addReviewedStoreItemsToQfc() {
-    if (!storeItemReview || !activeMenu?.id) return;
-    setMessage("");
-    setStoreItemReviewMessage("");
-    setQfcSubmitProgress({
-      phase: "adding",
-      processedItems: storeItemReview.result.items.length,
-      totalItems: storeItemReview.result.items.length,
-      message: "Adding reviewed store items to your QFC cart..."
-    });
-
-    try {
-      const started = await startAddToCart(api, storeItemReview.jobId);
-      setQfcSubmitProgress(started.progress);
-      let job = started;
-      while (job.status === "running") {
-        await wait(600);
-        job = await getQfcSubmitJob(api, started.id);
-        setQfcSubmitProgress(job.progress);
-      }
-      if (job.status === "failed") {
-        throw new Error(job.error ?? "QFC cart submission failed.");
-      }
-      const confirmation = job.result?.message ?? job.progress.message;
-      setMessage(confirmation);
-      setStoreItemReviewMessage(confirmation);
-      await loadMenu(activeMenu.id);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
-    } finally {
-      setQfcSubmitProgress(null);
-    }
-  }
-
-  function openQfcCart() {
-    window.open(qfcCartUrl, "_blank", "noopener,noreferrer");
-  }
-
-  async function updateStoreBrandPreference(next: boolean) {
-    setPreferStoreBrands(next);
-    setStoreItemReview(null);
-    await updateScopedSetting(api, "preferStoreBrands", next);
-  }
-
-  async function updateRealQfcCartPermission(next: boolean) {
-    setAllowRealQfcCartMutation(next);
-    await updateScopedSetting(api, "allowRealQfcCartMutation", next);
+    resetQfc();
   }
 
   const recipeCounts = useMemo(
@@ -448,121 +213,6 @@ export function App() {
 
   function selectView(view: AppView) {
     navigate(defaultRouteForView(view));
-  }
-
-  async function selectStoreItem(shoppingItemId: number, productId: string, upc: string) {
-    if (!storeItemReview) return;
-    setStoreItemReviewMessage("");
-    try {
-      const result = await selectStoreItemRequest(
-        api,
-        storeItemReview.jobId,
-        shoppingItemId,
-        productId,
-        upc
-      );
-      setStoreItemReview((current) => current ? {
-        ...current,
-        result: {
-          ...current.result,
-          matched: current.result.matched?.map((match) =>
-            match.item.id === shoppingItemId ? result.match : match
-          )
-        }
-      } : current);
-      setStoreItemPreferences((current) => [
-        ...current.filter((preference) =>
-          preference.provider !== result.preference.provider
-          || preference.ingredientKey !== result.preference.ingredientKey
-        ),
-        result.preference
-      ].sort((left, right) => left.ingredientName.localeCompare(right.ingredientName)));
-      setStoreItemReviewMessage(`Remembered ${result.preference.description} for ${result.preference.ingredientName}.`);
-    } catch (err) {
-      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to remember the store item selection.");
-    }
-  }
-
-  async function updateStoreItemQuantity(shoppingItemId: number, cartQuantity: number) {
-    if (!storeItemReview) return;
-    setStoreItemReviewMessage("");
-    try {
-      const result = await updateStoreItemQuantityRequest(
-        api,
-        storeItemReview.jobId,
-        shoppingItemId,
-        cartQuantity
-      );
-      setStoreItemReview((current) => current ? {
-        ...current,
-        result: {
-          ...current.result,
-          matched: current.result.matched?.map((match) =>
-            match.item.id === shoppingItemId ? result.match : match
-          )
-        }
-      } : current);
-    } catch (err) {
-      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to update the cart quantity.");
-      throw err;
-    }
-  }
-
-  async function searchStoreItemsForReview(shoppingItemId: number, term: string) {
-    if (!storeItemReview) {
-      throw new Error("Preview store items before searching for more choices.");
-    }
-
-    const result = await searchStoreItemsForReviewRequest(
-      api,
-      storeItemReview.jobId,
-      shoppingItemId,
-      term
-    );
-    setStoreItemReview((current) => current ? {
-      ...current,
-      result: {
-        ...current.result,
-        items: result.items,
-        matched: result.matched,
-        skipped: result.skipped
-      }
-    } : current);
-    return result;
-  }
-
-  async function removeStoreItemFromReview(item: ShoppingListItem) {
-    if (!storeItemReview) {
-      setStoreItemReviewMessage("Preview store items before removing an ingredient.");
-      return false;
-    }
-
-    setStoreItemReviewMessage("");
-    try {
-      const result = await removeStoreItemFromReviewRequest(api, storeItemReview.jobId, item.id);
-      setStoreItemReview((current) => current ? {
-        ...current,
-        result: {
-          ...current.result,
-          items: result.items,
-          matched: result.matched,
-          skipped: result.skipped
-        }
-      } : current);
-      setStoreItemReviewMessage(`Removed ${item.item || item.text} from this review.`);
-      return true;
-    } catch (err) {
-      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to remove the ingredient from this review.");
-      return false;
-    }
-  }
-
-  async function forgetStoreItemPreference(provider: string, ingredientKey: string) {
-    await deleteStoreItemPreferenceRequest(api, provider, ingredientKey);
-    setStoreItemPreferences((current) => current.filter((preference) =>
-      preference.provider !== provider || preference.ingredientKey !== ingredientKey
-    ));
-    setStoreItemReview(null);
   }
 
   return (
