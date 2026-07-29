@@ -10,7 +10,11 @@ test.beforeEach(async ({ request }) => {
 test("test startup refuses the production database and test controls expose only the intended method", async ({
   request
 }) => {
-  const environment = { ...process.env, GROCERY_GETTER_TEST_MODE: "1", PORT: "5195" };
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    GROCERY_GETTER_TEST_MODE: "1",
+    PORT: "5195"
+  };
   delete environment.GROCERY_GETTER_DB_PATH;
   const result = spawnSync(
     process.execPath,
