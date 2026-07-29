@@ -54,7 +54,8 @@ Phase 4 planner extraction started on 2026-07-29:
 - Menu creation/editing and generated shopping-list HTTP calls now live behind `src/features/planner/api.ts`.
 - Shopping-list quantity parsing/formatting and ingredient normalization now live in the planner domain module.
 - Generated shopping-list row mapping and source-target queries now live in the explicitly injected planner repository.
-- Planner page/state/style ownership and the server planner service/repository/router split remain to be completed.
+- Menu preview, creation, retrieval, meal editing, recipe replacement, and reusable-list selection now run through a thin planner router, workflow service, and explicitly injected repository.
+- Planner page/state/style ownership and the remaining generated-shopping-list route/service split remain to be completed.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
