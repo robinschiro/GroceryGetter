@@ -64,6 +64,12 @@ import {
   setRecipeMenuGeneration,
   updateRecipe as updateRecipeRequest
 } from "../features/recipes/api.js";
+import {
+  createShoppingList as createShoppingListRequest,
+  deleteShoppingList as deleteShoppingListRequest,
+  listShoppingLists,
+  updateShoppingList as updateShoppingListRequest
+} from "../features/shoppingLists/api.js";
 
 type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
@@ -186,7 +192,7 @@ export function App() {
   }
 
   async function loadCustomShoppingLists() {
-    setCustomShoppingLists(await api<CustomShoppingList[]>("/api/custom-shopping-lists"));
+    setCustomShoppingLists(await listShoppingLists(api));
   }
 
   async function loadSettings() {
@@ -1445,26 +1451,20 @@ function ShoppingListsAdmin({
   const editingList = lists.find((list) => list.id === editingListId) ?? null;
 
   async function createList(payload: CustomShoppingListFormPayload) {
-    const createdList = await api<CustomShoppingList>("/api/custom-shopping-lists", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    const createdList = await createShoppingListRequest(api, payload);
     await onSaved();
     return createdList;
   }
 
   async function updateList(payload: CustomShoppingListFormPayload) {
     if (!editingList) return;
-    await api(`/api/custom-shopping-lists/${editingList.id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload)
-    });
+    await updateShoppingListRequest(api, editingList.id, payload);
     await onSaved();
   }
 
   async function deleteList() {
     if (!editingList) return;
-    await api(`/api/custom-shopping-lists/${editingList.id}`, { method: "DELETE" });
+    await deleteShoppingListRequest(api, editingList.id);
     await onSaved();
     onExitEdit();
   }

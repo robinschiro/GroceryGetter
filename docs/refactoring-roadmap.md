@@ -42,6 +42,13 @@ Phase 4 recipe extraction started on 2026-07-29:
 - The superseded recipe handlers, validation, and row mapping were removed from `server/app.ts`.
 - Recipe page/component and style ownership remain to be moved before the recipe slice is complete.
 
+Phase 4 reusable shopping-list extraction started on 2026-07-29:
+
+- Reusable shopping-list HTTP calls now live behind `src/features/shoppingLists/api.ts`.
+- Reusable shopping-list routes, validation/workflow behavior, and persistence are separated into a feature router, service, and explicitly injected repository.
+- The superseded shopping-list handlers, validation, item replacement, row mapping, and text helper were removed from `server/app.ts`.
+- Shopping-list page/component and style ownership remain to be moved before the slice is complete.
+
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
 Target organization:

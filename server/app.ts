@@ -15,11 +15,10 @@ import type { QfcService } from "./qfcAdapter.js";
 import { createRecipeRepository } from "./features/recipes/recipeRepository.js";
 import { createRecipeRouter } from "./features/recipes/recipeRouter.js";
 import { createRecipeService } from "./features/recipes/recipeService.js";
-import type {
-  CustomShoppingList,
-  CustomShoppingListInput,
-  DataScope
-} from "./types.js";
+import { createShoppingListRepository } from "./features/shoppingLists/shoppingListRepository.js";
+import { createShoppingListRouter } from "./features/shoppingLists/shoppingListRouter.js";
+import { createShoppingListService } from "./features/shoppingLists/shoppingListService.js";
+import type { DataScope } from "./types.js";
 
 type TestSeedIngredient = {
   text: string;
@@ -184,6 +183,10 @@ export function createApp({
   app.use(
     "/api/recipes",
     createRecipeRouter(createRecipeService(createRecipeRepository(database)))
+  );
+  app.use(
+    "/api/custom-shopping-lists",
+    createShoppingListRouter(createShoppingListService(createShoppingListRepository(database)))
   );
 
 type QfcSubmitJob = {
@@ -376,103 +379,6 @@ function getMenu(menuId: number, dataScope: DataScope) {
   return { ...menu, items, customShoppingListIds };
 }
 
-function getCustomShoppingList(id: number, dataScope: DataScope): CustomShoppingList | null {
-  const list = queryOne<{
-    id: number;
-    name: string;
-    dataScope: DataScope;
-    includeInMenuByDefault: number;
-  }>(
-    `SELECT
-      id,
-      name,
-      data_scope AS dataScope,
-      include_in_menu_by_default AS includeInMenuByDefault
-    FROM custom_shopping_lists
-    WHERE id = ? AND data_scope = ?`,
-    [id, dataScope]
-  );
-  if (!list) {
-    return null;
-  }
-
-  const items = queryAll(
-    `SELECT
-      id,
-      custom_shopping_list_id AS customShoppingListId,
-      text,
-      quantity,
-      unit,
-      item,
-      sort_order AS sortOrder
-    FROM custom_shopping_list_items
-    WHERE custom_shopping_list_id = ?
-    ORDER BY sort_order, id`,
-    [id]
-  ) as CustomShoppingList["items"];
-
-  return {
-    ...list,
-    includeInMenuByDefault: Boolean(list.includeInMenuByDefault),
-    items
-  };
-}
-
-function validateCustomShoppingListInput(input: CustomShoppingListInput) {
-  if (!input.name?.trim()) {
-    throw new Error("Shopping list name is required.");
-  }
-  if (!Array.isArray(input.items) || input.items.length === 0) {
-    throw new Error("At least one shopping-list item is required.");
-  }
-  if (input.items.some((item) => !item.item?.trim())) {
-    throw new Error("Shopping-list items must include an item name.");
-  }
-}
-
-function replaceCustomShoppingListItems(listId: number, items: CustomShoppingListInput["items"]) {
-  const existingIds = new Set(
-    queryAll<{ id: number }>(
-      "SELECT id FROM custom_shopping_list_items WHERE custom_shopping_list_id = ?",
-      [listId]
-    ).map((row) => row.id)
-  );
-  const retainedIds = new Set<number>();
-
-  items.forEach((input, index) => {
-    const item = input.item.trim();
-    const quantity = input.quantity?.trim() ?? "";
-    const unit = input.unit?.trim() ?? "";
-    const text = input.text?.trim() || buildIngredientText(quantity, unit, item, item);
-    const itemId = Number(input.id);
-    if (Number.isInteger(itemId) && existingIds.has(itemId)) {
-      run(
-        `UPDATE custom_shopping_list_items
-        SET text = ?, quantity = ?, unit = ?, item = ?, sort_order = ?
-        WHERE id = ? AND custom_shopping_list_id = ?`,
-        [text, quantity, unit, item, index, itemId, listId]
-      );
-      retainedIds.add(itemId);
-    } else {
-      retainedIds.add(insert(
-        `INSERT INTO custom_shopping_list_items
-          (custom_shopping_list_id, text, quantity, unit, item, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?)`,
-        [listId, text, quantity, unit, item, index]
-      ));
-    }
-  });
-
-  for (const existingId of existingIds) {
-    if (!retainedIds.has(existingId)) {
-      run(
-        "DELETE FROM custom_shopping_list_items WHERE id = ? AND custom_shopping_list_id = ?",
-        [existingId, listId]
-      );
-    }
-  }
-}
-
 function parseQuantity(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -511,11 +417,6 @@ function formatQuantity(value: number) {
 
   if (match) return whole > 0 ? `${whole} ${match[1]}` : match[1];
   return Number(value.toFixed(2)).toString();
-}
-
-function buildIngredientText(quantity: string, unit: string, item: string, fallback: string) {
-  const parts = [quantity, unit, item].map((part) => part.trim()).filter(Boolean);
-  return parts.length ? parts.join(" ") : fallback;
 }
 
 const irregularIngredientSingulars: Record<string, string> = {
@@ -682,77 +583,6 @@ function getShoppingListItems(menuId: number, dataScope: DataScope) {
     ]
   }));
 }
-
-app.get("/api/custom-shopping-lists", (_req, res) => {
-  const dataScope = requestScope(res);
-  const lists = queryAll<{ id: number }>(
-    "SELECT id FROM custom_shopping_lists WHERE data_scope = ? ORDER BY name COLLATE NOCASE, id",
-    [dataScope]
-  );
-  res.json(lists.map((list) => getCustomShoppingList(list.id, dataScope)).filter(Boolean));
-});
-
-app.post("/api/custom-shopping-lists", (req, res) => {
-  try {
-    const dataScope = requestScope(res);
-    const input = req.body as CustomShoppingListInput;
-    validateCustomShoppingListInput(input);
-    const listId = transaction(() => {
-      const id = insert(
-        `INSERT INTO custom_shopping_lists (name, data_scope, include_in_menu_by_default)
-        VALUES (?, ?, ?)`,
-        [input.name.trim(), dataScope, input.includeInMenuByDefault ? 1 : 0]
-      );
-      replaceCustomShoppingListItems(id, input.items);
-      return id;
-    });
-    res.status(201).json(getCustomShoppingList(listId, dataScope));
-  } catch (error) {
-    res.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to create the shopping list."
-    });
-  }
-});
-
-app.put("/api/custom-shopping-lists/:id", (req, res) => {
-  const dataScope = requestScope(res);
-  const listId = Number(req.params.id);
-  if (!Number.isInteger(listId) || !getCustomShoppingList(listId, dataScope)) {
-    res.status(404).json({ error: "Shopping list not found." });
-    return;
-  }
-
-  try {
-    const input = req.body as CustomShoppingListInput;
-    validateCustomShoppingListInput(input);
-    transaction(() => {
-      run(
-        `UPDATE custom_shopping_lists
-        SET name = ?, include_in_menu_by_default = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`,
-        [input.name.trim(), input.includeInMenuByDefault ? 1 : 0, listId]
-      );
-      replaceCustomShoppingListItems(listId, input.items);
-    });
-    res.json(getCustomShoppingList(listId, dataScope));
-  } catch (error) {
-    res.status(400).json({
-      error: error instanceof Error ? error.message : "Unable to update the shopping list."
-    });
-  }
-});
-
-app.delete("/api/custom-shopping-lists/:id", (req, res) => {
-  const dataScope = requestScope(res);
-  const listId = Number(req.params.id);
-  if (!Number.isInteger(listId) || !getCustomShoppingList(listId, dataScope)) {
-    res.status(404).json({ error: "Shopping list not found." });
-    return;
-  }
-  run("DELETE FROM custom_shopping_lists WHERE id = ?", [listId]);
-  saveDb();
-  res.json({ ok: true });
-});
 
 app.get("/api/settings", (_req, res) => {
   const settings = queryAll(
