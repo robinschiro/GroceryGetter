@@ -12,12 +12,13 @@ import {
 } from "./db.js";
 import type { CartSubmissionProgress, CartSubmissionResult } from "./qfcAdapter.js";
 import type { QfcService } from "./qfcAdapter.js";
+import { createRecipeRepository } from "./features/recipes/recipeRepository.js";
+import { createRecipeRouter } from "./features/recipes/recipeRouter.js";
+import { createRecipeService } from "./features/recipes/recipeService.js";
 import type {
   CustomShoppingList,
   CustomShoppingListInput,
-  DataScope,
-  Recipe,
-  RecipeInput
+  DataScope
 } from "./types.js";
 
 type TestSeedIngredient = {
@@ -180,6 +181,11 @@ export function createApp({
     });
   }
 
+  app.use(
+    "/api/recipes",
+    createRecipeRouter(createRecipeService(createRecipeRepository(database)))
+  );
+
 type QfcSubmitJob = {
   id: string;
   kind: "preview" | "add";
@@ -252,54 +258,6 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-type RecipeRow = Omit<Recipe, "ingredients">;
-
-function getRecipe(id: number, dataScope: DataScope): Recipe | null {
-  const recipe = queryOne(
-    `SELECT
-      id,
-      name,
-      category,
-      include_in_menu_generation AS includeInMenuGeneration,
-      data_scope AS dataScope,
-      servings,
-      notes,
-      source_path AS sourcePath,
-      source_hash AS sourceHash,
-      sync_status AS syncStatus
-    FROM recipes
-    WHERE id = ? AND data_scope = ?`,
-    [id, dataScope]
-  ) as
-    | RecipeRow
-    | null;
-
-  if (!recipe) {
-    return null;
-  }
-
-  const ingredients = queryAll(
-      `SELECT
-        id,
-        recipe_id AS recipeId,
-        text,
-        quantity,
-        unit,
-        item,
-        sort_order AS sortOrder
-      FROM recipe_ingredients
-      WHERE recipe_id = ?
-      ORDER BY sort_order, id`,
-      [id]
-    ) as Recipe["ingredients"];
-
-  return {
-    ...recipe,
-    includeInMenuGeneration: Boolean(recipe.includeInMenuGeneration),
-    ingredients
-  };
 }
 
 function shuffle<T>(items: T[]) {
@@ -515,24 +473,6 @@ function replaceCustomShoppingListItems(listId: number, items: CustomShoppingLis
   }
 }
 
-function validateRecipeInput(input: RecipeInput) {
-  if (!input.name?.trim()) {
-    throw new Error("Recipe name is required.");
-  }
-  if (!["entree", "vegetable_side", "starch_side"].includes(input.category)) {
-    throw new Error("Recipe category is invalid.");
-  }
-  if (
-    input.includeInMenuGeneration !== undefined
-    && typeof input.includeInMenuGeneration !== "boolean"
-  ) {
-    throw new Error("Recipe menu-generation selection is invalid.");
-  }
-  if (!Array.isArray(input.ingredients) || input.ingredients.length === 0) {
-    throw new Error("At least one ingredient is required.");
-  }
-}
-
 function parseQuantity(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -742,203 +682,6 @@ function getShoppingListItems(menuId: number, dataScope: DataScope) {
     ]
   }));
 }
-
-app.get("/api/recipes", (_req, res) => {
-  const dataScope = requestScope(res);
-  const rows = queryAll<{ id: number }>(
-    `SELECT id
-    FROM recipes
-    WHERE data_scope = ?
-    ORDER BY category, name`,
-    [dataScope]
-  );
-
-  res.json(rows.map((row) => getRecipe(row.id, dataScope)));
-});
-
-app.post("/api/recipes", (req, res) => {
-  try {
-    const dataScope = requestScope(res);
-    const input = req.body as RecipeInput;
-    validateRecipeInput(input);
-
-    const createdRecipe = transaction(() => {
-      const recipeId = insert(
-        `INSERT INTO recipes
-          (name, category, data_scope, include_in_menu_generation, servings, notes, source_path, source_hash, sync_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          input.name.trim(),
-          input.category,
-          dataScope,
-          input.includeInMenuGeneration ? 1 : 0,
-          input.servings ?? null,
-          input.notes?.trim() ?? "",
-          input.sourcePath?.trim() || null,
-          input.sourceHash?.trim() || null,
-          input.syncStatus?.trim() || "manual"
-        ]
-      );
-
-      input.ingredients.forEach((ingredient, index) => {
-        run(
-          `INSERT INTO recipe_ingredients
-            (recipe_id, text, quantity, unit, item, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            recipeId,
-          ingredient.text.trim(),
-          ingredient.quantity?.trim() ?? "",
-          ingredient.unit?.trim() ?? "",
-          ingredient.item.trim(),
-          index
-          ]
-        );
-      });
-
-      return getRecipe(recipeId, dataScope);
-    });
-
-    res.status(201).json(createdRecipe);
-  } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "Invalid recipe." });
-  }
-});
-
-app.put("/api/recipes/:id", (req, res) => {
-  try {
-    const dataScope = requestScope(res);
-    const recipeId = Number(req.params.id);
-    if (!Number.isInteger(recipeId)) {
-      res.status(400).json({ error: "Recipe id is invalid." });
-      return;
-    }
-
-    const existingRecipe = getRecipe(recipeId, dataScope);
-    if (!existingRecipe) {
-      res.status(404).json({ error: "Recipe not found." });
-      return;
-    }
-
-    const input = req.body as RecipeInput;
-    validateRecipeInput(input);
-
-    const updatedRecipe = transaction(() => {
-      run(
-        `UPDATE recipes
-        SET
-          name = ?,
-          category = ?,
-          include_in_menu_generation = ?,
-          servings = ?,
-          notes = ?,
-          source_path = ?,
-          source_hash = ?,
-          sync_status = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`,
-        [
-          input.name.trim(),
-          input.category,
-          (input.includeInMenuGeneration ?? existingRecipe.includeInMenuGeneration) ? 1 : 0,
-          input.servings ?? null,
-          input.notes?.trim() ?? "",
-          input.sourcePath?.trim() || null,
-          input.sourceHash?.trim() || null,
-          input.syncStatus?.trim() || "manual",
-          recipeId
-        ]
-      );
-      run("DELETE FROM recipe_ingredients WHERE recipe_id = ?", [recipeId]);
-
-      input.ingredients.forEach((ingredient, index) => {
-        run(
-          `INSERT INTO recipe_ingredients
-            (recipe_id, text, quantity, unit, item, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            recipeId,
-            ingredient.text.trim(),
-            ingredient.quantity?.trim() ?? "",
-            ingredient.unit?.trim() ?? "",
-            ingredient.item.trim(),
-            index
-          ]
-        );
-      });
-
-      return getRecipe(recipeId, dataScope);
-    });
-
-    res.json(updatedRecipe);
-  } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "Invalid recipe." });
-  }
-});
-
-app.patch("/api/recipes/:id/menu-generation", (req, res) => {
-  try {
-    const dataScope = requestScope(res);
-    const recipeId = Number(req.params.id);
-    if (!Number.isInteger(recipeId)) {
-      res.status(400).json({ error: "Recipe id is invalid." });
-      return;
-    }
-
-    const existingRecipe = getRecipe(recipeId, dataScope);
-    if (!existingRecipe) {
-      res.status(404).json({ error: "Recipe not found." });
-      return;
-    }
-
-    if (typeof req.body.includeInMenuGeneration !== "boolean") {
-      res.status(400).json({ error: "Recipe menu-generation selection is invalid." });
-      return;
-    }
-
-    const updatedRecipe = transaction(() => {
-      run(
-        `UPDATE recipes
-        SET include_in_menu_generation = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`,
-        [req.body.includeInMenuGeneration ? 1 : 0, recipeId]
-      );
-      return getRecipe(recipeId, dataScope);
-    });
-
-    res.json(updatedRecipe);
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Unable to update recipe menu generation."
-    });
-  }
-});
-
-app.delete("/api/recipes/:id", (req, res) => {
-  try {
-    const dataScope = requestScope(res);
-    const recipeId = Number(req.params.id);
-    if (!Number.isInteger(recipeId)) {
-      res.status(400).json({ error: "Recipe id is invalid." });
-      return;
-    }
-
-    const existingRecipe = getRecipe(recipeId, dataScope);
-    if (!existingRecipe) {
-      res.status(404).json({ error: "Recipe not found." });
-      return;
-    }
-
-    transaction(() => {
-      run("UPDATE menu_items SET recipe_id = NULL WHERE recipe_id = ?", [recipeId]);
-      run("DELETE FROM recipes WHERE id = ?", [recipeId]);
-    });
-
-    res.json({ id: recipeId });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Unable to delete recipe." });
-  }
-});
 
 app.get("/api/custom-shopping-lists", (_req, res) => {
   const dataScope = requestScope(res);

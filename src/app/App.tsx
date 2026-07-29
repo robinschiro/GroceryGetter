@@ -57,6 +57,13 @@ import type {
   StoreItemPreference
 } from "../../shared/contracts/index.js";
 import { createApiClient, type ApiRequest } from "../shared/apiClient.js";
+import {
+  createRecipe as createRecipeRequest,
+  deleteRecipe as deleteRecipeRequest,
+  listRecipes,
+  setRecipeMenuGeneration,
+  updateRecipe as updateRecipeRequest
+} from "../features/recipes/api.js";
 
 type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
@@ -175,7 +182,7 @@ export function App() {
   const [storeItemPreferences, setStoreItemPreferences] = useState<StoreItemPreference[]>([]);
 
   async function loadRecipes() {
-    setRecipes((await api<Array<Recipe | null>>("/api/recipes")).filter(Boolean) as Recipe[]);
+    setRecipes(await listRecipes(api));
   }
 
   async function loadCustomShoppingLists() {
@@ -1813,10 +1820,7 @@ function RecipeAdmin({
   const editingRecipe = recipes.find((recipe) => recipe.id === editingRecipeId) ?? null;
 
   async function createRecipe(payload: RecipeFormPayload) {
-    const createdRecipe = await api<Recipe>("/api/recipes", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    const createdRecipe = await createRecipeRequest(api, payload);
     await onSaved();
     return createdRecipe;
   }
@@ -1826,10 +1830,7 @@ function RecipeAdmin({
       return;
     }
 
-    await api(`/api/recipes/${editingRecipe.id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload)
-    });
+    await updateRecipeRequest(api, editingRecipe.id, payload);
     await onSaved();
   }
 
@@ -1838,18 +1839,13 @@ function RecipeAdmin({
       return;
     }
 
-    await api(`/api/recipes/${editingRecipe.id}`, { method: "DELETE" });
+    await deleteRecipeRequest(api, editingRecipe.id);
     await onSaved();
     onExitEdit();
   }
 
   async function toggleRecipeGeneration(recipe: Recipe) {
-    await api(`/api/recipes/${recipe.id}/menu-generation`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        includeInMenuGeneration: !recipe.includeInMenuGeneration
-      })
-    });
+    await setRecipeMenuGeneration(api, recipe.id, !recipe.includeInMenuGeneration);
     await onSaved();
   }
 

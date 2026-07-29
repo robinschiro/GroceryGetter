@@ -35,6 +35,13 @@ Phase 3 foundation extraction started on 2026-07-29:
 - The existing ingredient-add focus behavior was made conditional so its deferred focus cannot steal focus from a user's next field. The recipe characterization journey covers this behavior and passed three consecutive runs after the cleanup.
 - Feature UI/state and feature CSS remain in the application module until each phase 4 vertical slice moves them to their final owner.
 
+Phase 4 recipe extraction started on 2026-07-29:
+
+- Recipe HTTP calls now live behind `src/features/recipes/api.ts`.
+- Recipe routes are mounted from a feature router with validation/workflow behavior in a service and all recipe SQL/row mapping in an explicitly injected repository.
+- The superseded recipe handlers, validation, and row mapping were removed from `server/app.ts`.
+- Recipe page/component and style ownership remain to be moved before the recipe slice is complete.
+
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
 Target organization:
