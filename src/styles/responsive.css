@@ -1,0 +1,161 @@
+@media (max-width: 1100px) {
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-block,
+  .form-grid,
+  .qfc-grid,
+  .qfc-tools,
+  .ingredient-row {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-heading {
+    align-items: start;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .menu-slot {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .store-item-match-row {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .store-item-match-arrow {
+    display: none;
+  }
+
+  .tool-row {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-controls {
+    grid-template-columns: minmax(0, 120px) minmax(0, 180px);
+  }
+
+  .menu-controls button {
+    grid-column: 1 / -1;
+  }
+
+  .wide-field {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace {
+    padding: 16px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .topbar-button-row {
+    order: 1;
+  }
+
+  .data-scope-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 4px;
+    order: 2;
+  }
+
+  .data-scope-control span {
+    text-align: right;
+  }
+
+  .topbar h2 {
+    font-size: 1.3rem;
+  }
+
+  .view-tabs,
+  .recipe-count-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .store-item-match-row {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .store-item-match-arrow {
+    display: none;
+  }
+
+  .store-item-unmatched-row {
+    grid-template-columns: 1fr;
+  }
+
+  .store-item-unmatched-actions {
+    justify-content: flex-start;
+  }
+
+  .shopping-table {
+    overflow-x: visible;
+  }
+
+  .shopping-row {
+    align-items: start;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .unchecked-ingredients-toggle {
+    min-width: 0;
+  }
+
+  .shopping-source-label {
+    display: block;
+    font-size: 0.7rem !important;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .shopping-source-links {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .recipe-management-header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .recipe-management-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-management-item {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-management-meta {
+    justify-content: flex-start;
+  }
+
+  .edit-heading {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .pagination-controls {
+    justify-content: space-between;
+  }
+}

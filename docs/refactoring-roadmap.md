@@ -41,7 +41,7 @@ Phase 4 recipe extraction started on 2026-07-29:
 - Recipe routes are mounted from a feature router with validation/workflow behavior in a service and all recipe SQL/row mapping in an explicitly injected repository.
 - The superseded recipe handlers, validation, and row mapping were removed from `server/app.ts`.
 - Recipe form state, mutations, validation display, management filtering, pagination, and generation toggles now live in `src/features/recipes/RecipesPage.tsx`; the superseded application-shell components were removed.
-- Recipe-specific style ownership remains to be moved before the recipe slice is complete.
+- Recipe-specific rules now live in `src/features/recipes/styles.css`.
 
 Phase 4 reusable shopping-list extraction started on 2026-07-29:
 
@@ -49,7 +49,7 @@ Phase 4 reusable shopping-list extraction started on 2026-07-29:
 - Reusable shopping-list routes, validation/workflow behavior, and persistence are separated into a feature router, service, and explicitly injected repository.
 - The superseded shopping-list handlers, validation, item replacement, row mapping, and text helper were removed from `server/app.ts`.
 - Reusable-list create/edit/delete state, validation display, item ordering, default inclusion, and management UI now live in `src/features/shoppingLists/ShoppingListsPage.tsx`; the superseded shell components were removed.
-- Shopping-list-specific style ownership remains to be moved before the slice is complete.
+- Reusable-list-specific rules now live in `src/features/shoppingLists/styles.css`.
 
 Phase 4 planner extraction started on 2026-07-29:
 
@@ -61,7 +61,7 @@ Phase 4 planner extraction started on 2026-07-29:
 - The superseded planner and generated-shopping-list handlers and SQL were removed from `server/app.ts`.
 - Menu-builder and generated-list review UI now live under `src/features/planner`; shared QFC submission progress presentation lives under `src/features/qfc`.
 - Menu and generated-list lifecycle state now lives in `src/features/planner/usePlanner.ts`; the shell retains only the cross-feature approval/store-review coordination that will move with the QFC slice.
-- Planner page composition and planner-specific style ownership remain to be completed.
+- Planner page composition remains to be completed; planner-specific rules now live in `src/features/planner/styles.css`.
 
 Phase 4 QFC extraction started on 2026-07-29:
 
@@ -73,7 +73,8 @@ Phase 4 QFC extraction started on 2026-07-29:
 - Database creation/schema/persistence now lives in `server/infrastructure/database`; the process-wide default database and deprecated global query helpers were removed.
 - QFC HTTP calls now live behind `src/features/qfc/api.ts`; settings/OAuth/catalog UI, store-item review UI, and submission-progress UI now live under `src/features/qfc`.
 - QFC settings, preview polling, approval/review synchronization, remembered selections, quantities, removal, and cart-submission state now live in `src/features/qfc/useQfc.ts`.
-- QFC router workflow remains to be split into a focused service, and feature-specific style ownership remains to be completed.
+- QFC-specific rules now live in `src/features/qfc/styles.css`; base, shared-form, theme, responsive, and application-shell rules have explicit cross-cutting owners.
+- QFC router workflow remains to be split into a focused service.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
