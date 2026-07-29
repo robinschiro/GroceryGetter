@@ -18,6 +18,12 @@ import { createRecipeService } from "./features/recipes/recipeService.js";
 import { createShoppingListRepository } from "./features/shoppingLists/shoppingListRepository.js";
 import { createShoppingListRouter } from "./features/shoppingLists/shoppingListRouter.js";
 import { createShoppingListService } from "./features/shoppingLists/shoppingListService.js";
+import {
+  formatQuantity,
+  normalizeAggregateItem,
+  parseQuantity
+} from "./features/planner/shoppingListDomain.js";
+import { createPlannerRepository } from "./features/planner/plannerRepository.js";
 import type { DataScope } from "./types.js";
 
 type TestSeedIngredient = {
@@ -154,6 +160,7 @@ export function createApp({
     searchStoreItems,
     setScopedSetting
   } = qfcService;
+  const plannerRepository = createPlannerRepository(database);
 
   const app = express();
   app.use(express.json({ limit: "1mb" }));
@@ -379,209 +386,8 @@ function getMenu(menuId: number, dataScope: DataScope) {
   return { ...menu, items, customShoppingListIds };
 }
 
-function parseQuantity(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 2) {
-    const whole = Number(parts[0]);
-    const fraction = parseQuantity(parts[1]);
-    if (Number.isFinite(whole) && fraction !== null) return whole + fraction;
-  }
-
-  if (trimmed.includes("/")) {
-    const [numerator, denominator] = trimmed.split("/").map(Number);
-    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
-      return numerator / denominator;
-    }
-  }
-
-  const numeric = Number(trimmed);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function formatQuantity(value: number) {
-  if (Number.isInteger(value)) return String(value);
-
-  const commonFractions = [
-    [0.25, "1/4"],
-    [0.33, "1/3"],
-    [0.5, "1/2"],
-    [0.67, "2/3"],
-    [0.75, "3/4"]
-  ] as const;
-  const whole = Math.floor(value);
-  const remainder = value - whole;
-  const match = commonFractions.find(([decimal]) => Math.abs(remainder - decimal) < 0.01);
-
-  if (match) return whole > 0 ? `${whole} ${match[1]}` : match[1];
-  return Number(value.toFixed(2)).toString();
-}
-
-const irregularIngredientSingulars: Record<string, string> = {
-  berries: "berry",
-  brownies: "brownie",
-  cookies: "cookie",
-  halves: "half",
-  knives: "knife",
-  leaves: "leaf",
-  loaves: "loaf",
-  pies: "pie",
-  potatoes: "potato",
-  smoothies: "smoothie",
-  tomatoes: "tomato",
-  veggies: "veggie"
-};
-
-const ingredientWordsEndingInS = new Set([
-  "asparagus",
-  "couscous",
-  "hummus",
-  "molasses"
-]);
-
-function singularizeIngredientWord(word: string) {
-  const irregular = irregularIngredientSingulars[word];
-  if (irregular) return irregular;
-  if (ingredientWordsEndingInS.has(word)) return word;
-  if (word.endsWith("oes") && word.length > 4) return word.slice(0, -2);
-  if (/(?:ches|shes|sses|xes|zes)$/.test(word)) return word.slice(0, -2);
-  if (word.endsWith("ies") && word.length > 4) {
-    return `${word.slice(0, -3)}y`;
-  }
-  if (word.endsWith("s") && !/(?:ss|us|is|ous)$/.test(word)) return word.slice(0, -1);
-  return word;
-}
-
-function normalizeAggregateItem(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-  const [name, ...qualifiers] = normalized.split(",");
-  const singularName = name.replace(/[a-z]+(?=[^a-z]*$)/, (word) => singularizeIngredientWord(word));
-  return [singularName, ...qualifiers].join(",");
-}
-
 function getShoppingListItems(menuId: number, dataScope: DataScope) {
-  const items = queryAll<{
-    id: number;
-    text: string;
-    quantity: string;
-    unit: string;
-    item: string;
-    sourceNames: string;
-    approved: number;
-    sourceOccurrenceCount: number;
-    canPersistToSource: number;
-  }>(
-    `SELECT
-      menu_shopping_list_items.id,
-      menu_shopping_list_items.text,
-      menu_shopping_list_items.quantity,
-      menu_shopping_list_items.unit,
-      menu_shopping_list_items.item,
-      menu_shopping_list_items.source_names AS sourceNames,
-      menu_shopping_list_items.approved,
-      (
-        SELECT COUNT(*)
-        FROM menu_shopping_list_item_recipe_sources
-        JOIN menu_items
-          ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
-          AND menu_items.menu_id = menu_shopping_list_items.menu_id
-        JOIN recipe_ingredients
-          ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
-          AND recipe_ingredients.recipe_id = menu_items.recipe_id
-        WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = menu_shopping_list_items.id
-      ) + (
-        SELECT COUNT(*)
-        FROM menu_shopping_list_item_custom_sources
-        JOIN custom_shopping_list_items
-          ON custom_shopping_list_items.id =
-            menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
-        WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
-          menu_shopping_list_items.id
-      ) AS sourceOccurrenceCount,
-      CASE WHEN (
-        SELECT COUNT(*)
-        FROM menu_shopping_list_item_recipe_sources
-        JOIN menu_items
-          ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
-          AND menu_items.menu_id = menu_shopping_list_items.menu_id
-        JOIN recipe_ingredients
-          ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
-          AND recipe_ingredients.recipe_id = menu_items.recipe_id
-        WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = menu_shopping_list_items.id
-      ) + (
-        SELECT COUNT(*)
-        FROM menu_shopping_list_item_custom_sources
-        JOIN custom_shopping_list_items
-          ON custom_shopping_list_items.id =
-            menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
-        WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
-          menu_shopping_list_items.id
-      ) = 1 THEN 1 ELSE 0 END AS canPersistToSource
-    FROM menu_shopping_list_items
-    JOIN menus ON menus.id = menu_shopping_list_items.menu_id
-    WHERE menu_shopping_list_items.menu_id = ? AND menus.data_scope = ?
-    ORDER BY menu_shopping_list_items.sort_order, menu_shopping_list_items.id`,
-    [menuId, dataScope]
-  );
-  const recipeSources = queryAll<{
-    shoppingListItemId: number;
-    id: number;
-    name: string;
-  }>(
-    `SELECT DISTINCT
-      menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id AS shoppingListItemId,
-      recipes.id,
-      recipes.name
-    FROM menu_shopping_list_item_recipe_sources
-    JOIN menu_shopping_list_items
-      ON menu_shopping_list_items.id =
-        menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id
-      AND menu_shopping_list_items.menu_id = ?
-    JOIN menu_items
-      ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
-      AND menu_items.menu_id = menu_shopping_list_items.menu_id
-    JOIN recipes ON recipes.id = menu_items.recipe_id
-    WHERE recipes.data_scope = ?
-    ORDER BY recipes.name COLLATE NOCASE, recipes.id`,
-    [menuId, dataScope]
-  );
-  const customShoppingListSources = queryAll<{
-    shoppingListItemId: number;
-    id: number;
-    name: string;
-  }>(
-    `SELECT DISTINCT
-      menu_shopping_list_item_custom_sources.menu_shopping_list_item_id AS shoppingListItemId,
-      custom_shopping_lists.id,
-      custom_shopping_lists.name
-    FROM menu_shopping_list_item_custom_sources
-    JOIN menu_shopping_list_items
-      ON menu_shopping_list_items.id =
-        menu_shopping_list_item_custom_sources.menu_shopping_list_item_id
-      AND menu_shopping_list_items.menu_id = ?
-    JOIN custom_shopping_list_items
-      ON custom_shopping_list_items.id =
-        menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
-    JOIN custom_shopping_lists
-      ON custom_shopping_lists.id = custom_shopping_list_items.custom_shopping_list_id
-    WHERE custom_shopping_lists.data_scope = ?
-    ORDER BY custom_shopping_lists.name COLLATE NOCASE, custom_shopping_lists.id`,
-    [menuId, dataScope]
-  );
-
-  return items.map((item) => ({
-    ...item,
-    sourceTargets: [
-      ...recipeSources
-        .filter((source) => source.shoppingListItemId === item.id)
-        .map((source) => ({ type: "recipe" as const, id: source.id, name: source.name })),
-      ...customShoppingListSources
-        .filter((source) => source.shoppingListItemId === item.id)
-        .map((source) => ({ type: "shoppingList" as const, id: source.id, name: source.name }))
-    ]
-  }));
+  return plannerRepository.getShoppingListItems(menuId, dataScope);
 }
 
 app.get("/api/settings", (_req, res) => {
