@@ -18,14 +18,11 @@ import { createRecipeService } from "./features/recipes/recipeService.js";
 import { createShoppingListRepository } from "./features/shoppingLists/shoppingListRepository.js";
 import { createShoppingListRouter } from "./features/shoppingLists/shoppingListRouter.js";
 import { createShoppingListService } from "./features/shoppingLists/shoppingListService.js";
-import {
-  formatQuantity,
-  normalizeAggregateItem,
-  parseQuantity
-} from "./features/planner/shoppingListDomain.js";
 import { createPlannerRepository } from "./features/planner/plannerRepository.js";
 import { createPlannerRouter } from "./features/planner/plannerRouter.js";
 import { createPlannerService } from "./features/planner/plannerService.js";
+import { createShoppingListWorkflowRepository } from "./features/planner/shoppingListRepository.js";
+import { createShoppingListWorkflowService } from "./features/planner/shoppingListService.js";
 import type { DataScope } from "./types.js";
 
 type TestSeedIngredient = {
@@ -164,6 +161,10 @@ export function createApp({
   } = qfcService;
   const plannerRepository = createPlannerRepository(database);
   const plannerService = createPlannerService(plannerRepository);
+  const shoppingListWorkflowService = createShoppingListWorkflowService(
+    plannerRepository,
+    createShoppingListWorkflowRepository(database)
+  );
 
   const app = express();
   app.use(express.json({ limit: "1mb" }));
@@ -198,7 +199,7 @@ export function createApp({
     "/api/custom-shopping-lists",
     createShoppingListRouter(createShoppingListService(createShoppingListRepository(database)))
   );
-  app.use("/api", createPlannerRouter(plannerService));
+  app.use("/api", createPlannerRouter(plannerService, shoppingListWorkflowService));
 
 type QfcSubmitJob = {
   id: string;
@@ -218,18 +219,6 @@ const qfcSubmitJobTtlMs = 15 * 60 * 1000;
 function requestScope(res: express.Response): DataScope {
   return res.locals.dataScope as DataScope;
 }
-
-type AggregateSource = {
-  sourceType: "recipe" | "custom";
-  menuItemId: number | null;
-  recipeIngredientId: number | null;
-  customShoppingListItemId: number | null;
-  text: string;
-  quantity: string;
-  unit: string;
-  item: string;
-  sourceName: string;
-};
 
 function pruneQfcSubmitJobs() {
   const cutoff = Date.now() - qfcSubmitJobTtlMs;
@@ -413,329 +402,6 @@ app.get("/api/store-item-preferences", (_req, res) => {
 app.delete("/api/store-item-preferences/:provider/:ingredientKey", (req, res) => {
   deleteStoreItemPreference(requestScope(res), req.params.provider, req.params.ingredientKey);
   res.json({ ok: true });
-});
-
-app.post("/api/menus/:id/aggregate", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  if (!Number.isInteger(menuId) || !getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-
-  const recipeSources = queryAll(
-      `SELECT
-        'recipe' AS sourceType,
-        menu_items.id AS menuItemId,
-        recipe_ingredients.id AS recipeIngredientId,
-        NULL AS customShoppingListItemId,
-        recipe_ingredients.text,
-        recipe_ingredients.quantity,
-        recipe_ingredients.unit,
-        recipe_ingredients.item,
-        recipes.name AS sourceName
-      FROM menu_items
-      JOIN recipe_ingredients ON recipe_ingredients.recipe_id = menu_items.recipe_id
-      JOIN recipes ON recipes.id = menu_items.recipe_id
-      WHERE menu_items.menu_id = ?
-      ORDER BY recipes.name, recipe_ingredients.sort_order`,
-      [menuId]
-    ) as AggregateSource[];
-  const customSources = queryAll(
-    `SELECT
-      'custom' AS sourceType,
-      NULL AS menuItemId,
-      NULL AS recipeIngredientId,
-      custom_shopping_list_items.id AS customShoppingListItemId,
-      custom_shopping_list_items.text,
-      custom_shopping_list_items.quantity,
-      custom_shopping_list_items.unit,
-      custom_shopping_list_items.item,
-      custom_shopping_lists.name AS sourceName
-    FROM menu_custom_shopping_lists
-    JOIN custom_shopping_lists
-      ON custom_shopping_lists.id = menu_custom_shopping_lists.custom_shopping_list_id
-    JOIN custom_shopping_list_items
-      ON custom_shopping_list_items.custom_shopping_list_id = custom_shopping_lists.id
-    WHERE menu_custom_shopping_lists.menu_id = ?
-    ORDER BY custom_shopping_lists.name COLLATE NOCASE, custom_shopping_list_items.sort_order`,
-    [menuId]
-  ) as AggregateSource[];
-
-  const grouped = new Map<string, AggregateSource[]>();
-  for (const row of [...recipeSources, ...customSources]) {
-    const normalizedItem = normalizeAggregateItem(row.item);
-    const key = normalizedItem || normalizeAggregateItem(row.text);
-    grouped.set(key, [...(grouped.get(key) ?? []), row]);
-  }
-
-  transaction(() => {
-    run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
-
-    const sortedGroups = Array.from(grouped.values()).sort((left, right) => {
-      const leftName = left[0].item.trim() || left[0].text.trim();
-      const rightName = right[0].item.trim() || right[0].text.trim();
-      return leftName.localeCompare(rightName, undefined, { sensitivity: "base" });
-    });
-
-    sortedGroups.forEach((group, index) => {
-      const first = group[0];
-      const sourceNames = Array.from(new Set(group.map((item) => item.sourceName))).join(", ");
-      const item = first.item.trim() || first.text.trim();
-      const quantities = group.map((source) => parseQuantity(source.quantity));
-      const canSumUnitlessQuantities = group.every((source) => !source.unit.trim())
-        && quantities.every((quantity): quantity is number => quantity !== null);
-      const quantity = canSumUnitlessQuantities
-        ? formatQuantity(quantities.reduce<number>((sum, value) => sum + value, 0))
-        : "";
-      const menuShoppingListItemId = insert(
-        `INSERT INTO menu_shopping_list_items
-          (menu_id, text, quantity, unit, item, source_names, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [menuId, item, quantity, "", item, sourceNames, index]
-      );
-      group.forEach((source) => {
-        if (
-          source.sourceType === "recipe"
-          && source.menuItemId !== null
-          && source.recipeIngredientId !== null
-        ) {
-          run(
-            `INSERT INTO menu_shopping_list_item_recipe_sources
-              (menu_shopping_list_item_id, menu_item_id, recipe_ingredient_id)
-            VALUES (?, ?, ?)`,
-            [menuShoppingListItemId, source.menuItemId, source.recipeIngredientId]
-          );
-        } else if (source.customShoppingListItemId !== null) {
-          run(
-            `INSERT INTO menu_shopping_list_item_custom_sources
-              (menu_shopping_list_item_id, custom_shopping_list_item_id)
-            VALUES (?, ?)`,
-            [menuShoppingListItemId, source.customShoppingListItemId]
-          );
-        }
-      });
-    });
-  });
-
-  res.status(201).json({ ok: true });
-});
-
-app.get("/api/menus/:id/shopping-list", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  if (!Number.isInteger(menuId)) {
-    res.status(400).json({ error: "A valid menu id is required." });
-    return;
-  }
-  if (!getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-  res.json(getShoppingListItems(menuId, dataScope));
-});
-
-app.delete("/api/menus/:id/shopping-list", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  if (!Number.isInteger(menuId) || !getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-  run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
-  saveDb();
-  res.json({ ok: true });
-});
-
-app.put("/api/menus/:id/shopping-list/items", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  const items = req.body.items;
-
-  if (!Number.isInteger(menuId)) {
-    res.status(400).json({ error: "A valid menu id is required." });
-    return;
-  }
-  if (!getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-
-  if (!Array.isArray(items)) {
-    res.status(400).json({ error: "Shopping list items must be an array." });
-    return;
-  }
-
-  for (const item of items) {
-    if (!Number.isInteger(Number(item.id))) {
-      res.status(400).json({ error: "Shopping list items must include valid ids." });
-      return;
-    }
-  }
-
-  transaction(() => {
-    for (const item of items) {
-      run(
-        `UPDATE menu_shopping_list_items
-          SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?
-          WHERE id = ? AND menu_id = ?`,
-        [
-          item.text ?? "",
-          item.quantity ?? "",
-          item.unit ?? "",
-          item.item ?? "",
-          item.approved ? 1 : 0,
-          Number(item.id),
-          menuId
-        ]
-      );
-    }
-  });
-
-  res.json({ ok: true, updated: items.length });
-});
-
-app.patch("/api/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  const itemId = Number(req.params.itemId);
-  if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
-    res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
-    return;
-  }
-  if (!getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-  if (typeof req.body.approved !== "boolean") {
-    res.status(400).json({ error: "Approval must be true or false." });
-    return;
-  }
-
-  const existing = queryOne<{ id: number }>(
-    "SELECT id FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
-    [itemId, menuId]
-  );
-  if (!existing) {
-    res.status(404).json({ error: "Shopping-list item not found for this menu." });
-    return;
-  }
-
-  run("UPDATE menu_shopping_list_items SET approved = ? WHERE id = ? AND menu_id = ?", [
-    req.body.approved ? 1 : 0,
-    itemId,
-    menuId
-  ]);
-  saveDb();
-  res.json({ id: itemId, approved: req.body.approved ? 1 : 0 });
-});
-
-app.patch("/api/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = Number(req.params.id);
-  const itemId = Number(req.params.itemId);
-  if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
-    res.status(400).json({ error: "Valid menu and shopping-list item ids are required." });
-    return;
-  }
-  if (!getMenu(menuId, dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
-  }
-
-  const item = String(req.body.item ?? "").trim();
-  if (!item) {
-    res.status(400).json({ error: "An item name is required before saving to its source." });
-    return;
-  }
-
-  const shoppingItem = queryOne<{ id: number; quantity: string; unit: string }>(
-    "SELECT id, quantity, unit FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
-    [itemId, menuId]
-  );
-  if (!shoppingItem) {
-    res.status(404).json({ error: "Shopping-list item not found for this menu." });
-    return;
-  }
-
-  const recipeSources = queryAll<{ recipeIngredientId: number; recipeId: number }>(
-    `SELECT
-      menu_shopping_list_item_recipe_sources.recipe_ingredient_id AS recipeIngredientId,
-      recipe_ingredients.recipe_id AS recipeId
-    FROM menu_shopping_list_item_recipe_sources
-    JOIN menu_items
-      ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
-      AND menu_items.menu_id = ?
-    JOIN recipe_ingredients
-      ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
-      AND recipe_ingredients.recipe_id = menu_items.recipe_id
-    JOIN recipes ON recipes.id = recipe_ingredients.recipe_id
-    WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id = ?
-      AND recipes.data_scope = ?`,
-    [menuId, itemId, dataScope]
-  );
-  const customSources = queryAll<{ customShoppingListItemId: number; customShoppingListId: number }>(
-    `SELECT
-      custom_shopping_list_items.id AS customShoppingListItemId,
-      custom_shopping_list_items.custom_shopping_list_id AS customShoppingListId
-    FROM menu_shopping_list_item_custom_sources
-    JOIN custom_shopping_list_items
-      ON custom_shopping_list_items.id =
-        menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
-    JOIN custom_shopping_lists
-      ON custom_shopping_lists.id = custom_shopping_list_items.custom_shopping_list_id
-    WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id = ?
-      AND custom_shopping_lists.data_scope = ?`,
-    [itemId, dataScope]
-  );
-  if (recipeSources.length + customSources.length !== 1) {
-    res.status(409).json({
-      error: recipeSources.length + customSources.length === 0
-        ? "Re-aggregate this menu before saving changes to its source."
-        : "Grouped or repeated items cannot be saved because they have multiple sources."
-    });
-    return;
-  }
-
-  transaction(() => {
-    if (recipeSources.length === 1) {
-      run(
-        `UPDATE recipe_ingredients
-        SET item = ?
-        WHERE id = ? AND recipe_id = ?`,
-        [item, recipeSources[0].recipeIngredientId, recipeSources[0].recipeId]
-      );
-      run("UPDATE recipes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [recipeSources[0].recipeId]);
-    } else {
-      run(
-        `UPDATE custom_shopping_list_items
-        SET item = ?
-        WHERE id = ? AND custom_shopping_list_id = ?`,
-        [
-          item,
-          customSources[0].customShoppingListItemId,
-          customSources[0].customShoppingListId
-        ]
-      );
-      run(
-        "UPDATE custom_shopping_lists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [customSources[0].customShoppingListId]
-      );
-    }
-    run(
-      `UPDATE menu_shopping_list_items
-      SET text = ?, quantity = ?, unit = ?, item = ?
-      WHERE id = ? AND menu_id = ?`,
-      [item, shoppingItem.quantity, shoppingItem.unit, item, itemId, menuId]
-    );
-  });
-
-  const updatedItem = getShoppingListItems(menuId, dataScope).find((candidate) => candidate.id === itemId);
-  res.json({
-    item: updatedItem,
-    sourceType: recipeSources.length === 1 ? "recipe" : "custom",
-    sourceId: recipeSources[0]?.recipeId ?? customSources[0].customShoppingListId
-  });
 });
 
 app.post("/api/menus/:id/preview-qfc", async (req, res) => {

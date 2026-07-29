@@ -1,6 +1,7 @@
 import express from "express";
 import type { DataScope } from "../../../shared/contracts/index.js";
 import { PlannerError, type PlannerService } from "./plannerService.js";
+import type { ShoppingListWorkflowService } from "./shoppingListService.js";
 
 function requestScope(res: express.Response) {
   return res.locals.dataScope as DataScope;
@@ -14,7 +15,10 @@ function handlePlannerError(error: unknown, res: express.Response) {
   throw error;
 }
 
-export function createPlannerRouter(service: PlannerService) {
+export function createPlannerRouter(
+  service: PlannerService,
+  shoppingLists: ShoppingListWorkflowService
+) {
   const router = express.Router();
 
   router.post("/menus/preview", (req, res) => {
@@ -86,6 +90,71 @@ export function createPlannerRouter(service: PlannerService) {
       res.json(service.updateShoppingLists(
         Number(req.params.id),
         req.body.customShoppingListIds,
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.post("/menus/:id/aggregate", (req, res) => {
+    try {
+      res.status(201).json(shoppingLists.aggregate(
+        Number(req.params.id),
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.get("/menus/:id/shopping-list", (req, res) => {
+    try {
+      res.json(shoppingLists.list(Number(req.params.id), requestScope(res)));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.delete("/menus/:id/shopping-list", (req, res) => {
+    try {
+      res.json(shoppingLists.clear(Number(req.params.id), requestScope(res)));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.put("/menus/:id/shopping-list/items", (req, res) => {
+    try {
+      res.json(shoppingLists.updateItems(
+        Number(req.params.id),
+        req.body.items,
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.patch("/menus/:id/shopping-list/items/:itemId/approval", (req, res) => {
+    try {
+      res.json(shoppingLists.updateApproval(
+        Number(req.params.id),
+        Number(req.params.itemId),
+        req.body.approved,
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.patch("/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
+    try {
+      res.json(shoppingLists.saveToSource(
+        Number(req.params.id),
+        Number(req.params.itemId),
+        req.body.item,
         requestScope(res)
       ));
     } catch (error) {
