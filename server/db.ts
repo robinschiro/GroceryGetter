@@ -1,67 +1,75 @@
 import fs from "node:fs";
 import path from "node:path";
-import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from "sql.js";
+import initSqlJs, { type Database, type SqlValue } from "sql.js";
 
 export type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
 
-const dataDir = path.join(process.cwd(), "data");
-fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, "grocery-getter.sqlite");
-const legacyDbPath = path.join(dataDir, "grocery-helper.sqlite");
-
-let SQL: SqlJsStatic;
-export let db: Database;
-
 export type Row = Record<string, string | number | null>;
 
-function columnExists(tableName: string, columnName: string) {
+export const productionDatabasePath = path.resolve(process.cwd(), "data", "grocery-getter.sqlite");
+
+export type GroceryDatabase = {
+  readonly filePath: string;
+  readonly initialized: boolean;
+  initialize(): Promise<void>;
+  reset(): Promise<void>;
+  close(): void;
+  save(): void;
+  run(sql: string, params?: SqlValue[]): void;
+  insert(sql: string, params?: SqlValue[]): number;
+  queryAll<T extends Row>(sql: string, params?: SqlValue[]): T[];
+  queryOne<T extends Row>(sql: string, params?: SqlValue[]): T | null;
+  transaction<T>(callback: () => T): T;
+};
+
+function columnExists(database: GroceryDatabase, tableName: string, columnName: string) {
+  const { queryAll } = database;
   return queryAll(`PRAGMA table_info(${tableName})`).some((column) => column.name === columnName);
 }
 
-function tableExists(tableName: string) {
+function tableExists(database: GroceryDatabase, tableName: string) {
+  const { queryOne } = database;
   return Boolean(queryOne("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [tableName]));
 }
 
-function columnIsNotNull(tableName: string, columnName: string) {
+function columnIsNotNull(database: GroceryDatabase, tableName: string, columnName: string) {
+  const { queryAll } = database;
   return queryAll(`PRAGMA table_info(${tableName})`).some(
     (column) => column.name === columnName && column.notnull === 1
   );
 }
 
-function storeItemPreferencesHaveScopeKey() {
+function storeItemPreferencesHaveScopeKey(database: GroceryDatabase) {
+  const { queryAll } = database;
   const columns = queryAll(`PRAGMA table_info(store_item_preferences)`);
   return columns.some((column) => column.name === "data_scope" && column.pk === 1)
     && columns.some((column) => column.name === "provider" && column.pk === 2)
     && columns.some((column) => column.name === "ingredient_key" && column.pk === 3);
 }
 
-function customShoppingListsHaveScopedNameKey() {
+function customShoppingListsHaveScopedNameKey(database: GroceryDatabase) {
+  const { queryOne } = database;
   const definition = queryOne<{ sql: string }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'custom_shopping_lists'"
   )?.sql ?? "";
   return /UNIQUE\s*\(\s*data_scope\s*,\s*name(?:\s+COLLATE\s+NOCASE)?\s*\)/i.test(definition);
 }
 
-export async function initializeDb() {
-  SQL = await initSqlJs();
-  if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
-    fs.renameSync(legacyDbPath, dbPath);
-  }
-  db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
-  db.run("PRAGMA foreign_keys = ON");
+async function initializeSchema(database: GroceryDatabase) {
+  const { insert, queryAll, queryOne, run, save: saveDb, transaction } = database;
 
-  if (tableExists("shopping_list_items") && !tableExists("menu_shopping_list_items")) {
+  if (tableExists(database, "shopping_list_items") && !tableExists(database, "menu_shopping_list_items")) {
     run("ALTER TABLE shopping_list_items RENAME TO menu_shopping_list_items");
   }
-  if (tableExists("shopping_list_item_sources") && !tableExists("menu_shopping_list_item_recipe_sources")) {
+  if (tableExists(database, "shopping_list_item_sources") && !tableExists(database, "menu_shopping_list_item_recipe_sources")) {
     run("ALTER TABLE shopping_list_item_sources RENAME TO menu_shopping_list_item_recipe_sources");
   }
-  if (tableExists("menu_shopping_list_items") && columnExists("menu_shopping_list_items", "source_recipe_names")) {
+  if (tableExists(database, "menu_shopping_list_items") && columnExists(database, "menu_shopping_list_items", "source_recipe_names")) {
     run("ALTER TABLE menu_shopping_list_items RENAME COLUMN source_recipe_names TO source_names");
   }
   if (
-    tableExists("menu_shopping_list_item_recipe_sources")
-    && columnExists("menu_shopping_list_item_recipe_sources", "shopping_list_item_id")
+    tableExists(database, "menu_shopping_list_item_recipe_sources")
+    && columnExists(database, "menu_shopping_list_item_recipe_sources", "shopping_list_item_id")
   ) {
     run(
       `ALTER TABLE menu_shopping_list_item_recipe_sources
@@ -70,7 +78,7 @@ export async function initializeDb() {
   }
   saveDb();
 
-  db.run(`
+  run(`
   CREATE TABLE IF NOT EXISTS recipes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -188,42 +196,42 @@ export async function initializeDb() {
   `);
   saveDb();
 
-  if (!columnExists("custom_shopping_lists", "include_in_menu_by_default")) {
+  if (!columnExists(database, "custom_shopping_lists", "include_in_menu_by_default")) {
     run(
       "ALTER TABLE custom_shopping_lists ADD COLUMN include_in_menu_by_default INTEGER NOT NULL DEFAULT 0"
     );
     saveDb();
   }
 
-  if (!columnExists("recipes", "data_scope")) {
+  if (!columnExists(database, "recipes", "data_scope")) {
     run("ALTER TABLE recipes ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
-    if (columnExists("recipes", "is_test_data")) {
+    if (columnExists(database, "recipes", "is_test_data")) {
       run("UPDATE recipes SET data_scope = CASE WHEN is_test_data = 1 THEN 'sandbox' ELSE 'production' END");
     }
     saveDb();
   }
 
-  if (!columnExists("recipes", "include_in_menu_generation")) {
+  if (!columnExists(database, "recipes", "include_in_menu_generation")) {
     run(
       "ALTER TABLE recipes ADD COLUMN include_in_menu_generation INTEGER NOT NULL DEFAULT 0"
     );
     saveDb();
   }
 
-  if (!columnExists("menus", "data_scope")) {
+  if (!columnExists(database, "menus", "data_scope")) {
     run("ALTER TABLE menus ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
-    if (columnExists("menus", "is_test_data")) {
+    if (columnExists(database, "menus", "is_test_data")) {
       run("UPDATE menus SET data_scope = CASE WHEN is_test_data = 1 THEN 'sandbox' ELSE 'production' END");
     }
     saveDb();
   }
 
-  if (!columnExists("custom_shopping_lists", "data_scope")) {
+  if (!columnExists(database, "custom_shopping_lists", "data_scope")) {
     run("ALTER TABLE custom_shopping_lists ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'");
     saveDb();
   }
 
-  if (!customShoppingListsHaveScopedNameKey()) {
+  if (!customShoppingListsHaveScopedNameKey(database)) {
     run("PRAGMA foreign_keys = OFF");
     run(`
       CREATE TABLE custom_shopping_lists_new (
@@ -277,8 +285,8 @@ export async function initializeDb() {
     });
   }
 
-  if (!storeItemPreferencesHaveScopeKey()) {
-    const oldPreferencesHaveImageUrl = columnExists("store_item_preferences", "image_url");
+  if (!storeItemPreferencesHaveScopeKey(database)) {
+    const oldPreferencesHaveImageUrl = columnExists(database, "store_item_preferences", "image_url");
     run("ALTER TABLE store_item_preferences RENAME TO store_item_preferences_old");
     run(`
       CREATE TABLE store_item_preferences (
@@ -314,12 +322,12 @@ export async function initializeDb() {
     saveDb();
   }
 
-  if (!columnExists("store_item_preferences", "image_url")) {
+  if (!columnExists(database, "store_item_preferences", "image_url")) {
     run("ALTER TABLE store_item_preferences ADD COLUMN image_url TEXT NOT NULL DEFAULT ''");
     saveDb();
   }
 
-  if (columnIsNotNull("menu_items", "recipe_id")) {
+  if (columnIsNotNull(database, "menu_items", "recipe_id")) {
     run("PRAGMA foreign_keys = OFF");
     run("ALTER TABLE menu_items RENAME TO menu_items_old");
     run(`
@@ -403,43 +411,130 @@ export async function initializeDb() {
   saveDb();
 }
 
+export function createDatabase({ filePath }: { filePath: string }): GroceryDatabase {
+  const resolvedFilePath = path.resolve(filePath);
+  let rawDatabase: Database | null = null;
+
+  const requireDatabase = () => {
+    if (!rawDatabase) {
+      throw new Error(`Database has not been initialized: ${resolvedFilePath}`);
+    }
+    return rawDatabase;
+  };
+
+  const database: GroceryDatabase = {
+    filePath: resolvedFilePath,
+    get initialized() {
+      return rawDatabase !== null;
+    },
+    async initialize() {
+      if (rawDatabase) return;
+      fs.mkdirSync(path.dirname(resolvedFilePath), { recursive: true });
+      const SQL = await initSqlJs();
+      rawDatabase = fs.existsSync(resolvedFilePath)
+        ? new SQL.Database(fs.readFileSync(resolvedFilePath))
+        : new SQL.Database();
+      rawDatabase.run("PRAGMA foreign_keys = ON");
+      await initializeSchema(database);
+    },
+    async reset() {
+      rawDatabase?.close();
+      rawDatabase = null;
+      if (fs.existsSync(resolvedFilePath)) {
+        fs.rmSync(resolvedFilePath);
+      }
+      await database.initialize();
+    },
+    close() {
+      rawDatabase?.close();
+      rawDatabase = null;
+    },
+    save() {
+      fs.writeFileSync(resolvedFilePath, Buffer.from(requireDatabase().export()));
+    },
+    run(sql, params = []) {
+      requireDatabase().run(sql, params);
+    },
+    insert(sql, params = []) {
+      requireDatabase().run(sql, params);
+      const row = database.queryOne<{ id: number }>("SELECT last_insert_rowid() AS id");
+      return row?.id ?? 0;
+    },
+    queryAll<T extends Row>(sql: string, params: SqlValue[] = []) {
+      const stmt = requireDatabase().prepare(sql, params);
+      const rows: T[] = [];
+      while (stmt.step()) {
+        rows.push(stmt.getAsObject() as T);
+      }
+      stmt.free();
+      return rows;
+    },
+    queryOne<T extends Row>(sql: string, params: SqlValue[] = []): T | null {
+      return database.queryAll<T>(sql, params)[0] ?? null;
+    },
+    transaction<T>(callback: () => T) {
+      database.run("BEGIN");
+      try {
+        const result = callback();
+        database.run("COMMIT");
+        database.save();
+        return result;
+      } catch (error) {
+        database.run("ROLLBACK");
+        throw error;
+      }
+    }
+  };
+
+  return database;
+}
+
+let defaultDatabase: GroceryDatabase | null = null;
+
+export function setDefaultDatabase(database: GroceryDatabase) {
+  defaultDatabase = database;
+}
+
+function getDefaultDatabase() {
+  if (!defaultDatabase) {
+    throw new Error("The default database has not been configured.");
+  }
+  return defaultDatabase;
+}
+
+/** @deprecated Prefer an injected GroceryDatabase instance. */
+export async function initializeDb() {
+  const database = createDatabase({ filePath: productionDatabasePath });
+  await database.initialize();
+  setDefaultDatabase(database);
+}
+
+/** @deprecated Prefer database.save(). */
 export function saveDb() {
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  getDefaultDatabase().save();
 }
 
+/** @deprecated Prefer database.run(). */
 export function run(sql: string, params: SqlValue[] = []) {
-  db.run(sql, params);
+  getDefaultDatabase().run(sql, params);
 }
 
+/** @deprecated Prefer database.insert(). */
 export function insert(sql: string, params: SqlValue[] = []) {
-  db.run(sql, params);
-  const row = queryOne<{ id: number }>("SELECT last_insert_rowid() AS id");
-  return row?.id ?? 0;
+  return getDefaultDatabase().insert(sql, params);
 }
 
+/** @deprecated Prefer database.queryAll(). */
 export function queryAll<T extends Row>(sql: string, params: SqlValue[] = []): T[] {
-  const stmt = db.prepare(sql, params);
-  const rows: T[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as T);
-  }
-  stmt.free();
-  return rows;
+  return getDefaultDatabase().queryAll<T>(sql, params);
 }
 
+/** @deprecated Prefer database.queryOne(). */
 export function queryOne<T extends Row>(sql: string, params: SqlValue[] = []): T | null {
-  return queryAll<T>(sql, params)[0] ?? null;
+  return getDefaultDatabase().queryOne<T>(sql, params);
 }
 
+/** @deprecated Prefer database.transaction(). */
 export function transaction<T>(callback: () => T): T {
-  run("BEGIN");
-  try {
-    const result = callback();
-    run("COMMIT");
-    saveDb();
-    return result;
-  } catch (error) {
-    run("ROLLBACK");
-    throw error;
-  }
+  return getDefaultDatabase().transaction(callback);
 }

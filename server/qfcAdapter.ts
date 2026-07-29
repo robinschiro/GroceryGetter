@@ -104,6 +104,37 @@ type ServiceToken = {
   expiresAt: number;
 };
 
+type KrogerTokenResponse = {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+  scope?: string;
+  token_type?: string;
+};
+
+export interface KrogerClient {
+  exchangeToken(input: {
+    clientId: string;
+    clientSecret: string;
+    params: URLSearchParams;
+  }): Promise<KrogerTokenResponse>;
+  searchLocations(input: {
+    accessToken: string;
+    query: string;
+    limit: number;
+  }): Promise<KrogerLocation[]>;
+  searchProducts(input: {
+    accessToken: string;
+    term: string;
+    locationId: string;
+    limit: number;
+  }): Promise<KrogerProduct[]>;
+  addToCart(input: {
+    accessToken: string;
+    items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
+  }): Promise<void>;
+}
+
 const krogerBaseUrl = "https://api.kroger.com/v1";
 const defaultRedirectUri = "http://127.0.0.1:5174/api/qfc/oauth/callback";
 const tokenSkewMs = 60_000;
@@ -150,6 +181,146 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
   }
 
   return body as T;
+}
+
+export class KrogerHttpClient implements KrogerClient {
+  async exchangeToken(input: {
+    clientId: string;
+    clientSecret: string;
+    params: URLSearchParams;
+  }) {
+    return requestJson<KrogerTokenResponse>(`${krogerBaseUrl}/connect/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: getBasicAuthHeader(input.clientId, input.clientSecret),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: input.params
+    });
+  }
+
+  async searchLocations(input: { accessToken: string; query: string; limit: number }) {
+    const params = new URLSearchParams({ "filter.limit": String(input.limit) });
+    if (/^\d{5}/.test(input.query.trim())) {
+      params.set("filter.zipCode.near", input.query.trim());
+    } else {
+      params.set("filter.term", input.query.trim());
+    }
+    const response = await requestJson<{ data: KrogerLocation[] }>(
+      `${krogerBaseUrl}/locations?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" } }
+    );
+    return response.data ?? [];
+  }
+
+  async searchProducts(input: {
+    accessToken: string;
+    term: string;
+    locationId: string;
+    limit: number;
+  }) {
+    const params = new URLSearchParams({
+      "filter.term": input.term.trim(),
+      "filter.limit": String(input.limit)
+    });
+    if (input.locationId) params.set("filter.locationId", input.locationId);
+    const response = await requestJson<{ data: KrogerProduct[] }>(
+      `${krogerBaseUrl}/products?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" } }
+    );
+    return response.data ?? [];
+  }
+
+  async addToCart(input: {
+    accessToken: string;
+    items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
+  }) {
+    await requestJson<unknown>(`${krogerBaseUrl}/cart/add`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ items: input.items })
+    });
+  }
+}
+
+export class FakeKrogerClient implements KrogerClient {
+  readonly cartSubmissions: Array<Array<{ upc: string; quantity: number; modality: "PICKUP" }>> = [];
+
+  async exchangeToken(): Promise<KrogerTokenResponse> {
+    return {
+      access_token: "fake-customer-access-token",
+      refresh_token: "fake-customer-refresh-token",
+      expires_in: 3600,
+      scope: "cart.basic:write",
+      token_type: "Bearer"
+    };
+  }
+
+  async searchLocations(input: { query: string; limit: number }) {
+    if (input.query.toLowerCase().includes("fail")) throw new Error("Deterministic fake location failure.");
+    return [{
+      locationId: "fake-qfc-001",
+      name: "QFC Test Market",
+      chain: "QFC",
+      address: {
+        addressLine1: "1 Test Market Way",
+        city: "Seattle",
+        state: "WA",
+        zipCode: "98101"
+      }
+    }].slice(0, input.limit);
+  }
+
+  async searchProducts(input: { term: string; limit: number }) {
+    const normalized = input.term.trim().toLowerCase();
+    if (normalized.includes("fail")) throw new Error("Deterministic fake product failure.");
+    if (normalized.includes("unmatched") || !normalized) return [];
+    const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+    const candidates: KrogerProduct[] = [
+      {
+        productId: `fake-${slug}-store`,
+        upc: `000000${slug.length.toString().padStart(6, "0")}`,
+        description: `Kroger ${input.term.trim()}`,
+        brand: "Kroger",
+        items: [{
+          size: "12 oz",
+          price: { regular: 2.49 },
+          inventory: { stockLevel: "HIGH" },
+          fulfillment: { curbside: true }
+        }]
+      },
+      {
+        productId: `fake-${slug}-national`,
+        upc: `111111${slug.length.toString().padStart(6, "0")}`,
+        description: `Test Kitchen ${input.term.trim()}`,
+        brand: "Test Kitchen",
+        items: [{
+          size: "10 oz",
+          price: { regular: 3.99 },
+          inventory: { stockLevel: "LOW" },
+          fulfillment: { curbside: true }
+        }]
+      }
+    ];
+    return candidates.slice(0, input.limit);
+  }
+
+  async addToCart(input: {
+    items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
+  }) {
+    this.cartSubmissions.push(input.items.map((item) => ({ ...item })));
+  }
+}
+
+let krogerClient: KrogerClient = new KrogerHttpClient();
+
+export function setKrogerClient(client: KrogerClient) {
+  krogerClient = client;
+  serviceToken = null;
 }
 
 export function getQfcApiStatus(dataScope: DataScope = "production") {
@@ -241,19 +412,10 @@ async function exchangeCustomerToken(params: URLSearchParams) {
   const clientId = requireSetting("krogerClientId");
   const clientSecret = requireSetting("krogerClientSecret");
 
-  return requestJson<{
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-    scope?: string;
-    token_type: string;
-  }>(`${krogerBaseUrl}/connect/oauth2/token`, {
-    method: "POST",
-    headers: {
-      Authorization: getBasicAuthHeader(clientId, clientSecret),
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: params
+  return krogerClient.exchangeToken({
+    clientId,
+    clientSecret,
+    params
   });
 }
 
@@ -323,16 +485,10 @@ async function getServiceToken() {
   const clientSecret = requireSetting("krogerClientSecret");
   const scope = getSetting("krogerServiceScopes") || "product.compact";
 
-  const token = await requestJson<{
-    access_token: string;
-    expires_in: number;
-  }>(`${krogerBaseUrl}/connect/oauth2/token`, {
-    method: "POST",
-    headers: {
-      Authorization: getBasicAuthHeader(clientId, clientSecret),
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
+  const token = await krogerClient.exchangeToken({
+    clientId,
+    clientSecret,
+    params: new URLSearchParams({
       grant_type: "client_credentials",
       scope
     })
@@ -348,27 +504,7 @@ async function getServiceToken() {
 
 export async function searchLocations(query: string, limit = 10) {
   const accessToken = await getServiceToken();
-  const params = new URLSearchParams({
-    "filter.limit": String(limit)
-  });
-
-  if (/^\d{5}/.test(query.trim())) {
-    params.set("filter.zipCode.near", query.trim());
-  } else {
-    params.set("filter.term", query.trim());
-  }
-
-  const response = await requestJson<{ data: KrogerLocation[] }>(
-    `${krogerBaseUrl}/locations?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json"
-      }
-    }
-  );
-
-  return response.data ?? [];
+  return krogerClient.searchLocations({ accessToken, query, limit });
 }
 
 function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
@@ -404,26 +540,13 @@ export async function searchStoreItems(
   const accessToken = await getServiceToken();
   const locationId = options?.locationId
     ?? getScopedSetting(options?.dataScope ?? "production", "krogerLocationId");
-  const params = new URLSearchParams({
-    "filter.term": term.trim(),
-    "filter.limit": String(options?.limit ?? 10)
+  const products = await krogerClient.searchProducts({
+    accessToken,
+    term,
+    locationId,
+    limit: options?.limit ?? 10
   });
-
-  if (locationId) {
-    params.set("filter.locationId", locationId);
-  }
-
-  const response = await requestJson<{ data: KrogerProduct[] }>(
-    `${krogerBaseUrl}/products?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json"
-      }
-    }
-  );
-
-  return (response.data ?? []).map(toStoreItemCandidate);
+  return products.map(toStoreItemCandidate);
 }
 
 function prefersStoreBrands(dataScope: DataScope) {
@@ -661,18 +784,10 @@ async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
   const items = matches.map((match) => ({
     upc: match.storeItem.upc,
     quantity: match.cartQuantity,
-    modality: "PICKUP"
+    modality: "PICKUP" as const
   }));
 
-  await requestJson<unknown>(`${krogerBaseUrl}/cart/add`, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Accept: "application/json"
-    },
-    body: JSON.stringify({ items })
-  });
+  await krogerClient.addToCart({ accessToken, items });
 }
 
 export async function previewQfcCart(
@@ -766,3 +881,24 @@ export async function addQfcMatchesToCart(
     skipped
   };
 }
+
+export function createQfcService() {
+  return {
+    addQfcMatchesToCart,
+    createCustomerAuthorizationUrl,
+    deleteStoreItemPreference,
+    exchangeCustomerAuthorizationCode,
+    getQfcApiStatus,
+    getScopedSetting,
+    getStoreItemPreferences,
+    previewQfcCart,
+    refreshCustomerToken,
+    saveQfcApiSettings,
+    saveStoreItemPreference,
+    searchLocations,
+    searchStoreItems,
+    setScopedSetting
+  };
+}
+
+export type QfcService = ReturnType<typeof createQfcService>;
