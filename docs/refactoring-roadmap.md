@@ -61,7 +61,7 @@ Phase 4 planner extraction started on 2026-07-29:
 - The superseded planner and generated-shopping-list handlers and SQL were removed from `server/app.ts`.
 - Menu-builder and generated-list review UI now live under `src/features/planner`; shared QFC submission progress presentation lives under `src/features/qfc`.
 - Menu and generated-list lifecycle state now lives in `src/features/planner/usePlanner.ts`; the shell retains only the cross-feature approval/store-review coordination that will move with the QFC slice.
-- Planner page composition remains to be completed; planner-specific rules now live in `src/features/planner/styles.css`.
+- Planner page composition now lives in `src/features/planner/PlannerPage.tsx`; planner-specific rules live in `src/features/planner/styles.css`.
 
 Phase 4 QFC extraction started on 2026-07-29:
 

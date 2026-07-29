@@ -31,11 +31,9 @@ import {
 } from "../features/recipes/RecipesPage.js";
 import { listShoppingLists } from "../features/shoppingLists/api.js";
 import { ShoppingListsPage } from "../features/shoppingLists/ShoppingListsPage.js";
-import { MenuBuilder } from "../features/planner/MenuBuilder.js";
-import { ShoppingListReview } from "../features/planner/ShoppingListReview.js";
+import { PlannerPage } from "../features/planner/PlannerPage.js";
 import { usePlanner } from "../features/planner/usePlanner.js";
 import { StoreSettingsPanel } from "../features/qfc/StoreSettingsPanel.js";
-import { StoreItemReviewPanel } from "../features/qfc/StoreItemReviewPanel.js";
 import { useQfc } from "../features/qfc/useQfc.js";
 
 type ThemeMode = "light" | "dark";
@@ -353,58 +351,58 @@ export function App() {
         ) : null}
 
         {activeView === "planner" ? (
-          <div className="grid planner-grid">
-          <MenuBuilder
-            recipes={recipes}
-            customShoppingLists={customShoppingLists}
-            mealCount={mealCount}
-            setMealCount={setMealCount}
-            activeMenu={activeMenu}
-            generateMenu={generateMenu}
-            saveMenu={saveMenu}
-            updateMenuItem={updateMenuItem}
-            editRecipe={(recipeId) => navigate(recipeEditRoute(recipeId))}
-            addMeal={addMeal}
-            removeMeal={removeMeal}
-            updateCustomShoppingListSelection={updateCustomShoppingListSelection}
-            editCustomShoppingList={(listId) => navigate(shoppingListEditRoute(listId))}
-            aggregateIngredients={aggregateIngredients}
+          <PlannerPage
+            menuBuilder={{
+              recipes,
+              customShoppingLists,
+              mealCount,
+              setMealCount,
+              activeMenu,
+              generateMenu,
+              saveMenu,
+              updateMenuItem,
+              editRecipe: (recipeId) => navigate(recipeEditRoute(recipeId)),
+              addMeal,
+              removeMeal,
+              updateCustomShoppingListSelection,
+              editCustomShoppingList: (listId) => navigate(shoppingListEditRoute(listId)),
+              aggregateIngredients
+            }}
+            shoppingListReview={{
+              items: shoppingList,
+              openSource: (source) => navigate(
+                source.type === "recipe"
+                  ? recipeEditRoute(source.id)
+                  : shoppingListEditRoute(source.id)
+              ),
+              savingApprovalItemIds,
+              searchingStoreItemIds,
+              savingSourceItemIds,
+              updateApproval: updateShoppingItemApproval,
+              saveToSource: saveShoppingItemToSource,
+              clearItems: clearAggregatedIngredients,
+              previewStoreItems,
+              qfcSubmitProgress,
+              message
+            }}
+            storeItemReview={{
+              review: storeItemReview,
+              allowRealQfcCartMutation,
+              addToCart: addReviewedStoreItemsToQfc,
+              selectStoreItem,
+              updateCartQuantity: updateStoreItemQuantity,
+              searchStoreItems: searchStoreItemsForReview,
+              removeStoreItem: removeStoreItemFromReview,
+              openSource: (source) => navigate(
+                source.type === "recipe"
+                  ? recipeEditRoute(source.id)
+                  : shoppingListEditRoute(source.id)
+              ),
+              openQfcCart,
+              qfcSubmitProgress,
+              message: storeItemReviewMessage
+            }}
           />
-            <ShoppingListReview
-              items={shoppingList}
-              openSource={(source) => navigate(
-                source.type === "recipe"
-                  ? recipeEditRoute(source.id)
-                  : shoppingListEditRoute(source.id)
-              )}
-              savingApprovalItemIds={savingApprovalItemIds}
-              searchingStoreItemIds={searchingStoreItemIds}
-              savingSourceItemIds={savingSourceItemIds}
-              updateApproval={updateShoppingItemApproval}
-              saveToSource={saveShoppingItemToSource}
-              clearItems={clearAggregatedIngredients}
-              previewStoreItems={previewStoreItems}
-              qfcSubmitProgress={qfcSubmitProgress}
-              message={message}
-            />
-            <StoreItemReviewPanel
-              review={storeItemReview}
-              allowRealQfcCartMutation={allowRealQfcCartMutation}
-              addToCart={addReviewedStoreItemsToQfc}
-              selectStoreItem={selectStoreItem}
-              updateCartQuantity={updateStoreItemQuantity}
-              searchStoreItems={searchStoreItemsForReview}
-              removeStoreItem={removeStoreItemFromReview}
-              openSource={(source) => navigate(
-                source.type === "recipe"
-                  ? recipeEditRoute(source.id)
-                  : shoppingListEditRoute(source.id)
-              )}
-              openQfcCart={openQfcCart}
-              qfcSubmitProgress={qfcSubmitProgress}
-              message={storeItemReviewMessage}
-            />
-          </div>
         ) : null}
       </section>
     </main>
