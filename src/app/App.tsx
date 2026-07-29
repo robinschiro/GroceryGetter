@@ -59,22 +59,10 @@ import { listShoppingLists } from "../features/shoppingLists/api.js";
 import { ShoppingListsPage } from "../features/shoppingLists/ShoppingListsPage.js";
 import { MenuBuilder } from "../features/planner/MenuBuilder.js";
 import { ShoppingListReview } from "../features/planner/ShoppingListReview.js";
+import { usePlanner } from "../features/planner/usePlanner.js";
 import { QfcSubmitProgressBar } from "../features/qfc/QfcSubmitProgressBar.js";
 import {
-  addMenuMeal,
-  aggregateShoppingList,
-  clearShoppingList,
-  createMenu,
-  getLatestMenu,
-  getMenu,
-  getShoppingList,
-  previewMenu,
-  removeMenuMeal,
-  saveShoppingListItemToSource,
-  updateMenuItem as updateMenuItemRequest,
-  updateMenuShoppingLists,
-  updateShoppingListApproval,
-  updateShoppingListItems
+  updateShoppingListApproval
 } from "../features/planner/api.js";
 
 type ThemeMode = "light" | "dark";
@@ -143,15 +131,8 @@ export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
-  const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
-  const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
-  const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
-  const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
   const [searchingStoreItemIds, setSearchingStoreItemIds] = useState<Set<number>>(() => new Set());
-  const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
-  const [mealCount, setMealCount] = useState<number | "">(2);
-  const [message, setMessage] = useState("");
   const [preferStoreBrands, setPreferStoreBrands] = useState(true);
   const [allowRealQfcCartMutation, setAllowRealQfcCartMutation] = useState(true);
   const [qfcStatus, setQfcStatus] = useState<QfcStatus | null>(null);
@@ -159,6 +140,41 @@ export function App() {
   const [storeItemReview, setStoreItemReview] = useState<StoreItemReview | null>(null);
   const [storeItemReviewMessage, setStoreItemReviewMessage] = useState("");
   const [storeItemPreferences, setStoreItemPreferences] = useState<StoreItemPreference[]>([]);
+  const {
+    activeMenu,
+    addMeal,
+    aggregateIngredients,
+    clearAggregatedIngredients,
+    dirtyShoppingItemIds,
+    generateMenu,
+    loadLatestMenu,
+    loadMenu,
+    mealCount,
+    message,
+    removeMeal,
+    reset: resetPlanner,
+    saveDirtyShoppingItems,
+    saveMenu,
+    saveShoppingItemToSource,
+    savingSourceItemIds,
+    setMealCount,
+    setMessage,
+    setShoppingList,
+    shoppingList,
+    sourceMetadataDirtyItemIds,
+    updateCustomShoppingListSelection,
+    updateMenuItem
+  } = usePlanner({
+    api,
+    recipes,
+    onSourcesChanged: async () => {
+      await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
+    },
+    onStoreReviewInvalidated: () => {
+      setStoreItemReview(null);
+      setStoreItemReviewMessage("");
+    }
+  });
 
   async function loadRecipes() {
     setRecipes(await listRecipes(api));
@@ -177,20 +193,6 @@ export function App() {
     setAllowRealQfcCartMutation(settings.allowRealQfcCartMutation === "true");
     setStoreItemPreferences(preferences);
     setQfcStatus(await api<QfcStatus>("/api/qfc/status"));
-  }
-
-  async function loadLatestMenu() {
-    const latestMenu = await getLatestMenu(api);
-    if (!latestMenu || latestMenu.id === null) {
-      setActiveMenu(null);
-      setShoppingList([]);
-      return;
-    }
-
-    const latestShoppingList = await getShoppingList(api, latestMenu.id);
-    setActiveMenu(latestMenu);
-    setShoppingList(latestShoppingList);
-    setMealCount(latestMenu.mealCount);
   }
 
   useEffect(() => {
@@ -224,230 +226,14 @@ export function App() {
     document.documentElement.dataset.dataScope = dataScope;
   }, [dataScope]);
 
-  async function generateMenu() {
-    setMessage("");
-    if (mealCount === "" || mealCount < 1 || mealCount > 14) {
-      setMessage("Meal count must be between 1 and 14.");
-      return;
-    }
-
-    try {
-      const preview = await previewMenu(api, mealCount);
-      setActiveMenu(preview);
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
-    }
-  }
-
-  async function saveMenu() {
-    if (!activeMenu) return;
-    if (activeMenu.id !== null) {
-      setMessage("Menu is already saved.");
-      return;
-    }
-
-    setMessage("");
-    try {
-      const created = await createMenu(api, activeMenu);
-      setActiveMenu(await getMenu(api, created.id));
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-      setMessage("Menu saved.");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to save menu.");
-    }
-  }
-
   function updateDataScope(next: DataScope) {
     window.localStorage.setItem(dataScopeStorageKey, next);
     setDataScope(next);
     setRecipes([]);
     setCustomShoppingLists([]);
-    setActiveMenu(null);
-    setShoppingList([]);
-    setDirtyShoppingItemIds(new Set());
-    setSourceMetadataDirtyItemIds(new Set());
+    resetPlanner(next === "sandbox" ? "Sandbox mode is active." : "");
     setStoreItemReview(null);
     setStoreItemReviewMessage("");
-    setMessage(next === "sandbox" ? "Sandbox mode is active." : "");
-  }
-
-  async function loadMenu(id: number) {
-    setActiveMenu(await getMenu(api, id));
-  }
-
-  async function updateMenuItem(
-    menuItemId: number | null,
-    mealNumber: number,
-    slot: RecipeCategory,
-    recipeId: number | null
-  ) {
-    if (menuItemId === null) {
-      const recipe = recipeId === null ? null : recipes.find((item) => item.id === recipeId);
-      if (!activeMenu || (recipeId !== null && !recipe)) return;
-      setActiveMenu({
-        ...activeMenu,
-        items: activeMenu.items.map((item) =>
-          item.mealNumber === mealNumber && item.slot === slot
-            ? { ...item, recipeId, recipeName: recipe?.name ?? null }
-            : item
-        )
-      });
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-      return;
-    }
-
-    await updateMenuItemRequest(api, menuItemId, recipeId);
-    if (activeMenu?.id != null) {
-      await loadMenu(activeMenu.id);
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-    }
-  }
-
-  async function addMeal() {
-    if (!activeMenu || activeMenu.mealCount >= 14) return;
-
-    const nextMealNumber = activeMenu.mealCount + 1;
-    const newItems = categories.map(({ value: slot }) => {
-      const matchingRecipes = recipes.filter(
-        (recipe) => recipe.category === slot && recipe.includeInMenuGeneration
-      );
-      const recipe = matchingRecipes[(nextMealNumber - 1) % matchingRecipes.length] ?? null;
-      return {
-        id: null,
-        mealNumber: nextMealNumber,
-        slot,
-        recipeId: recipe?.id ?? null,
-        recipeName: recipe?.name ?? null
-      };
-    });
-
-    if (newItems.find((item) => item.slot === "entree")?.recipeId === null) {
-      setMessage("Select at least one entree recipe for menu generation before adding a meal.");
-      return;
-    }
-
-    setMessage("");
-    try {
-      const nextMenu = activeMenu.id === null
-        ? { ...activeMenu, mealCount: nextMealNumber, items: [...activeMenu.items, ...newItems] }
-        : await addMenuMeal(api, activeMenu.id, newItems);
-      setActiveMenu(nextMenu);
-      setMealCount(nextMenu.mealCount);
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to add meal.");
-    }
-  }
-
-  async function removeMeal(mealNumber: number) {
-    if (!activeMenu || activeMenu.mealCount <= 1) return;
-
-    setMessage("");
-    try {
-      const nextMenu = activeMenu.id === null
-        ? {
-          ...activeMenu,
-          mealCount: activeMenu.mealCount - 1,
-          items: activeMenu.items
-            .filter((item) => item.mealNumber !== mealNumber)
-            .map((item) => item.mealNumber > mealNumber
-              ? { ...item, mealNumber: item.mealNumber - 1 }
-              : item)
-        }
-        : await removeMenuMeal(api, activeMenu.id, mealNumber);
-      setActiveMenu(nextMenu);
-      setMealCount(nextMenu.mealCount);
-      setShoppingList([]);
-      setDirtyShoppingItemIds(new Set());
-      setSourceMetadataDirtyItemIds(new Set());
-      setStoreItemReview(null);
-      setStoreItemReviewMessage("");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to remove meal.");
-    }
-  }
-
-  async function updateCustomShoppingListSelection(listId: number, included: boolean) {
-    if (!activeMenu) return;
-    const nextIds = included
-      ? Array.from(new Set([...activeMenu.customShoppingListIds, listId]))
-      : activeMenu.customShoppingListIds.filter((id) => id !== listId);
-
-    setActiveMenu({ ...activeMenu, customShoppingListIds: nextIds });
-    setShoppingList([]);
-    setDirtyShoppingItemIds(new Set());
-    setSourceMetadataDirtyItemIds(new Set());
-    setStoreItemReview(null);
-    setStoreItemReviewMessage("");
-
-    if (activeMenu.id !== null) {
-      await updateMenuShoppingLists(api, activeMenu.id, nextIds);
-      await clearShoppingList(api, activeMenu.id);
-    }
-  }
-
-  async function aggregateIngredients() {
-    if (!activeMenu) return;
-    if (activeMenu.id === null) {
-      setMessage("Save the menu before aggregating ingredients.");
-      return;
-    }
-    await aggregateShoppingList(api, activeMenu.id);
-    setShoppingList(await getShoppingList(api, activeMenu.id));
-    setDirtyShoppingItemIds(new Set());
-    setSourceMetadataDirtyItemIds(new Set());
-    setStoreItemReview(null);
-    setStoreItemReviewMessage("");
-  }
-
-  async function clearAggregatedIngredients() {
-    if (!activeMenu?.id) return;
-    await clearShoppingList(api, activeMenu.id);
-    setShoppingList([]);
-    setDirtyShoppingItemIds(new Set());
-    setSourceMetadataDirtyItemIds(new Set());
-    setStoreItemReview(null);
-    setStoreItemReviewMessage("");
-    setMessage("");
-  }
-
-  async function saveDirtyShoppingItems() {
-    if (!activeMenu?.id) return;
-    const dirtyItems = shoppingList.filter((item) => dirtyShoppingItemIds.has(item.id));
-    if (!dirtyItems.length) return;
-
-    await updateShoppingListItems(
-      api,
-      activeMenu.id,
-      dirtyItems.map((item) => ({ ...item, approved: item.approved ? 1 : 0 }))
-    );
-
-    setDirtyShoppingItemIds((current) => {
-      const next = new Set(current);
-      dirtyItems.forEach((item) => next.delete(item.id));
-      return next;
-    });
   }
 
   async function updateShoppingItemApproval(itemId: number, approved: boolean) {
@@ -543,42 +329,6 @@ export function App() {
       setSearchingStoreItemIds((current) => {
         const next = new Set(current);
         next.delete(itemId);
-        return next;
-      });
-    }
-  }
-
-  async function saveShoppingItemToSource(item: ShoppingListItem) {
-    if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return false;
-
-    setMessage("");
-    setSavingSourceItemIds((current) => new Set(current).add(item.id));
-    try {
-      const result = await saveShoppingListItemToSource(api, activeMenu.id, item);
-      setShoppingList((current) => current.map((candidate) => (
-        candidate.id === item.id ? result.item : candidate
-      )));
-      setDirtyShoppingItemIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
-        return next;
-      });
-      setSourceMetadataDirtyItemIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
-        return next;
-      });
-      setStoreItemReview(null);
-      await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
-      setMessage(`Saved item details to ${item.sourceNames}. Re-aggregate to apply any new grouping.`);
-      return true;
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to save item details to the source.");
-      return false;
-    } finally {
-      setSavingSourceItemIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
         return next;
       });
     }
