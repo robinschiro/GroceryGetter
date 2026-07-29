@@ -52,6 +52,7 @@
 - Do not push if the commit fails, verification fails, or the branch/upstream state is unclear; explain the blocker instead.
 
 ## Verification
+- For every change, run the relevant test suites before finishing. Add or update tests when behavior changes, regressions are fixed, or existing coverage no longer reflects the intended behavior.
 - Run `npm run typecheck` for TypeScript-only changes.
 - Before attempting a Vite build in Codex, check whether the app is already running:
   - Frontend: `Invoke-WebRequest -Uri http://127.0.0.1:5173 -UseBasicParsing -TimeoutSec 2`
