@@ -1,6 +1,6 @@
 import express from "express";
-import { setDefaultDatabase, type GroceryDatabase } from "./db.js";
-import type { QfcService } from "./qfcAdapter.js";
+import type { GroceryDatabase } from "./infrastructure/database/database.js";
+import type { QfcService } from "./infrastructure/kroger/krogerService.js";
 import { createRecipeRepository } from "./features/recipes/recipeRepository.js";
 import { createRecipeRouter } from "./features/recipes/recipeRouter.js";
 import { createRecipeService } from "./features/recipes/recipeService.js";
@@ -25,7 +25,6 @@ export function createApp({
   qfcService: QfcService;
   testMode?: boolean;
 }) {
-  setDefaultDatabase(database);
   const plannerRepository = createPlannerRepository(database);
   const plannerService = createPlannerService(plannerRepository);
   const shoppingListWorkflowService = createShoppingListWorkflowService(
@@ -49,7 +48,6 @@ export function createApp({
     app.post("/api/test/reset", async (req, res, next) => {
       try {
         await database.reset();
-        setDefaultDatabase(database);
         const seeded = seedTestDatabase(database, (req.body?.seed ?? {}) as TestSeed);
         res.json({ reset: true, seeded });
       } catch (error) {

@@ -1,4 +1,4 @@
-import type { GroceryDatabase } from "../../db.js";
+import type { GroceryDatabase } from "../../infrastructure/database/database.js";
 import type { DataScope, Recipe, RecipeInput } from "../../../shared/contracts/index.js";
 
 type RecipeRow = Omit<Recipe, "ingredients">;

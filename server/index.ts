@@ -1,12 +1,11 @@
 import path from "node:path";
 import { createApp } from "./app.js";
-import { createDatabase, productionDatabasePath } from "./db.js";
+import { createDatabase, productionDatabasePath } from "./infrastructure/database/database.js";
 import {
   createQfcService,
   FakeKrogerClient,
-  KrogerHttpClient,
-  setKrogerClient
-} from "./qfcAdapter.js";
+  KrogerHttpClient
+} from "./infrastructure/kroger/krogerService.js";
 
 export function resolveDatabasePath(environment: NodeJS.ProcessEnv = process.env) {
   return path.resolve(environment.GROCERY_GETTER_DB_PATH || productionDatabasePath);
@@ -28,10 +27,12 @@ assertSafeTestDatabase(databasePath, testMode);
 const database = createDatabase({ filePath: databasePath });
 await database.initialize();
 
-setKrogerClient(testMode ? new FakeKrogerClient() : new KrogerHttpClient());
 const app = createApp({
   database,
-  qfcService: createQfcService(),
+  qfcService: createQfcService(
+    database,
+    testMode ? new FakeKrogerClient() : new KrogerHttpClient()
+  ),
   testMode
 });
 

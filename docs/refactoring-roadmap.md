@@ -68,7 +68,10 @@ Phase 4 QFC extraction started on 2026-07-29:
 - The application factory now limits itself to middleware and feature composition.
 - Settings, OAuth, store search, matching/review, and cart-submission routes are mounted from `server/features/qfc/qfcRouter.ts` with explicit database, planner-repository, and QFC-service dependencies.
 - Disposable characterization seeding now lives in `server/testing` instead of the production application module.
-- QFC workflow/service, persistence, adapter, and frontend ownership remain to be split into focused modules.
+- Expiring preview/submission job state and QFC-owned persistence now live behind focused job-store and repository modules.
+- Kroger integration now lives in `server/infrastructure/kroger` and receives both its database and `KrogerClient` explicitly; the characterization server constructs it with `FakeKrogerClient`.
+- Database creation/schema/persistence now lives in `server/infrastructure/database`; the process-wide default database and deprecated global query helpers were removed.
+- QFC router workflow and frontend ownership remain to be split into focused modules.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 

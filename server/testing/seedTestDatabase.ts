@@ -1,4 +1,4 @@
-import type { GroceryDatabase } from "../db.js";
+import type { GroceryDatabase } from "../infrastructure/database/database.js";
 import type { DataScope } from "../types.js";
 
 type TestSeedIngredient = {
