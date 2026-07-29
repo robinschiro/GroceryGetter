@@ -6,6 +6,27 @@ Create `docs/refactoring-roadmap.md` containing this roadmap and use it as the m
 
 The goal is to replace the frontend, API, persistence, QFC, and CSS monoliths with understandable feature-oriented modules. Refactoring begins only after a complete characterization suite covers the current workflows. Existing HTTP contracts, persisted data, routes, and general appearance remain stable, although small product cleanups may be included and reflected in the tests.
 
+## Progress
+
+Phases 1 and 2 were completed on 2026-07-29. No phase 3 feature extraction has started.
+
+- Phase 1 testability seams were committed in `9f59f33`:
+  - `GROCERY_GETTER_DB_PATH` selects the database while normal startup retains `data/grocery-getter.sqlite`.
+  - Test-mode startup refuses the resolved production database path.
+  - `createDatabase({ filePath })` returns an instance with initialization, query, mutation, transaction, persistence, reset, and close operations.
+  - `createApp({ database, qfcService, testMode })` composes Express without initializing data or opening a port.
+  - Kroger token exchange, location search, product search, and cart submission use an injectable `KrogerClient`.
+  - Test mode installs `FakeKrogerClient`, whose deterministic searches and in-memory cart submissions cannot make Kroger network requests or mutate a real cart.
+  - `POST /api/test/reset` is registered only in test mode and resets/seeds the injected disposable database.
+- Phase 2 characterization was committed in `80bb966`:
+  - Playwright is the only test framework. The `api`, `chromium`, and `mobile-smoke` projects run serially with one worker.
+  - Global test setup constructs the API and production-preview frontend in-process against `.cache/tests/characterization.sqlite`.
+  - Every test resets and seeds deterministic disposable data. The suite covers the application shell, recipes, reusable shopping lists, planner, aggregation, settings, fake-QFC review/submission, API errors, scope isolation, and mobile navigation/overflow.
+  - Local scripts are available as `npm run test:api`, `npm run test:e2e`, `npm run test:mobile`, `npm run test:characterization`, `npm run test:headed`, and `npm run test:ui`.
+  - No CI configuration was added.
+
+The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
+
 Target organization:
 
 ```text
@@ -22,7 +43,7 @@ No arbitrary file-size limits will be imposed. Completion is based on clear owne
 
 ## Implementation Roadmap
 
-### 1. Establish safe testability seams
+### 1. Establish safe testability seams — Complete
 
 - Make the database path configurable through `GROCERY_GETTER_DB_PATH`, retaining `data/grocery-getter.sqlite` as the normal default.
 - Refuse to start in test mode if the resolved test database is the production database.
@@ -36,7 +57,7 @@ No arbitrary file-size limits will be imposed. Completion is based on clear owne
 - Register a reset/seed endpoint only when `GROCERY_GETTER_TEST_MODE=1`; return 404 in every normal environment.
 - Verify this bootstrap with typecheck, build, and smoke requests against `.cache/tests/`, never against user data.
 
-### 2. Add the complete characterization suite
+### 2. Add the complete characterization suite — Complete
 
 Install Playwright as the only initial test framework and add local scripts for API tests, browser tests, headed/UI mode, and the full characterization suite. Do not add GitHub Actions.
 
