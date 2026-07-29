@@ -5,7 +5,6 @@ import type {
   ShoppingListItem,
   StoreItemPreference
 } from "../../../shared/contracts/index.js";
-import { updateShoppingListApproval } from "../planner/api.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
 import {
   deleteStoreItemPreference as deleteStoreItemPreferenceRequest,
@@ -32,6 +31,7 @@ export function useQfc({
   dirtyShoppingItemIds,
   sourceMetadataDirtyItemIds,
   saveDirtyShoppingItems,
+  saveShoppingItemApproval,
   loadMenu,
   setPlannerMessage
 }: {
@@ -42,6 +42,7 @@ export function useQfc({
   dirtyShoppingItemIds: Set<number>;
   sourceMetadataDirtyItemIds: Set<number>;
   saveDirtyShoppingItems: () => Promise<void>;
+  saveShoppingItemApproval: (itemId: number, approved: boolean) => Promise<void>;
   loadMenu: (id: number) => Promise<void>;
   setPlannerMessage: Dispatch<SetStateAction<string>>;
 }) {
@@ -90,7 +91,7 @@ export function useQfc({
     }
 
     try {
-      await updateShoppingListApproval(api, menuId, itemId, approved);
+      await saveShoppingItemApproval(itemId, approved);
 
       if (
         !approved

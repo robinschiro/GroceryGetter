@@ -6,7 +6,7 @@ import type {
   ShoppingListItem
 } from "../../../shared/contracts/index.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
-import { recipeCategories } from "../recipes/RecipesPage.js";
+import { recipeCategories } from "../../shared/recipeCategories.js";
 import {
   addMenuMeal,
   aggregateShoppingList,
@@ -20,6 +20,7 @@ import {
   saveShoppingListItemToSource,
   updateMenuItem as updateMenuItemRequest,
   updateMenuShoppingLists,
+  updateShoppingListApproval,
   updateShoppingListItems
 } from "./api.js";
 
@@ -248,6 +249,11 @@ export function usePlanner({
     });
   }
 
+  async function saveShoppingItemApproval(itemId: number, approved: boolean) {
+    if (!activeMenu?.id) return;
+    await updateShoppingListApproval(api, activeMenu.id, itemId, approved);
+  }
+
   async function saveShoppingItemToSource(item: ShoppingListItem) {
     if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return false;
 
@@ -299,6 +305,7 @@ export function usePlanner({
     reset,
     saveDirtyShoppingItems,
     saveMenu,
+    saveShoppingItemApproval,
     saveShoppingItemToSource,
     savingSourceItemIds,
     setMealCount,

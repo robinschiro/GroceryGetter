@@ -14,23 +14,19 @@ import type {
   RecipeIngredient,
   RecipeInput
 } from "../../../shared/contracts/index.js";
-import type { RecipeAdminTab } from "../../app/router.js";
-import { recipeEditRoute } from "../../app/router.js";
+import type { RecipeAdminTab } from "../../shared/router.js";
+import { recipeEditRoute } from "../../shared/router.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
+import {
+  recipeCategories,
+  type RecipeCategoryCount
+} from "../../shared/recipeCategories.js";
 import {
   createRecipe,
   deleteRecipe,
   setRecipeMenuGeneration,
   updateRecipe
 } from "./api.js";
-
-export const recipeCategories: Array<{ value: RecipeCategory; label: string }> = [
-  { value: "entree", label: "Entree" },
-  { value: "vegetable_side", label: "Vegetable side" },
-  { value: "starch_side", label: "Starch side" }
-];
-
-export type RecipeCategoryCount = (typeof recipeCategories)[number] & { count: number };
 
 type RecipesPageProps = {
   api: ApiRequest;

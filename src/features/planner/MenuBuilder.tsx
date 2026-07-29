@@ -5,7 +5,7 @@ import type {
   Recipe,
   RecipeCategory
 } from "../../../shared/contracts/index.js";
-import { recipeCategories } from "../recipes/RecipesPage.js";
+import { recipeCategories } from "../../shared/recipeCategories.js";
 
 export function MenuBuilder({
   recipes,

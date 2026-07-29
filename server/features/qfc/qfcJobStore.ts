@@ -13,26 +13,26 @@ export type QfcSubmitJob = {
   createdAt: number;
 };
 
-export function createQfcJobStore({ ttlMs = 15 * 60 * 1000 } = {}) {
-  const jobs = new Map<string, QfcSubmitJob>();
+export class QfcJobStore {
+  private readonly jobs = new Map<string, QfcSubmitJob>();
 
-  function prune() {
-    const cutoff = Date.now() - ttlMs;
-    for (const [jobId, job] of jobs.entries()) {
+  constructor(private readonly ttlMs = 15 * 60 * 1000) {}
+
+  prune() {
+    const cutoff = Date.now() - this.ttlMs;
+    for (const [jobId, job] of this.jobs.entries()) {
       if (job.createdAt < cutoff) {
-        jobs.delete(jobId);
+        this.jobs.delete(jobId);
       }
     }
   }
 
-  function getScoped(jobId: string, dataScope: DataScope) {
-    const job = jobs.get(jobId);
+  getScoped(jobId: string, dataScope: DataScope) {
+    const job = this.jobs.get(jobId);
     return job?.dataScope === dataScope ? job : undefined;
   }
 
-  function set(job: QfcSubmitJob) {
-    jobs.set(job.id, job);
+  set(job: QfcSubmitJob) {
+    this.jobs.set(job.id, job);
   }
-
-  return { getScoped, prune, set };
 }

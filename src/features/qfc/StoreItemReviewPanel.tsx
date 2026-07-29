@@ -19,8 +19,8 @@ import type {
   ShoppingListSourceTarget,
   StoreItemMatch
 } from "../../../shared/contracts/index.js";
-import { recipeEditRoute, shoppingListEditRoute } from "../../app/router.js";
-import { QfcSubmitProgressBar } from "./QfcSubmitProgressBar.js";
+import { recipeEditRoute, shoppingListEditRoute } from "../../shared/router.js";
+import { QfcSubmitProgressBar } from "../../shared/QfcSubmitProgressBar.js";
 import type { StoreItemReviewSearchResult } from "./api.js";
 
 export type StoreItemReview = {

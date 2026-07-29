@@ -1,10 +1,13 @@
 import express from "express";
 import type { GroceryDatabase } from "../../infrastructure/database/database.js";
 import type { QfcService } from "../../infrastructure/kroger/krogerService.js";
-import type { createPlannerRepository } from "../planner/plannerRepository.js";
 import type { DataScope } from "../../types.js";
 import { createQfcRepository } from "./qfcRepository.js";
-import { createQfcWorkflowService, QfcWorkflowError } from "./qfcWorkflowService.js";
+import {
+  createQfcWorkflowService,
+  QfcWorkflowError,
+  type QfcPlannerReader
+} from "./qfcWorkflowService.js";
 
 export function createQfcRouter({
   database,
@@ -12,7 +15,7 @@ export function createQfcRouter({
   qfcService
 }: {
   database: GroceryDatabase;
-  plannerRepository: ReturnType<typeof createPlannerRepository>;
+  plannerRepository: QfcPlannerReader;
   qfcService: QfcService;
 }) {
   const {

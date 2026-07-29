@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { QfcService } from "../../infrastructure/kroger/krogerService.js";
 import type { DataScope } from "../../types.js";
-import type { createPlannerRepository } from "../planner/plannerRepository.js";
-import { createQfcJobStore, type QfcSubmitJob } from "./qfcJobStore.js";
+import type { Menu, ShoppingListItem } from "../../../shared/contracts/index.js";
+import { QfcJobStore, type QfcSubmitJob } from "./qfcJobStore.js";
 import type { createQfcRepository } from "./qfcRepository.js";
 
 type CompletePreviewJob = QfcSubmitJob & {
   kind: "preview";
   status: "complete";
   result: NonNullable<QfcSubmitJob["result"]>;
+};
+
+export type QfcPlannerReader = {
+  getMenu(menuId: number, dataScope: DataScope): Menu | null;
+  getShoppingListItems(menuId: number, dataScope: DataScope): ShoppingListItem[];
 };
 
 export class QfcWorkflowError extends Error {
@@ -24,12 +29,12 @@ export function createQfcWorkflowService({
   plannerRepository,
   qfcRepository,
   qfcService,
-  jobStore = createQfcJobStore()
+  jobStore = new QfcJobStore()
 }: {
-  plannerRepository: ReturnType<typeof createPlannerRepository>;
+  plannerRepository: QfcPlannerReader;
   qfcRepository: ReturnType<typeof createQfcRepository>;
   qfcService: QfcService;
-  jobStore?: ReturnType<typeof createQfcJobStore>;
+  jobStore?: QfcJobStore;
 }) {
   function requirePreviewJob(jobId: string, dataScope: DataScope) {
     jobStore.prune();

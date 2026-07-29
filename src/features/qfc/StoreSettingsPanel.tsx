@@ -7,7 +7,7 @@ import type {
   StoreItemCandidate,
   StoreItemPreference
 } from "../../../shared/contracts/index.js";
-import type { QfcSettingsTab } from "../../app/router.js";
+import type { QfcSettingsTab } from "../../shared/router.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
 import {
   refreshCustomerOAuth as refreshCustomerOAuthRequest,

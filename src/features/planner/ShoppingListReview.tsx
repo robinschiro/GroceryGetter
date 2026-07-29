@@ -5,8 +5,8 @@ import type {
   ShoppingListItem,
   ShoppingListSourceTarget
 } from "../../../shared/contracts/index.js";
-import { recipeEditRoute, shoppingListEditRoute } from "../../app/router.js";
-import { QfcSubmitProgressBar } from "../qfc/QfcSubmitProgressBar.js";
+import { recipeEditRoute, shoppingListEditRoute } from "../../shared/router.js";
+import { QfcSubmitProgressBar } from "../../shared/QfcSubmitProgressBar.js";
 
 export function ShoppingListReview({
   items,

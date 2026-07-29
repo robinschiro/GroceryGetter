@@ -5,6 +5,8 @@ This app has two local development servers:
 - Vite web app on port `5173`
 - Express API on port `5174`
 
+See [architecture.md](architecture.md) for module ownership, dependency rules, disposable-test guarantees, and the full verification commands.
+
 For normal local development, open the app at:
 
 ```text

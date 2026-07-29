@@ -1,5 +1,4 @@
-import type { ComponentProps } from "react";
-import { StoreItemReviewPanel } from "../qfc/StoreItemReviewPanel.js";
+import type { ComponentProps, ReactNode } from "react";
 import { MenuBuilder } from "./MenuBuilder.js";
 import { ShoppingListReview } from "./ShoppingListReview.js";
 
@@ -10,13 +9,13 @@ export function PlannerPage({
 }: {
   menuBuilder: ComponentProps<typeof MenuBuilder>;
   shoppingListReview: ComponentProps<typeof ShoppingListReview>;
-  storeItemReview: ComponentProps<typeof StoreItemReviewPanel>;
+  storeItemReview: ReactNode;
 }) {
   return (
     <div className="grid planner-grid">
       <MenuBuilder {...menuBuilder} />
       <ShoppingListReview {...shoppingListReview} />
-      <StoreItemReviewPanel {...storeItemReview} />
+      {storeItemReview}
     </div>
   );
 }

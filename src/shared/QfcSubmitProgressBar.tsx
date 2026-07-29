@@ -1,4 +1,4 @@
-import type { QfcSubmitProgress } from "../../../shared/contracts/index.js";
+import type { QfcSubmitProgress } from "../../shared/contracts/index.js";
 
 export function QfcSubmitProgressBar({ progress }: { progress: QfcSubmitProgress }) {
   const fallbackByPhase = {

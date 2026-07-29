@@ -13,8 +13,8 @@ import type {
   CustomShoppingListInput,
   CustomShoppingListItem
 } from "../../../shared/contracts/index.js";
-import type { ShoppingListsTab } from "../../app/router.js";
-import { shoppingListEditRoute } from "../../app/router.js";
+import type { ShoppingListsTab } from "../../shared/router.js";
+import { shoppingListEditRoute } from "../../shared/router.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
 import {
   createShoppingList,

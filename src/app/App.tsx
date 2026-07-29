@@ -17,7 +17,7 @@ import {
   shoppingListEditRoute,
   type AppRoute,
   type AppView
-} from "./router.js";
+} from "../shared/router.js";
 import type {
   CustomShoppingList,
   DataScope,
@@ -25,15 +25,14 @@ import type {
 } from "../../shared/contracts/index.js";
 import { createApiClient } from "../shared/apiClient.js";
 import { listRecipes } from "../features/recipes/api.js";
-import {
-  RecipesPage,
-  recipeCategories
-} from "../features/recipes/RecipesPage.js";
+import { RecipesPage } from "../features/recipes/RecipesPage.js";
+import { recipeCategories } from "../shared/recipeCategories.js";
 import { listShoppingLists } from "../features/shoppingLists/api.js";
 import { ShoppingListsPage } from "../features/shoppingLists/ShoppingListsPage.js";
 import { PlannerPage } from "../features/planner/PlannerPage.js";
 import { usePlanner } from "../features/planner/usePlanner.js";
 import { StoreSettingsPanel } from "../features/qfc/StoreSettingsPanel.js";
+import { StoreItemReviewPanel } from "../features/qfc/StoreItemReviewPanel.js";
 import { useQfc } from "../features/qfc/useQfc.js";
 
 type ThemeMode = "light" | "dark";
@@ -87,6 +86,7 @@ export function App() {
     reset: resetPlanner,
     saveDirtyShoppingItems,
     saveMenu,
+    saveShoppingItemApproval,
     saveShoppingItemToSource,
     savingSourceItemIds,
     setMealCount,
@@ -136,6 +136,7 @@ export function App() {
     dirtyShoppingItemIds,
     sourceMetadataDirtyItemIds,
     saveDirtyShoppingItems,
+    saveShoppingItemApproval,
     loadMenu,
     setPlannerMessage: setMessage
   });
@@ -385,23 +386,25 @@ export function App() {
               qfcSubmitProgress,
               message
             }}
-            storeItemReview={{
-              review: storeItemReview,
-              allowRealQfcCartMutation,
-              addToCart: addReviewedStoreItemsToQfc,
-              selectStoreItem,
-              updateCartQuantity: updateStoreItemQuantity,
-              searchStoreItems: searchStoreItemsForReview,
-              removeStoreItem: removeStoreItemFromReview,
-              openSource: (source) => navigate(
-                source.type === "recipe"
-                  ? recipeEditRoute(source.id)
-                  : shoppingListEditRoute(source.id)
-              ),
-              openQfcCart,
-              qfcSubmitProgress,
-              message: storeItemReviewMessage
-            }}
+            storeItemReview={(
+              <StoreItemReviewPanel
+                review={storeItemReview}
+                allowRealQfcCartMutation={allowRealQfcCartMutation}
+                addToCart={addReviewedStoreItemsToQfc}
+                selectStoreItem={selectStoreItem}
+                updateCartQuantity={updateStoreItemQuantity}
+                searchStoreItems={searchStoreItemsForReview}
+                removeStoreItem={removeStoreItemFromReview}
+                openSource={(source) => navigate(
+                  source.type === "recipe"
+                    ? recipeEditRoute(source.id)
+                    : shoppingListEditRoute(source.id)
+                )}
+                openQfcCart={openQfcCart}
+                qfcSubmitProgress={qfcSubmitProgress}
+                message={storeItemReviewMessage}
+              />
+            )}
           />
         ) : null}
       </section>
