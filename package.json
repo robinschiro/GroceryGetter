@@ -8,6 +8,12 @@
     "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite --host 127.0.0.1 --configLoader native",
     "build": "tsc && vite build --configLoader native",
+    "test:api": "playwright test --project=api",
+    "test:e2e": "playwright test --project=chromium",
+    "test:mobile": "playwright test --project=mobile-smoke",
+    "test:characterization": "playwright test",
+    "test:headed": "playwright test --project=chromium --headed",
+    "test:ui": "playwright test --ui",
     "import:recipes": "tsx scripts/import-recipes.ts",
     "import:recipes:commit": "tsx scripts/import-recipes.ts --commit",
     "sync:recipes": "tsx scripts/import-recipes.ts --sync",
@@ -32,6 +38,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/sql.js": "^1.4.11",
+    "playwright": "1.61.1",
     "typescript": "^5.7.2"
   }
 }

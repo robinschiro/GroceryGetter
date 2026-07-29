@@ -45,6 +45,7 @@ function shutdown() {
     database.close();
     process.exit(0);
   });
+  server.closeAllConnections();
 }
 
 process.once("SIGINT", shutdown);

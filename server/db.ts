@@ -15,6 +15,7 @@ export type GroceryDatabase = {
   reset(): Promise<void>;
   close(): void;
   save(): void;
+  exec(sql: string): void;
   run(sql: string, params?: SqlValue[]): void;
   insert(sql: string, params?: SqlValue[]): number;
   queryAll<T extends Row>(sql: string, params?: SqlValue[]): T[];
@@ -56,7 +57,7 @@ function customShoppingListsHaveScopedNameKey(database: GroceryDatabase) {
 }
 
 async function initializeSchema(database: GroceryDatabase) {
-  const { insert, queryAll, queryOne, run, save: saveDb, transaction } = database;
+  const { exec, queryAll, queryOne, run, save: saveDb, transaction } = database;
 
   if (tableExists(database, "shopping_list_items") && !tableExists(database, "menu_shopping_list_items")) {
     run("ALTER TABLE shopping_list_items RENAME TO menu_shopping_list_items");
@@ -78,7 +79,7 @@ async function initializeSchema(database: GroceryDatabase) {
   }
   saveDb();
 
-  run(`
+  exec(`
   CREATE TABLE IF NOT EXISTS recipes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -451,6 +452,9 @@ export function createDatabase({ filePath }: { filePath: string }): GroceryDatab
     },
     save() {
       fs.writeFileSync(resolvedFilePath, Buffer.from(requireDatabase().export()));
+    },
+    exec(sql) {
+      requireDatabase().exec(sql);
     },
     run(sql, params = []) {
       requireDatabase().run(sql, params);
