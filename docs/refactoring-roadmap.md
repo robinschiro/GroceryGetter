@@ -63,6 +63,13 @@ Phase 4 planner extraction started on 2026-07-29:
 - Menu and generated-list lifecycle state now lives in `src/features/planner/usePlanner.ts`; the shell retains only the cross-feature approval/store-review coordination that will move with the QFC slice.
 - Planner page composition and planner-specific style ownership remain to be completed.
 
+Phase 4 QFC extraction started on 2026-07-29:
+
+- The application factory now limits itself to middleware and feature composition.
+- Settings, OAuth, store search, matching/review, and cart-submission routes are mounted from `server/features/qfc/qfcRouter.ts` with explicit database, planner-repository, and QFC-service dependencies.
+- Disposable characterization seeding now lives in `server/testing` instead of the production application module.
+- QFC workflow/service, persistence, adapter, and frontend ownership remain to be split into focused modules.
+
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
 Target organization:
