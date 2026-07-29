@@ -48,7 +48,8 @@ Phase 4 reusable shopping-list extraction started on 2026-07-29:
 - Reusable shopping-list HTTP calls now live behind `src/features/shoppingLists/api.ts`.
 - Reusable shopping-list routes, validation/workflow behavior, and persistence are separated into a feature router, service, and explicitly injected repository.
 - The superseded shopping-list handlers, validation, item replacement, row mapping, and text helper were removed from `server/app.ts`.
-- Shopping-list page/component and style ownership remain to be moved before the slice is complete.
+- Reusable-list create/edit/delete state, validation display, item ordering, default inclusion, and management UI now live in `src/features/shoppingLists/ShoppingListsPage.tsx`; the superseded shell components were removed.
+- Shopping-list-specific style ownership remains to be moved before the slice is complete.
 
 Phase 4 planner extraction started on 2026-07-29:
 
