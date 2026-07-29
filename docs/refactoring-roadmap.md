@@ -8,7 +8,7 @@ The goal is to replace the frontend, API, persistence, QFC, and CSS monoliths wi
 
 ## Progress
 
-Phases 1 and 2 were completed on 2026-07-29. No phase 3 feature extraction has started.
+Phases 1 and 2 were completed on 2026-07-29. Phases 3 and 4 are in progress.
 
 - Phase 1 testability seams were committed in `9f59f33`:
   - `GROCERY_GETTER_DB_PATH` selects the database while normal startup retains `data/grocery-getter.sqlite`.
@@ -59,7 +59,8 @@ Phase 4 planner extraction started on 2026-07-29:
 - Menu preview, creation, retrieval, meal editing, recipe replacement, and reusable-list selection now run through a thin planner router, workflow service, and explicitly injected repository.
 - Aggregation, generated-list retrieval/clearing, dirty saves, approval updates, and save-to-source now run through the planner router, focused shopping-list workflow service, domain rules, and persistence repository.
 - The superseded planner and generated-shopping-list handlers and SQL were removed from `server/app.ts`.
-- Planner page/state/style ownership remains to be completed.
+- Menu-builder and generated-list review UI now live under `src/features/planner`; shared QFC submission progress presentation lives under `src/features/qfc`.
+- Planner orchestration state and planner-specific style ownership remain to be completed.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
