@@ -1,11 +1,10 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
 import type { GroceryDatabase } from "../../infrastructure/database/database.js";
 import type { QfcService } from "../../infrastructure/kroger/krogerService.js";
 import type { createPlannerRepository } from "../planner/plannerRepository.js";
 import type { DataScope } from "../../types.js";
-import { createQfcJobStore, type QfcSubmitJob } from "./qfcJobStore.js";
 import { createQfcRepository } from "./qfcRepository.js";
+import { createQfcWorkflowService, QfcWorkflowError } from "./qfcWorkflowService.js";
 
 export function createQfcRouter({
   database,
@@ -17,24 +16,24 @@ export function createQfcRouter({
   qfcService: QfcService;
 }) {
   const {
-    addQfcMatchesToCart,
     createCustomerAuthorizationUrl,
     deleteStoreItemPreference,
     exchangeCustomerAuthorizationCode,
     getQfcApiStatus,
-    getScopedSetting,
     getStoreItemPreferences,
-    previewQfcCart,
     refreshCustomerToken,
     saveQfcApiSettings,
-    saveStoreItemPreference,
     searchLocations,
     searchStoreItems,
     setScopedSetting
   } = qfcService;
   const app = express.Router();
-  const qfcSubmitJobs = createQfcJobStore();
   const qfcRepository = createQfcRepository(database);
+  const qfcWorkflow = createQfcWorkflowService({
+    plannerRepository,
+    qfcRepository,
+    qfcService
+  });
 
 function requestScope(res: express.Response): DataScope {
   return res.locals.dataScope as DataScope;
@@ -49,12 +48,14 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getMenu(menuId: number, dataScope: DataScope) {
-  return plannerRepository.getMenu(menuId, dataScope);
-}
-
-function getShoppingListItems(menuId: number, dataScope: DataScope) {
-  return plannerRepository.getShoppingListItems(menuId, dataScope);
+function sendWorkflowError(res: express.Response, error: unknown) {
+  if (error instanceof QfcWorkflowError) {
+    res.status(error.status).json({ error: error.message });
+    return;
+  }
+  res.status(400).json({
+    error: error instanceof Error ? error.message : "Unable to complete the QFC workflow."
+  });
 }
 
 app.get("/api/settings", (_req, res) => {
@@ -203,298 +204,82 @@ app.delete("/api/store-item-preferences/:provider/:ingredientKey", (req, res) =>
   res.json({ ok: true });
 });
 
-app.post("/api/menus/:id/preview-qfc", async (req, res) => {
-  const dataScope = requestScope(res);
-  const menuId = req.params.id;
-  if (!getMenu(Number(menuId), dataScope)) {
-    res.status(404).json({ error: "Menu not found." });
-    return;
+app.post("/api/menus/:id/preview-qfc", (req, res) => {
+  try {
+    const job = qfcWorkflow.startPreview(Number(req.params.id), requestScope(res));
+    res.status(202).json({ jobId: job.id, ...job });
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-  const rows = getShoppingListItems(Number(menuId), dataScope)
-    .filter((item) => Boolean(item.approved));
-
-  qfcSubmitJobs.prune();
-  const jobId = randomUUID();
-  const job: QfcSubmitJob = {
-    id: jobId,
-    kind: "preview",
-    menuId,
-    dataScope,
-    status: "running",
-    progress: {
-      phase: "checking",
-      processedItems: 0,
-      totalItems: rows.length,
-      message: "Starting store item matching..."
-    },
-    createdAt: Date.now()
-  };
-  qfcSubmitJobs.set(job);
-
-  void previewQfcCart(dataScope, rows, (progress) => {
-    job.progress = progress;
-  })
-    .then((result) => {
-      job.status = "complete";
-      job.result = result;
-      job.progress = {
-        phase: "complete",
-        processedItems: rows.length,
-        totalItems: rows.length,
-        message: result.message
-      };
-    })
-    .catch((error: unknown) => {
-      job.status = "failed";
-      job.error = error instanceof Error ? error.message : "Store item matching failed.";
-      job.progress = {
-        phase: "complete",
-        processedItems: rows.length,
-        totalItems: rows.length,
-        message: job.error
-      };
-    });
-
-  res.status(202).json({ jobId, ...job });
 });
 
 app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) => {
-  qfcSubmitJobs.prune();
-  const previewJob = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
-    return;
+  try {
+    res.json(qfcWorkflow.selectStoreItem(
+      req.params.jobId,
+      requestScope(res),
+      Number(req.params.shoppingItemId),
+      String(req.body.productId ?? ""),
+      String(req.body.upc ?? "")
+    ));
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-
-  const shoppingItemId = Number(req.params.shoppingItemId);
-  const match = previewJob.result.matched?.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
-  if (!match) {
-    res.status(404).json({ error: "The ingredient was not found in this store item review." });
-    return;
-  }
-
-  const productId = String(req.body.productId ?? "");
-  const upc = String(req.body.upc ?? "");
-  const storeItem = match.candidates.find((candidate) =>
-    candidate.productId === productId && candidate.upc === upc
-  );
-  if (!storeItem) {
-    res.status(400).json({ error: "Choose a store item from the current review results." });
-    return;
-  }
-
-  const ingredientName = match.item.item.trim() || match.item.text.trim();
-  const preference = saveStoreItemPreference(previewJob.dataScope, "kroger", ingredientName, storeItem);
-  match.storeItem = storeItem;
-  match.selectionSource = "remembered";
-  res.json({ match, preference });
 });
 
 app.put("/api/store-item-reviews/:jobId/quantities/:shoppingItemId", (req, res) => {
-  qfcSubmitJobs.prune();
-  const previewJob = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
-    return;
+  try {
+    res.json(qfcWorkflow.updateQuantity(
+      req.params.jobId,
+      requestScope(res),
+      Number(req.params.shoppingItemId),
+      Number(req.body.cartQuantity)
+    ));
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-
-  const shoppingItemId = Number(req.params.shoppingItemId);
-  const match = previewJob.result.matched?.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
-  if (!match) {
-    res.status(404).json({ error: "The ingredient was not found in this store item review." });
-    return;
-  }
-
-  const cartQuantity = Number(req.body.cartQuantity);
-  if (!Number.isSafeInteger(cartQuantity) || cartQuantity < 1) {
-    res.status(400).json({ error: "Cart quantity must be a positive whole number." });
-    return;
-  }
-
-  match.cartQuantity = cartQuantity;
-  res.json({ match });
 });
 
 app.post("/api/store-item-reviews/:jobId/items/:shoppingItemId/search", async (req, res) => {
-  qfcSubmitJobs.prune();
-  const previewJob = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
-    return;
-  }
-
-  const shoppingItemId = Number(req.params.shoppingItemId);
-  const matches = previewJob.result.matched ?? [];
-  const skipped = previewJob.result.skipped ?? [];
-  let match = matches.find((candidateMatch) => candidateMatch.item.id === shoppingItemId);
-  let skip = skipped.find((candidateSkip) => candidateSkip.item.id === shoppingItemId);
-  let restoredItem = null;
-  if (!match && !skip) {
-    restoredItem = getShoppingListItems(Number(previewJob.menuId), previewJob.dataScope)
-      .find((candidate) => candidate.id === shoppingItemId && candidate.approved);
-    if (!restoredItem) {
-      res.status(404).json({ error: "The ingredient was not found in this store item review." });
-      return;
-    }
-    skip = { item: restoredItem, reason: "No store item has been selected." };
-  }
-
-  const term = String(req.body.term ?? "").trim();
-  if (!term) {
-    res.status(400).json({ error: "Enter a search term to find store items." });
-    return;
-  }
-
   try {
-    const results = await searchStoreItems(term, { limit: 20, dataScope: previewJob.dataScope });
-    const candidateKeys = new Set<string>();
-    const candidates = results.filter((candidate) => {
-      const key = `${candidate.productId}\u0000${candidate.upc}`;
-      if (candidateKeys.has(key)) return false;
-      candidateKeys.add(key);
-      return true;
-    });
-
-    if (restoredItem) {
-      previewJob.result.items = [...previewJob.result.items, restoredItem]
-        .sort((left, right) => left.id - right.id);
-    }
-
-    if (candidates.length) {
-      if (match) {
-        match.candidates = candidates;
-        match.storeItem = candidates[0];
-        match.selectionSource = "search";
-      } else if (skip) {
-        match = {
-          item: skip.item,
-          storeItem: candidates[0],
-          candidates,
-          selectionSource: "search",
-          cartQuantity: 1
-        };
-        previewJob.result.matched = [...matches, match].sort((left, right) => left.item.id - right.item.id);
-        previewJob.result.skipped = skipped.filter((candidateSkip) => candidateSkip.item.id !== shoppingItemId);
-      }
-    } else if (restoredItem && skip) {
-      skip.reason = `No store items found for "${term}".`;
-      previewJob.result.skipped = [...skipped, skip].sort((left, right) => left.item.id - right.item.id);
-    }
-
-    res.json({
-      match: match ?? null,
-      items: previewJob.result.items,
-      matched: previewJob.result.matched ?? matches,
-      skipped: previewJob.result.skipped ?? skipped,
-      resultCount: candidates.length
-    });
+    res.json(await qfcWorkflow.searchReviewItems(
+      req.params.jobId,
+      requestScope(res),
+      Number(req.params.shoppingItemId),
+      String(req.body.term ?? "")
+    ));
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to search store items." });
+    sendWorkflowError(res, error);
   }
 });
 
 app.delete("/api/store-item-reviews/:jobId/items/:shoppingItemId", (req, res) => {
-  qfcSubmitJobs.prune();
-  const previewJob = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
-    return;
+  try {
+    res.json(qfcWorkflow.removeReviewItem(
+      req.params.jobId,
+      requestScope(res),
+      Number(req.params.shoppingItemId)
+    ));
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-
-  const shoppingItemId = Number(req.params.shoppingItemId);
-  const reviewItem = previewJob.result.items.find((item) => item.id === shoppingItemId);
-  if (!reviewItem) {
-    res.status(404).json({ error: "The ingredient was not found in this store item review." });
-    return;
-  }
-
-  previewJob.result.items = previewJob.result.items.filter((item) => item.id !== shoppingItemId);
-  previewJob.result.matched = (previewJob.result.matched ?? []).filter((match) => match.item.id !== shoppingItemId);
-  previewJob.result.skipped = (previewJob.result.skipped ?? []).filter((skip) => skip.item.id !== shoppingItemId);
-
-  res.json({
-    removedItem: reviewItem,
-    items: previewJob.result.items,
-    matched: previewJob.result.matched,
-    skipped: previewJob.result.skipped
-  });
 });
 
-app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", async (req, res) => {
-  qfcSubmitJobs.prune();
-  const previewJob = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!previewJob || previewJob.kind !== "preview" || previewJob.status !== "complete" || !previewJob.result) {
-    res.status(409).json({ error: "The store item review is unavailable or incomplete. Preview the store items again." });
-    return;
+app.post("/api/qfc/submit-jobs/:jobId/add-to-cart", (req, res) => {
+  try {
+    const job = qfcWorkflow.startAddToCart(req.params.jobId, requestScope(res));
+    res.status(202).json({ jobId: job.id, ...job });
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-  if (getScopedSetting(previewJob.dataScope, "allowRealQfcCartMutation") !== "true") {
-    res.status(403).json({
-      error: "Real QFC cart changes are disabled in this data mode. Enable them explicitly in QFC preferences."
-    });
-    return;
-  }
-
-  const jobId = randomUUID();
-  const job: QfcSubmitJob = {
-    id: jobId,
-    kind: "add",
-    menuId: previewJob.menuId,
-    dataScope: previewJob.dataScope,
-    status: "running",
-    progress: {
-      phase: "adding",
-      processedItems: previewJob.result.items.length,
-      totalItems: previewJob.result.items.length,
-      message: "Adding reviewed store items to your QFC cart..."
-    },
-    createdAt: Date.now()
-  };
-  qfcSubmitJobs.set(job);
-
-  void addQfcMatchesToCart(
-    previewJob.result.items,
-    previewJob.result.matched ?? [],
-    previewJob.result.skipped ?? [],
-    (progress) => {
-      job.progress = progress;
-    }
-  )
-    .then((result) => {
-      if (result.submittedItemCount > 0) {
-        qfcRepository.markMenuSubmitted(Number(job.menuId), job.dataScope);
-      }
-      job.status = "complete";
-      job.result = result;
-      job.progress = {
-        phase: "complete",
-        processedItems: result.items.length,
-        totalItems: result.items.length,
-        message: result.message
-      };
-    })
-    .catch((error: unknown) => {
-      job.status = "failed";
-      job.error = error instanceof Error ? error.message : "QFC cart submission failed.";
-      job.progress = {
-        phase: "complete",
-        processedItems: previewJob.result?.items.length ?? 0,
-        totalItems: previewJob.result?.items.length ?? 0,
-        message: job.error
-      };
-    });
-
-  res.status(202).json({ jobId, ...job });
 });
 
 app.get("/api/qfc/submit-jobs/:jobId", (req, res) => {
-  qfcSubmitJobs.prune();
-  const job = qfcSubmitJobs.getScoped(req.params.jobId, requestScope(res));
-  if (!job) {
-    res.status(404).json({ error: "QFC submission job was not found." });
-    return;
+  try {
+    res.json(qfcWorkflow.getJob(req.params.jobId, requestScope(res)));
+  } catch (error) {
+    sendWorkflowError(res, error);
   }
-
-  res.json(job);
 });
 
   return app;

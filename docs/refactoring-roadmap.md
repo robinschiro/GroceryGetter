@@ -74,7 +74,7 @@ Phase 4 QFC extraction started on 2026-07-29:
 - QFC HTTP calls now live behind `src/features/qfc/api.ts`; settings/OAuth/catalog UI, store-item review UI, and submission-progress UI now live under `src/features/qfc`.
 - QFC settings, preview polling, approval/review synchronization, remembered selections, quantities, removal, and cart-submission state now live in `src/features/qfc/useQfc.ts`.
 - QFC-specific rules now live in `src/features/qfc/styles.css`; base, shared-form, theme, responsive, and application-shell rules have explicit cross-cutting owners.
-- QFC router workflow remains to be split into a focused service.
+- Preview matching, review mutation, job polling, and cart-submission orchestration now live in `server/features/qfc/qfcWorkflowService.ts`; the router translates HTTP inputs, errors, and responses.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
