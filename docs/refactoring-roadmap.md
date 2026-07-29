@@ -49,6 +49,11 @@ Phase 4 reusable shopping-list extraction started on 2026-07-29:
 - The superseded shopping-list handlers, validation, item replacement, row mapping, and text helper were removed from `server/app.ts`.
 - Shopping-list page/component and style ownership remain to be moved before the slice is complete.
 
+Phase 4 planner extraction started on 2026-07-29:
+
+- Menu creation/editing and generated shopping-list HTTP calls now live behind `src/features/planner/api.ts`.
+- Planner page/state/style ownership and the server planner service/repository/router split remain to be completed.
+
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
 Target organization:

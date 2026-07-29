@@ -70,6 +70,22 @@ import {
   listShoppingLists,
   updateShoppingList as updateShoppingListRequest
 } from "../features/shoppingLists/api.js";
+import {
+  addMenuMeal,
+  aggregateShoppingList,
+  clearShoppingList,
+  createMenu,
+  getLatestMenu,
+  getMenu,
+  getShoppingList,
+  previewMenu,
+  removeMenuMeal,
+  saveShoppingListItemToSource,
+  updateMenuItem as updateMenuItemRequest,
+  updateMenuShoppingLists,
+  updateShoppingListApproval,
+  updateShoppingListItems
+} from "../features/planner/api.js";
 
 type ThemeMode = "light" | "dark";
 type RecipeCategoryCount = (typeof categories)[number] & { count: number };
@@ -207,14 +223,14 @@ export function App() {
   }
 
   async function loadLatestMenu() {
-    const latestMenu = await api<Menu | null>("/api/menus/latest");
+    const latestMenu = await getLatestMenu(api);
     if (!latestMenu || latestMenu.id === null) {
       setActiveMenu(null);
       setShoppingList([]);
       return;
     }
 
-    const latestShoppingList = await api<ShoppingListItem[]>(`/api/menus/${latestMenu.id}/shopping-list`);
+    const latestShoppingList = await getShoppingList(api, latestMenu.id);
     setActiveMenu(latestMenu);
     setShoppingList(latestShoppingList);
     setMealCount(latestMenu.mealCount);
@@ -259,10 +275,7 @@ export function App() {
     }
 
     try {
-      const preview = await api<Menu>("/api/menus/preview", {
-        method: "POST",
-        body: JSON.stringify({ mealCount })
-      });
+      const preview = await previewMenu(api, mealCount);
       setActiveMenu(preview);
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
@@ -283,16 +296,8 @@ export function App() {
 
     setMessage("");
     try {
-      const created = await api<{ id: number }>("/api/menus", {
-        method: "POST",
-        body: JSON.stringify({
-          name: activeMenu.name,
-          mealCount: activeMenu.mealCount,
-          customShoppingListIds: activeMenu.customShoppingListIds,
-          items: activeMenu.items.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
-        })
-      });
-      setActiveMenu(await api<Menu>(`/api/menus/${created.id}`));
+      const created = await createMenu(api, activeMenu);
+      setActiveMenu(await getMenu(api, created.id));
       setShoppingList([]);
       setDirtyShoppingItemIds(new Set());
       setSourceMetadataDirtyItemIds(new Set());
@@ -319,7 +324,7 @@ export function App() {
   }
 
   async function loadMenu(id: number) {
-    setActiveMenu(await api<Menu>(`/api/menus/${id}`));
+    setActiveMenu(await getMenu(api, id));
   }
 
   async function updateMenuItem(
@@ -347,10 +352,7 @@ export function App() {
       return;
     }
 
-    await api(`/api/menu-items/${menuItemId}`, {
-      method: "PUT",
-      body: JSON.stringify({ recipeId })
-    });
+    await updateMenuItemRequest(api, menuItemId, recipeId);
     if (activeMenu?.id != null) {
       await loadMenu(activeMenu.id);
       setShoppingList([]);
@@ -388,12 +390,7 @@ export function App() {
     try {
       const nextMenu = activeMenu.id === null
         ? { ...activeMenu, mealCount: nextMealNumber, items: [...activeMenu.items, ...newItems] }
-        : await api<Menu>(`/api/menus/${activeMenu.id}/meals`, {
-          method: "POST",
-          body: JSON.stringify({
-            items: newItems.map(({ mealNumber, slot, recipeId }) => ({ mealNumber, slot, recipeId }))
-          })
-        });
+        : await addMenuMeal(api, activeMenu.id, newItems);
       setActiveMenu(nextMenu);
       setMealCount(nextMenu.mealCount);
       setShoppingList([]);
@@ -421,7 +418,7 @@ export function App() {
               ? { ...item, mealNumber: item.mealNumber - 1 }
               : item)
         }
-        : await api<Menu>(`/api/menus/${activeMenu.id}/meals/${mealNumber}`, { method: "DELETE" });
+        : await removeMenuMeal(api, activeMenu.id, mealNumber);
       setActiveMenu(nextMenu);
       setMealCount(nextMenu.mealCount);
       setShoppingList([]);
@@ -448,11 +445,8 @@ export function App() {
     setStoreItemReviewMessage("");
 
     if (activeMenu.id !== null) {
-      await api(`/api/menus/${activeMenu.id}/custom-shopping-lists`, {
-        method: "PUT",
-        body: JSON.stringify({ customShoppingListIds: nextIds })
-      });
-      await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
+      await updateMenuShoppingLists(api, activeMenu.id, nextIds);
+      await clearShoppingList(api, activeMenu.id);
     }
   }
 
@@ -462,8 +456,8 @@ export function App() {
       setMessage("Save the menu before aggregating ingredients.");
       return;
     }
-    await api(`/api/menus/${activeMenu.id}/aggregate`, { method: "POST" });
-    setShoppingList(await api<ShoppingListItem[]>(`/api/menus/${activeMenu.id}/shopping-list`));
+    await aggregateShoppingList(api, activeMenu.id);
+    setShoppingList(await getShoppingList(api, activeMenu.id));
     setDirtyShoppingItemIds(new Set());
     setSourceMetadataDirtyItemIds(new Set());
     setStoreItemReview(null);
@@ -472,7 +466,7 @@ export function App() {
 
   async function clearAggregatedIngredients() {
     if (!activeMenu?.id) return;
-    await api(`/api/menus/${activeMenu.id}/shopping-list`, { method: "DELETE" });
+    await clearShoppingList(api, activeMenu.id);
     setShoppingList([]);
     setDirtyShoppingItemIds(new Set());
     setSourceMetadataDirtyItemIds(new Set());
@@ -486,12 +480,11 @@ export function App() {
     const dirtyItems = shoppingList.filter((item) => dirtyShoppingItemIds.has(item.id));
     if (!dirtyItems.length) return;
 
-    await api(`/api/menus/${activeMenu.id}/shopping-list/items`, {
-      method: "PUT",
-      body: JSON.stringify({
-        items: dirtyItems.map((item) => ({ ...item, approved: Boolean(item.approved) }))
-      })
-    });
+    await updateShoppingListItems(
+      api,
+      activeMenu.id,
+      dirtyItems.map((item) => ({ ...item, approved: item.approved ? 1 : 0 }))
+    );
 
     setDirtyShoppingItemIds((current) => {
       const next = new Set(current);
@@ -517,10 +510,7 @@ export function App() {
     }
 
     try {
-      await api(`/api/menus/${activeMenu.id}/shopping-list/items/${itemId}/approval`, {
-        method: "PATCH",
-        body: JSON.stringify({ approved })
-      });
+      await updateShoppingListApproval(api, activeMenu.id, itemId, approved);
 
       if (
         !approved
@@ -607,15 +597,7 @@ export function App() {
     setMessage("");
     setSavingSourceItemIds((current) => new Set(current).add(item.id));
     try {
-      const result = await api<{ item: ShoppingListItem; sourceType: "recipe" | "custom"; sourceId: number }>(
-        `/api/menus/${activeMenu.id}/shopping-list/items/${item.id}/source`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            item: item.item
-          })
-        }
-      );
+      const result = await saveShoppingListItemToSource(api, activeMenu.id, item);
       setShoppingList((current) => current.map((candidate) => (
         candidate.id === item.id ? result.item : candidate
       )));
