@@ -40,7 +40,8 @@ Phase 4 recipe extraction started on 2026-07-29:
 - Recipe HTTP calls now live behind `src/features/recipes/api.ts`.
 - Recipe routes are mounted from a feature router with validation/workflow behavior in a service and all recipe SQL/row mapping in an explicitly injected repository.
 - The superseded recipe handlers, validation, and row mapping were removed from `server/app.ts`.
-- Recipe page/component and style ownership remain to be moved before the recipe slice is complete.
+- Recipe form state, mutations, validation display, management filtering, pagination, and generation toggles now live in `src/features/recipes/RecipesPage.tsx`; the superseded application-shell components were removed.
+- Recipe-specific style ownership remains to be moved before the recipe slice is complete.
 
 Phase 4 reusable shopping-list extraction started on 2026-07-29:
 
