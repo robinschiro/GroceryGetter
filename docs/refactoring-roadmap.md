@@ -26,6 +26,15 @@ Phases 1 and 2 were completed on 2026-07-29. No phase 3 feature extraction has s
   - Local scripts are available as `npm run test:api`, `npm run test:e2e`, `npm run test:mobile`, `npm run test:characterization`, `npm run test:headed`, and `npm run test:ui`.
   - No CI configuration was added.
 
+Phase 3 foundation extraction started on 2026-07-29:
+
+- Cross-process domain and response contracts now live in `shared/contracts`.
+- The frontend uses a data-scope-bound API client from `src/shared`; individual requests no longer read browser storage.
+- Lightweight route parsing and route construction live in `src/app/router.ts`.
+- `src/main.tsx` now only imports the global stylesheet and mounts the application.
+- The existing ingredient-add focus behavior was made conditional so its deferred focus cannot steal focus from a user's next field. The recipe characterization journey covers this behavior and passed three consecutive runs after the cleanup.
+- Feature UI/state and feature CSS remain in the application module until each phase 4 vertical slice moves them to their final owner.
+
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
 Target organization:
