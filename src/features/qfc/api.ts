@@ -92,13 +92,14 @@ export function selectStoreItem(
   jobId: string,
   shoppingItemId: number,
   productId: string,
-  upc: string
+  upc: string,
+  rememberPreference: boolean
 ) {
-  return api<{ match: StoreItemMatch; preference: StoreItemPreference }>(
+  return api<{ match: StoreItemMatch; preference: StoreItemPreference | null }>(
     `/api/store-item-reviews/${jobId}/selections/${shoppingItemId}`,
     {
       method: "PUT",
-      body: JSON.stringify({ productId, upc })
+      body: JSON.stringify({ productId, upc, rememberPreference })
     }
   );
 }

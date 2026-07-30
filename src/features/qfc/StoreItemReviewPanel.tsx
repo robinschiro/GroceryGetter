@@ -350,7 +350,9 @@ export function StoreItemReviewPanel({
                           ? "Selected from custom search"
                           : match.selectionSource === "preferred-unavailable"
                             ? "Available search result"
-                            : "Selected by general preferences"}
+                            : match.selectionSource === "review"
+                              ? "Selected for this review"
+                              : "Selected by general preferences"}
                     </span>
                     {match.selectionSource === "preferred-unavailable" ? (
                       <span className="store-item-fallback-note">

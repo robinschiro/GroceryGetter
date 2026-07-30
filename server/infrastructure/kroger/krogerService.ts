@@ -92,7 +92,7 @@ export type CartSubmissionMatch = {
   item: CartSubmissionItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable";
+  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable" | "review";
   cartQuantity: number;
 };
 

@@ -104,7 +104,8 @@ export function createQfcWorkflowService({
     dataScope: DataScope,
     shoppingItemId: number,
     productId: string,
-    upc: string
+    upc: string,
+    rememberPreference: boolean
   ) {
     const previewJob = requirePreviewJob(jobId, dataScope);
     const match = previewJob.result.matched?.find((candidate) => candidate.item.id === shoppingItemId);
@@ -119,14 +120,16 @@ export function createQfcWorkflowService({
     }
 
     const ingredientName = match.item.item.trim() || match.item.text.trim();
-    const preference = qfcService.saveStoreItemPreference(
-      previewJob.dataScope,
-      "kroger",
-      ingredientName,
-      storeItem
-    );
     match.storeItem = storeItem;
-    match.selectionSource = "remembered";
+    match.selectionSource = rememberPreference ? "remembered" : "review";
+    const preference = rememberPreference
+      ? qfcService.saveStoreItemPreference(
+          previewJob.dataScope,
+          "kroger",
+          ingredientName,
+          storeItem
+        )
+      : null;
     return { match, preference };
   }
 

@@ -108,7 +108,11 @@ test("QFC review preserves matching, unmatched items, selection memory, quantity
     `/api/store-item-reviews/${previewJob.id}/selections/${match.item.id}`,
     {
       headers: productionHeaders,
-      data: { productId: alternate.productId, upc: alternate.upc }
+      data: {
+        productId: alternate.productId,
+        upc: alternate.upc,
+        rememberPreference: true
+      }
     }
   );
   expect(selection.status()).toBe(200);
@@ -119,6 +123,33 @@ test("QFC review preserves matching, unmatched items, selection memory, quantity
   expect((await (await request.get("/api/store-item-preferences", {
     headers: productionHeaders
   })).json()).length).toBe(1);
+
+  const reviewOnlyCandidate = match.candidates[0];
+  const reviewOnlySelection = await request.put(
+    `/api/store-item-reviews/${previewJob.id}/selections/${match.item.id}`,
+    {
+      headers: productionHeaders,
+      data: {
+        productId: reviewOnlyCandidate.productId,
+        upc: reviewOnlyCandidate.upc,
+        rememberPreference: false
+      }
+    }
+  );
+  expect(reviewOnlySelection.status()).toBe(200);
+  expect(await reviewOnlySelection.json()).toMatchObject({
+    preference: null,
+    match: {
+      selectionSource: "review",
+      storeItem: { productId: reviewOnlyCandidate.productId }
+    }
+  });
+  expect((await (await request.get("/api/store-item-preferences", {
+    headers: productionHeaders
+  })).json())[0]).toMatchObject({
+    storeItemId: alternate.productId,
+    upc: alternate.upc
+  });
 
   const quantity = await request.put(
     `/api/store-item-reviews/${previewJob.id}/quantities/${match.item.id}`,
@@ -193,7 +224,8 @@ test("QFC review uses an available search result without replacing an unavailabl
       headers: productionHeaders,
       data: {
         productId: unavailableCandidate.productId,
-        upc: unavailableCandidate.upc
+        upc: unavailableCandidate.upc,
+        rememberPreference: true
       }
     }
   );

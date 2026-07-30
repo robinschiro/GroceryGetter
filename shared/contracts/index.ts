@@ -153,7 +153,7 @@ export type StoreItemMatch = {
   item: ShoppingListItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable";
+  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable" | "review";
   cartQuantity: number;
 };
 

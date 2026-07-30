@@ -22,6 +22,8 @@ import type { StoreItemReview } from "./StoreItemReviewPanel.js";
 
 const qfcCartUrl = "https://www.qfc.com/cart";
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const normalizeIngredientKey = (value: string) =>
+  value.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 
 export function useQfc({
   api,
@@ -281,12 +283,40 @@ export function useQfc({
     if (!storeItemReview) return;
     setStoreItemReviewMessage("");
     try {
+      const match = storeItemReview.result.matched?.find(
+        (candidate) => candidate.item.id === shoppingItemId
+      );
+      const selectedCandidate = match?.candidates.find(
+        (candidate) => candidate.productId === productId && candidate.upc === upc
+      );
+      if (!match || !selectedCandidate) {
+        throw new Error("Choose a store item from the current review results.");
+      }
+
+      const ingredientName = match.item.item.trim() || match.item.text.trim();
+      const ingredientKey = normalizeIngredientKey(ingredientName);
+      const existingPreference = storeItemPreferences.find((preference) =>
+        preference.provider === "kroger" && preference.ingredientKey === ingredientKey
+      );
+      const replacesExistingPreference = Boolean(
+        existingPreference
+        && (
+          existingPreference.storeItemId !== selectedCandidate.productId
+          || existingPreference.upc !== selectedCandidate.upc
+        )
+      );
+      const rememberPreference = !replacesExistingPreference || window.confirm(
+        `${existingPreference?.description} is remembered for ${ingredientName}. `
+        + `Make ${selectedCandidate.description} the new preference?`
+      );
+
       const result = await selectStoreItemRequest(
         api,
         storeItemReview.jobId,
         shoppingItemId,
         productId,
-        upc
+        upc,
+        rememberPreference
       );
       setStoreItemReview((current) => current ? {
         ...current,
@@ -297,16 +327,28 @@ export function useQfc({
           )
         }
       } : current);
-      setStoreItemPreferences((current) => [
-        ...current.filter((preference) =>
-          preference.provider !== result.preference.provider
-          || preference.ingredientKey !== result.preference.ingredientKey
-        ),
-        result.preference
-      ].sort((left, right) => left.ingredientName.localeCompare(right.ingredientName)));
-      setStoreItemReviewMessage(`Remembered ${result.preference.description} for ${result.preference.ingredientName}.`);
+      const savedPreference = result.preference;
+      if (savedPreference) {
+        setStoreItemPreferences((current) => [
+          ...current.filter((preference) =>
+            preference.provider !== savedPreference.provider
+            || preference.ingredientKey !== savedPreference.ingredientKey
+          ),
+          savedPreference
+        ].sort((left, right) => left.ingredientName.localeCompare(right.ingredientName)));
+        setStoreItemReviewMessage(
+          `Remembered ${savedPreference.description} for ${savedPreference.ingredientName}.`
+        );
+      } else {
+        setStoreItemReviewMessage(
+          `Selected ${selectedCandidate.description} for this review. `
+          + `Kept ${existingPreference?.description ?? "the existing item"} as the remembered preference.`
+        );
+      }
     } catch (err) {
-      setStoreItemReviewMessage(err instanceof Error ? err.message : "Unable to remember the store item selection.");
+      setStoreItemReviewMessage(
+        err instanceof Error ? err.message : "Unable to update the store item selection."
+      );
     }
   }
 

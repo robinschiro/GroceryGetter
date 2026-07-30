@@ -223,7 +223,8 @@ app.put("/api/store-item-reviews/:jobId/selections/:shoppingItemId", (req, res) 
       requestScope(res),
       Number(req.params.shoppingItemId),
       String(req.body.productId ?? ""),
-      String(req.body.upc ?? "")
+      String(req.body.upc ?? ""),
+      req.body.rememberPreference === true
     ));
   } catch (error) {
     sendWorkflowError(res, error);

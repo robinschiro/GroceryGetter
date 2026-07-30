@@ -94,6 +94,27 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await expect(firstCandidate.locator("option").nth(2)).toBeEnabled();
   await firstCandidate.selectOption({ index: 1 });
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
+
+  const declineDialogPromise = page.waitForEvent("dialog");
+  const reviewOnlySelection = firstCandidate.selectOption({ index: 0 });
+  const declineDialog = await declineDialogPromise;
+  expect(declineDialog.type()).toBe("confirm");
+  expect(declineDialog.message()).toMatch(/is remembered for .*Make .* the new preference/);
+  await declineDialog.dismiss();
+  await reviewOnlySelection;
+  await expect(page.getByText("Selected for this review", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /Kept .* as the remembered preference/ }))
+    .toBeVisible();
+
+  const confirmDialogPromise = page.waitForEvent("dialog");
+  const rememberedSelection = firstCandidate.selectOption({ index: 2 });
+  const confirmDialog = await confirmDialogPromise;
+  expect(confirmDialog.type()).toBe("confirm");
+  await confirmDialog.accept();
+  await rememberedSelection;
+  await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /^Remembered Pantry Select/ })).toBeVisible();
+
   const quantity = page.getByLabel(/^Cart quantity for /).first();
   await quantity.fill("3");
   await expect(quantity).toHaveValue("3");
