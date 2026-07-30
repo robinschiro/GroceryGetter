@@ -17,6 +17,7 @@ import type {
   QfcSubmitProgress,
   ShoppingListItem,
   ShoppingListSourceTarget,
+  StoreItemCandidate,
   StoreItemMatch
 } from "../../../shared/contracts/index.js";
 import { recipeEditRoute, shoppingListEditRoute } from "../../shared/router.js";
@@ -27,6 +28,35 @@ export type StoreItemReview = {
   jobId: string;
   result: NonNullable<QfcSubmitJob["result"]>;
 };
+
+function formatPrice(candidate: StoreItemCandidate) {
+  if (candidate.promotionalPrice !== null) {
+    const promotional = `$${candidate.promotionalPrice.toFixed(2)} promo`;
+    return candidate.regularPrice !== null && candidate.regularPrice !== candidate.promotionalPrice
+      ? `${promotional} (reg. $${candidate.regularPrice.toFixed(2)})`
+      : promotional;
+  }
+
+  return candidate.regularPrice === null ? "Price unavailable" : `$${candidate.regularPrice.toFixed(2)}`;
+}
+
+function formatAvailability(stockLevel: string) {
+  switch (stockLevel) {
+    case "HIGH":
+      return "In stock";
+    case "LOW":
+      return "Low stock";
+    case "TEMPORARILY_OUT_OF_STOCK":
+      return "Out of stock";
+    default:
+      return "Availability unavailable";
+  }
+}
+
+function formatCandidateOption(candidate: StoreItemCandidate) {
+  const product = [candidate.description, candidate.brand, candidate.size].filter(Boolean).join(" — ");
+  return `${product} · ${formatPrice(candidate)} · ${formatAvailability(candidate.stockLevel)}`;
+}
 
 export function StoreItemReviewPanel({
   review,
@@ -331,7 +361,7 @@ export function StoreItemReviewPanel({
                           key={`${candidate.productId}-${candidate.upc}`}
                           value={JSON.stringify([candidate.productId, candidate.upc])}
                         >
-                          {[candidate.description, candidate.brand, candidate.size].filter(Boolean).join(" — ")}
+                          {formatCandidateOption(candidate)}
                         </option>
                       ))}
                     </select>
@@ -414,8 +444,8 @@ export function StoreItemReviewPanel({
                       <strong>{match.storeItem.description}</strong>
                       <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
                       <span>
-                        {match.storeItem.price === null ? "Price unavailable" : `$${match.storeItem.price.toFixed(2)}`}
-                        {match.storeItem.stockLevel ? ` · Stock: ${match.storeItem.stockLevel.replaceAll("_", " ").toLowerCase()}` : ""}
+                        {formatPrice(match.storeItem)}
+                        {` · ${formatAvailability(match.storeItem.stockLevel)}`}
                         {` · Qty ${match.cartQuantity}`}
                       </span>
                     </div>

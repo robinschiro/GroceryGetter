@@ -64,6 +64,8 @@ export type StoreItemCandidate = {
   size: string;
   stockLevel: string;
   price: number | null;
+  regularPrice: number | null;
+  promotionalPrice: number | null;
   imageUrl: string;
   isStoreBrand: boolean;
 };
@@ -275,9 +277,20 @@ export class FakeKrogerClient implements KrogerClient {
         brand: "Test Kitchen",
         items: [{
           size: "10 oz",
-          price: { regular: 3.99 },
+          price: { regular: 3.99, promo: 3.49 },
           inventory: { stockLevel: "LOW" },
           fulfillment: { curbside: true }
+        }]
+      },
+      {
+        productId: `fake-${slug}-unavailable`,
+        upc: `222222${slug.length.toString().padStart(6, "0")}`,
+        description: `Pantry Select ${input.term.trim()}`,
+        brand: "Pantry Select",
+        items: [{
+          size: "14 oz",
+          inventory: { stockLevel: "TEMPORARILY_OUT_OF_STOCK" },
+          fulfillment: { curbside: false }
         }]
       }
     ];
@@ -525,7 +538,9 @@ async function searchLocations(query: string, limit = 10) {
 function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   const primaryItem = product.items?.[0];
   const brand = product.brand ?? "";
-  const price = primaryItem?.price?.promo ?? primaryItem?.price?.regular ?? null;
+  const regularPrice = primaryItem?.price?.regular ?? null;
+  const promotionalPrice = primaryItem?.price?.promo ?? null;
+  const price = promotionalPrice ?? regularPrice;
   const image = product.images?.find((candidate) =>
     candidate.featured && candidate.perspective?.toLowerCase() === "front"
   ) ?? product.images?.find((candidate) => candidate.perspective?.toLowerCase() === "front")
@@ -543,6 +558,8 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
     size: primaryItem?.size ?? "",
     stockLevel: primaryItem?.inventory?.stockLevel ?? "",
     price,
+    regularPrice,
+    promotionalPrice,
     imageUrl,
     isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase()))
   };
@@ -695,6 +712,8 @@ function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandid
     size: preference.size,
     stockLevel: "",
     price: null,
+    regularPrice: null,
+    promotionalPrice: null,
     imageUrl: preference.imageUrl,
     isStoreBrand: preference.isStoreBrand
   };

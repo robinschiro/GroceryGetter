@@ -82,6 +82,16 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await expect(page.getByText("unmatched item", { exact: true }).first()).toBeVisible();
 
   const firstCandidate = page.getByLabel(/^Store item for /).first();
+  await expect(firstCandidate.locator("option").nth(0)).toHaveText(
+    /Kroger .* · \$2\.49 · In stock/
+  );
+  await expect(firstCandidate.locator("option").nth(1)).toHaveText(
+    /Test Kitchen .* · \$3\.49 promo \(reg\. \$3\.99\) · Low stock/
+  );
+  await expect(firstCandidate.locator("option").nth(2)).toHaveText(
+    /Pantry Select .* · Price unavailable · Out of stock/
+  );
+  await expect(firstCandidate.locator("option").nth(2)).toBeEnabled();
   await firstCandidate.selectOption({ index: 1 });
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
   const quantity = page.getByLabel(/^Cart quantity for /).first();

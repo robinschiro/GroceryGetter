@@ -143,6 +143,8 @@ export type StoreItemCandidate = {
   size: string;
   stockLevel: string;
   price: number | null;
+  regularPrice: number | null;
+  promotionalPrice: number | null;
   imageUrl: string;
   isStoreBrand: boolean;
 };

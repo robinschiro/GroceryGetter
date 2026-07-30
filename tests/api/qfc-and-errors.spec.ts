@@ -67,8 +67,27 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
   });
   expect(products.status()).toBe(200);
   const candidates = await products.json();
-  expect(candidates).toHaveLength(2);
-  expect(candidates[0]).toMatchObject({ brand: "Kroger", isStoreBrand: true });
+  expect(candidates).toHaveLength(3);
+  expect(candidates[0]).toMatchObject({
+    brand: "Kroger",
+    isStoreBrand: true,
+    price: 2.49,
+    regularPrice: 2.49,
+    promotionalPrice: null,
+    stockLevel: "HIGH"
+  });
+  expect(candidates[1]).toMatchObject({
+    price: 3.49,
+    regularPrice: 3.99,
+    promotionalPrice: 3.49,
+    stockLevel: "LOW"
+  });
+  expect(candidates[2]).toMatchObject({
+    price: null,
+    regularPrice: null,
+    promotionalPrice: null,
+    stockLevel: "TEMPORARILY_OUT_OF_STOCK"
+  });
   expect((await request.get("/api/qfc/store-items?term=fail", {
     headers: productionHeaders
   })).status()).toBe(400);
