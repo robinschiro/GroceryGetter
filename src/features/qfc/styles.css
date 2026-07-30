@@ -34,6 +34,10 @@
   font-size: 0.82rem;
 }
 
+.store-item-match-row .store-item-fallback-note {
+  font-size: 0.78rem;
+}
+
 .store-item-match-arrow {
   color: #71817b;
 }

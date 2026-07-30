@@ -48,6 +48,11 @@ export const characterizationSeed = {
       items: [
         { text: "1 tomato", quantity: "1", item: "tomato" },
         { text: "1 gallon milk", quantity: "1", unit: "gallon", item: "milk" },
+        {
+          text: "1 preferred unavailable item",
+          quantity: "1",
+          item: "preferred unavailable item"
+        },
         { text: "1 unmatched item", quantity: "1", item: "unmatched item" }
       ]
     },

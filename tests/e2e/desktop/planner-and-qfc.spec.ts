@@ -120,6 +120,41 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await expect(page.getByRole("status").filter({ hasText: /added to the QFC cart/ })).toBeVisible();
 });
 
+test("fake-QFC review explains an available fallback without replacing the preferred item", async ({
+  page
+}) => {
+  await saveAndAggregateMenu(page);
+  await page.getByRole("button", { name: "Review store items" }).click();
+
+  const unavailableItem = page.getByLabel("Store item for preferred unavailable item", {
+    exact: true
+  });
+  await unavailableItem.selectOption({ index: 0 });
+  await expect(unavailableItem.locator("option:checked")).toContainText(
+    "Kroger preferred unavailable item"
+  );
+
+  await page.getByRole("button", { name: "Review store items" }).click();
+  const fallbackRow = page.locator(".store-item-match-row").filter({
+    has: page.getByLabel("Store item for preferred unavailable item", { exact: true })
+  });
+  await expect(fallbackRow.getByText("Available search result", { exact: true })).toBeVisible();
+  await expect(fallbackRow.getByText(
+    "Your preferred item is out of stock, so an available search result is selected for this review."
+  )).toBeVisible();
+  await expect(
+    fallbackRow.getByLabel("Store item for preferred unavailable item", {
+      exact: true
+    }).locator("option:checked")
+  ).toContainText("Test Kitchen preferred unavailable item");
+
+  await page.goto("/settings/qfc/preferences");
+  const rememberedPreference = page.locator(".store-item-preference-row").filter({
+    hasText: "preferred unavailable item"
+  });
+  await expect(rememberedPreference).toContainText("Kroger preferred unavailable item");
+});
+
 test("QFC settings preserve scoped preferences, production-only credentials, fake searches, and sandbox cart safeguards", async ({
   page
 }) => {

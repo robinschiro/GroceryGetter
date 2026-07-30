@@ -171,3 +171,53 @@ test("QFC review preserves matching, unmatched items, selection memory, quantity
     data: { term: "fail" }
   })).status()).toBe(400);
 });
+
+test("QFC review uses an available search result without replacing an unavailable preference", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const firstPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const firstPreview = await pollJob(request, (await firstPreviewResponse.json()).jobId);
+  const firstMatch = firstPreview.result.matched.find(
+    (match: { item: { item: string } }) => match.item.item === "preferred unavailable item"
+  );
+  expect(firstMatch).toBeTruthy();
+  const unavailableCandidate = firstMatch.candidates.find(
+    (candidate: { stockLevel: string }) => candidate.stockLevel === "TEMPORARILY_OUT_OF_STOCK"
+  );
+  expect(unavailableCandidate).toBeTruthy();
+
+  const remembered = await request.put(
+    `/api/store-item-reviews/${firstPreview.id}/selections/${firstMatch.item.id}`,
+    {
+      headers: productionHeaders,
+      data: {
+        productId: unavailableCandidate.productId,
+        upc: unavailableCandidate.upc
+      }
+    }
+  );
+  expect(remembered.status()).toBe(200);
+
+  const secondPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const secondPreview = await pollJob(request, (await secondPreviewResponse.json()).jobId);
+  const fallbackMatch = secondPreview.result.matched.find(
+    (match: { item: { id: number } }) => match.item.id === firstMatch.item.id
+  );
+  expect(fallbackMatch).toMatchObject({
+    selectionSource: "preferred-unavailable",
+    storeItem: { stockLevel: "LOW" }
+  });
+  expect(fallbackMatch.storeItem.productId).not.toBe(unavailableCandidate.productId);
+
+  const preferences = await (await request.get("/api/store-item-preferences", {
+    headers: productionHeaders
+  })).json();
+  expect(preferences).toHaveLength(1);
+  expect(preferences[0]).toMatchObject({
+    storeItemId: unavailableCandidate.productId,
+    upc: unavailableCandidate.upc
+  });
+});

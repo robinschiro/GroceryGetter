@@ -92,7 +92,7 @@ export type CartSubmissionMatch = {
   item: CartSubmissionItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search";
+  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable";
   cartQuantity: number;
 };
 
@@ -256,6 +256,7 @@ export class FakeKrogerClient implements KrogerClient {
     const normalized = input.term.trim().toLowerCase();
     if (normalized.includes("fail")) throw new Error("Deterministic fake product failure.");
     if (normalized.includes("unmatched") || !normalized) return [];
+    const preferredItemIsUnavailable = normalized.includes("preferred unavailable");
     const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
     const candidates: KrogerProduct[] = [
       {
@@ -266,7 +267,9 @@ export class FakeKrogerClient implements KrogerClient {
         items: [{
           size: "12 oz",
           price: { regular: 2.49 },
-          inventory: { stockLevel: "HIGH" },
+          inventory: {
+            stockLevel: preferredItemIsUnavailable ? "TEMPORARILY_OUT_OF_STOCK" : "HIGH"
+          },
           fulfillment: { curbside: true }
         }]
       },
@@ -756,15 +759,34 @@ async function matchCartItems(
     try {
       const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
       const preference = getStoreItemPreference(dataScope, "kroger", searchTerm);
-      const preferredCandidate = preference
+      const searchedPreferredCandidate = preference
         ? searchedCandidates.find((candidate) =>
             candidate.productId === preference.storeItemId || candidate.upc === preference.upc
-          ) ?? preferenceToStoreItem(preference)
+          )
+        : null;
+      const preferredCandidate = preference
+        ? searchedPreferredCandidate ?? preferenceToStoreItem(preference)
         : null;
       const candidates = distinctStoreItems(preferredCandidate
         ? [preferredCandidate, ...searchedCandidates]
         : searchedCandidates);
-      const storeItem = preferredCandidate ?? chooseStoreItemCandidate(candidates, dataScope);
+      const preferredItemIsUnavailable =
+        searchedPreferredCandidate?.stockLevel === "TEMPORARILY_OUT_OF_STOCK";
+      const availableFallback = preferredItemIsUnavailable
+        ? chooseStoreItemCandidate(
+            searchedCandidates.filter((candidate) =>
+              (
+                candidate.productId !== searchedPreferredCandidate.productId
+                || candidate.upc !== searchedPreferredCandidate.upc
+              )
+              && candidate.stockLevel !== "TEMPORARILY_OUT_OF_STOCK"
+            ),
+            dataScope
+          )
+        : null;
+      const storeItem = availableFallback
+        ?? preferredCandidate
+        ?? chooseStoreItemCandidate(candidates, dataScope);
       if (!storeItem) {
         skipped.push({ item, reason: "No store item candidates found." });
         continue;
@@ -774,7 +796,11 @@ async function matchCartItems(
         item,
         storeItem,
         candidates,
-        selectionSource: preferredCandidate ? "remembered" : "general",
+        selectionSource: availableFallback
+          ? "preferred-unavailable"
+          : preferredCandidate
+            ? "remembered"
+            : "general",
         cartQuantity: 1
       });
     } catch (error) {

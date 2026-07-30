@@ -348,8 +348,15 @@ export function StoreItemReviewPanel({
                         ? "Remembered store item"
                         : match.selectionSource === "search"
                           ? "Selected from custom search"
-                          : "Selected by general preferences"}
+                          : match.selectionSource === "preferred-unavailable"
+                            ? "Available search result"
+                            : "Selected by general preferences"}
                     </span>
+                    {match.selectionSource === "preferred-unavailable" ? (
+                      <span className="store-item-fallback-note">
+                        Your preferred item is out of stock, so an available search result is selected for this review.
+                      </span>
+                    ) : null}
                     <select
                       aria-label={`Store item for ${match.item.item || match.item.text}`}
                       disabled={selectingItemId === match.item.id}
