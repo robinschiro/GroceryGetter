@@ -2,7 +2,7 @@
 
 Source checked: 2026-07-03.
 
-This project builds an approved shopping list and sends it through `server/qfcAdapter.ts`. The adapter now performs service-to-service auth, customer OAuth, location search, product search, product selection, and cart mutation. The relevant Kroger docs are the public API docs for OAuth, Locations, Products, and Cart.
+This project builds an approved shopping list and sends it through `server/infrastructure/kroger/krogerService.ts`. The service performs service-to-service auth, customer OAuth, location search, product search, product selection, and cart mutation. The relevant Kroger docs are the public API docs for OAuth, Locations, Products, and Cart.
 
 ## Relevant Public APIs
 
@@ -109,7 +109,7 @@ Implementation note: the OpenAPI document endpoint required authentication when 
 
 ## Current Adapter Boundary
 
-`server/qfcAdapter.ts` is split into these steps:
+`server/infrastructure/kroger/krogerService.ts` is split into these steps:
 
 1. `getServiceToken()` for Products/Locations.
 2. `getCustomerAccessToken()` and `refreshCustomerToken()` for Cart.

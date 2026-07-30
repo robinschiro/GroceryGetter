@@ -1,0 +1,258 @@
+:root[data-theme="dark"] button {
+  background: #68a99a;
+  color: #0f1714;
+}
+
+:root[data-theme="dark"] button.secondary {
+  background: #263630;
+  color: #e4eee9;
+}
+
+:root[data-theme="dark"] button.danger {
+  background: #d96a59;
+  color: #1f0d09;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: #111613;
+  border-color: #33443d;
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #7f9289;
+}
+
+:root[data-theme="dark"] label,
+:root[data-theme="dark"] .subhead,
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .recipe-count-summary span,
+:root[data-theme="dark"] .recipe-list-item span,
+:root[data-theme="dark"] .recipe-management-header span,
+:root[data-theme="dark"] .pagination-controls span,
+:root[data-theme="dark"] .shopping-row span,
+:root[data-theme="dark"] .shopping-row small,
+:root[data-theme="dark"] .result-row span,
+:root[data-theme="dark"] .store-item-row span,
+:root[data-theme="dark"] .qfc-progress-meta span {
+  color: #9fb2aa;
+}
+
+:root[data-theme="dark"] .toggle-row,
+:root[data-theme="dark"] .tab-button,
+:root[data-theme="dark"] .sub-tab-button,
+:root[data-theme="dark"] .recipe-management-item {
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .recipe-management-item {
+  background: #1d2621;
+  border-color: transparent;
+}
+
+:root[data-theme="dark"] .recipe-management-edit,
+:root[data-theme="dark"] .recipe-management-edit:hover {
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme="dark"] .shopping-source-links a {
+  color: #8ed1aa;
+}
+
+:root[data-theme="dark"] .shopping-source-links a:hover {
+  color: #b8e5c9;
+}
+
+:root[data-theme="dark"] .menu-panel,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .recipe-count-summary div,
+:root[data-theme="dark"] .edit-heading,
+:root[data-theme="dark"] .result-row,
+:root[data-theme="dark"] .store-item-row,
+:root[data-theme="dark"] .qfc-progress {
+  background: #1d2621;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .unchecked-ingredients-toggle {
+  background: #263630;
+  border-color: #33443d;
+  color: #dce8e2;
+}
+
+:root[data-theme="dark"] .unchecked-ingredients-toggle:hover {
+  background: #30453d;
+}
+
+:root[data-theme="dark"] .shopping-row {
+  background: #202d27;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .shopping-row:hover {
+  background: #293a33;
+  border-color: #4c6259;
+}
+
+:root[data-theme="dark"] .shopping-row:focus-visible {
+  box-shadow: 0 0 0 3px rgba(142, 209, 170, 0.2);
+  outline-color: #8ed1aa;
+}
+
+:root[data-theme="dark"] .store-item-match-row {
+  background: #263630;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .store-item-custom-search {
+  background: #111613;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .store-item-find-button,
+:root[data-theme="dark"] .store-item-preference-row button.secondary {
+  background: #3a5148;
+  border: 1px solid #668176;
+  color: #f2f7f4;
+}
+
+:root[data-theme="dark"] .store-item-thumbnail {
+  border-color: #52675f;
+}
+
+:root[data-theme="dark"] .store-item-search-feedback.success {
+  color: #8ac7a6;
+}
+
+:root[data-theme="dark"] .store-item-search-feedback.error {
+  color: #f19a88;
+}
+
+:root[data-theme="dark"] .store-item-preference-row {
+  background: #263630;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .store-item-preference-section p,
+:root[data-theme="dark"] .store-item-preference-row span {
+  color: #9fb2aa;
+}
+
+:root[data-theme="dark"] .store-item-match-row span:not(.eyebrow),
+:root[data-theme="dark"] .store-item-unmatched-row span {
+  color: #9fb2aa;
+}
+
+:root[data-theme="dark"] .tab-button,
+:root[data-theme="dark"] .sub-tab-button,
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] .qfc-progress-track {
+  background: #263630;
+}
+
+:root[data-theme="dark"] .tab-button.active,
+:root[data-theme="dark"] .sub-tab-button.active {
+  background: #68a99a;
+  color: #0f1714;
+}
+
+:root[data-theme="dark"] .recipe-list,
+:root[data-theme="dark"] .meal-block,
+:root[data-theme="dark"] .custom-list-picker {
+  border-top-color: #33443d;
+}
+
+:root[data-theme="dark"] .sandbox-banner,
+:root[data-theme="dark"] .sandbox-notice,
+:root[data-theme="dark"] .sandbox-cart-toggle {
+  background: #3a2b0c;
+  border-color: #b98420;
+  color: #ffe7ad;
+}
+
+:root[data-theme="dark"] .custom-list-picker > div:first-child span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .menu-meal-actions span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .custom-list-option {
+  background: #1d2621;
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .recipe-management-item:hover,
+:root[data-theme="dark"] .shopping-list-management-item:hover {
+  background: #24332d;
+  border-color: #5c766c;
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .recipe-management-item span {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-meta-chip {
+  background: #263630;
+  border-color: #33443d;
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-generation-toggle:hover {
+  background: #30453d;
+  border-color: #5c766c;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-status-chip.enabled {
+  background: #173528;
+  border-color: #315b53;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .recipe-management-item .recipe-generation-toggle.enabled:hover {
+  background: #214735;
+  border-color: #4c8062;
+}
+
+:root[data-theme="dark"] .recipe-management-edit:focus-visible,
+:root[data-theme="dark"] .recipe-generation-toggle:focus-visible {
+  outline-color: #68a99a;
+}
+
+:root[data-theme="dark"] .empty-state {
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .error {
+  background: #4a201a;
+  color: #ffd2ca;
+}
+
+:root[data-theme="dark"] .success {
+  background: #173528;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .status-good {
+  background: #173528;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .status-muted {
+  background: #263630;
+  color: #b8c8c1;
+}
+
+:root[data-theme="dark"] .qfc-progress-meta {
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .qfc-progress-fill {
+  background: #68a99a;
+}

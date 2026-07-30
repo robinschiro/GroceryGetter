@@ -1,0 +1,22 @@
+.custom-list-item-editor {
+  margin-top: 18px;
+}
+
+.custom-list-item-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) 36px 36px 36px;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.store-item-review-actions {
+  align-items: flex-end;
+  flex-direction: column;
+}

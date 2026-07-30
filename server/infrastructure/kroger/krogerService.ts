@@ -1,6 +1,6 @@
-import { queryAll, queryOne, run, saveDb } from "./db.js";
+import type { GroceryDatabase } from "../database/database.js";
 import { randomUUID } from "node:crypto";
-import type { DataScope } from "./types.js";
+import type { DataScope } from "../../types.js";
 
 export type CartSubmissionItem = {
   id: number;
@@ -139,31 +139,6 @@ const krogerBaseUrl = "https://api.kroger.com/v1";
 const defaultRedirectUri = "http://127.0.0.1:5174/api/qfc/oauth/callback";
 const tokenSkewMs = 60_000;
 const storeBrandNames = ["Kroger", "QFC", "Simple Truth", "Private Selection"];
-let serviceToken: ServiceToken | null = null;
-
-function getSetting(key: string) {
-  const row = queryOne<{ value: string }>("SELECT value FROM settings WHERE key = ?", [key]);
-  return row?.value?.trim() ?? "";
-}
-
-function setSetting(key: string, value: string) {
-  run(
-    `INSERT INTO settings (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    [key, value]
-  );
-  saveDb();
-}
-
-function requireSetting(key: string) {
-  const value = getSetting(key);
-  if (!value) {
-    throw new Error(`Missing Kroger API setting: ${key}.`);
-  }
-  return value;
-}
-
 function getBasicAuthHeader(clientId: string, clientSecret: string) {
   return `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
 }
@@ -316,14 +291,54 @@ export class FakeKrogerClient implements KrogerClient {
   }
 }
 
-let krogerClient: KrogerClient = new KrogerHttpClient();
+type StoreItemPreferenceRow = {
+  ingredientKey: string;
+  ingredientName: string;
+  provider: string;
+  storeItemId: string;
+  upc: string;
+  description: string;
+  brand: string;
+  size: string;
+  imageUrl: string;
+  isStoreBrand: number;
+  updatedAt: string;
+};
 
-export function setKrogerClient(client: KrogerClient) {
-  krogerClient = client;
-  serviceToken = null;
+export type StoreItemPreference = Omit<StoreItemPreferenceRow, "isStoreBrand"> & {
+  isStoreBrand: boolean;
+};
+
+export function createQfcService(
+  database: GroceryDatabase,
+  krogerClient: KrogerClient = new KrogerHttpClient()
+) {
+let serviceToken: ServiceToken | null = null;
+
+function getSetting(key: string) {
+  const row = database.queryOne<{ value: string }>("SELECT value FROM settings WHERE key = ?", [key]);
+  return row?.value?.trim() ?? "";
 }
 
-export function getQfcApiStatus(dataScope: DataScope = "production") {
+function setSetting(key: string, value: string) {
+  database.run(
+    `INSERT INTO settings (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+  database.save();
+}
+
+function requireSetting(key: string) {
+  const value = getSetting(key);
+  if (!value) {
+    throw new Error(`Missing Kroger API setting: ${key}.`);
+  }
+  return value;
+}
+
+function getQfcApiStatus(dataScope: DataScope = "production") {
   const customerExpiresAt = Number(getSetting("krogerCustomerTokenExpiresAt") || 0);
   const clientId = getSetting("krogerClientId");
   return {
@@ -341,7 +356,7 @@ export function getQfcApiStatus(dataScope: DataScope = "production") {
   };
 }
 
-export function saveQfcApiSettings(input: {
+function saveQfcApiSettings(input: {
   clientId?: string;
   clientSecret?: string;
   locationId?: string;
@@ -359,22 +374,22 @@ export function saveQfcApiSettings(input: {
   return getQfcApiStatus(dataScope);
 }
 
-export function getScopedSetting(dataScope: DataScope, key: string) {
-  const row = queryOne<{ value: string }>(
+function getScopedSetting(dataScope: DataScope, key: string) {
+  const row = database.queryOne<{ value: string }>(
     "SELECT value FROM scoped_settings WHERE data_scope = ? AND key = ?",
     [dataScope, key]
   );
   return row?.value?.trim() ?? "";
 }
 
-export function setScopedSetting(dataScope: DataScope, key: string, value: string) {
-  run(
+function setScopedSetting(dataScope: DataScope, key: string, value: string) {
+  database.run(
     `INSERT INTO scoped_settings (data_scope, key, value)
       VALUES (?, ?, ?)
       ON CONFLICT(data_scope, key) DO UPDATE SET value = excluded.value`,
     [dataScope, key, value]
   );
-  saveDb();
+  database.save();
 }
 
 function getCustomerRedirectUri() {
@@ -385,7 +400,7 @@ function generateState() {
   return randomUUID();
 }
 
-export function createCustomerAuthorizationUrl() {
+function createCustomerAuthorizationUrl() {
   const clientId = requireSetting("krogerClientId");
   const redirectUri = getCustomerRedirectUri();
   const scope = getSetting("krogerCustomerScopes") || "cart.basic:write";
@@ -435,7 +450,7 @@ function saveCustomerToken(token: {
   setSetting("krogerCustomerTokenType", token.token_type ?? "Bearer");
 }
 
-export async function exchangeCustomerAuthorizationCode(input: {
+async function exchangeCustomerAuthorizationCode(input: {
   code: string;
   state: string;
 }) {
@@ -454,7 +469,7 @@ export async function exchangeCustomerAuthorizationCode(input: {
   return getQfcApiStatus();
 }
 
-export async function refreshCustomerToken() {
+async function refreshCustomerToken() {
   const refreshToken = requireSetting("krogerCustomerRefreshToken");
   const token = await exchangeCustomerToken(new URLSearchParams({
     grant_type: "refresh_token",
@@ -464,7 +479,7 @@ export async function refreshCustomerToken() {
   return getQfcApiStatus();
 }
 
-export async function getCustomerAccessToken() {
+async function getCustomerAccessToken() {
   const accessToken = getSetting("krogerCustomerAccessToken");
   const expiresAt = Number(getSetting("krogerCustomerTokenExpiresAt") || 0);
 
@@ -502,7 +517,7 @@ async function getServiceToken() {
   return serviceToken.accessToken;
 }
 
-export async function searchLocations(query: string, limit = 10) {
+async function searchLocations(query: string, limit = 10) {
   const accessToken = await getServiceToken();
   return krogerClient.searchLocations({ accessToken, query, limit });
 }
@@ -533,7 +548,7 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   };
 }
 
-export async function searchStoreItems(
+async function searchStoreItems(
   term: string,
   options?: { locationId?: string; limit?: number; dataScope?: DataScope }
 ) {
@@ -562,25 +577,7 @@ function chooseStoreItemCandidate(candidates: StoreItemCandidate[], dataScope: D
   return pool[0] ?? null;
 }
 
-type StoreItemPreferenceRow = {
-  ingredientKey: string;
-  ingredientName: string;
-  provider: string;
-  storeItemId: string;
-  upc: string;
-  description: string;
-  brand: string;
-  size: string;
-  imageUrl: string;
-  isStoreBrand: number;
-  updatedAt: string;
-};
-
-export type StoreItemPreference = Omit<StoreItemPreferenceRow, "isStoreBrand"> & {
-  isStoreBrand: boolean;
-};
-
-export function normalizeIngredientKey(ingredientName: string) {
+function normalizeIngredientKey(ingredientName: string) {
   return ingredientName.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 }
 
@@ -588,8 +585,8 @@ function toStoreItemPreference(row: StoreItemPreferenceRow): StoreItemPreference
   return { ...row, isStoreBrand: Boolean(row.isStoreBrand) };
 }
 
-export function getStoreItemPreferences(dataScope: DataScope): StoreItemPreference[] {
-  const rows = queryAll<StoreItemPreferenceRow>(
+function getStoreItemPreferences(dataScope: DataScope): StoreItemPreference[] {
+  const rows = database.queryAll<StoreItemPreferenceRow>(
     `SELECT
       ingredient_key AS ingredientKey,
       ingredient_name AS ingredientName,
@@ -615,7 +612,7 @@ function getStoreItemPreference(
   provider: string,
   ingredientName: string
 ): StoreItemPreference | null {
-  const row = queryOne<StoreItemPreferenceRow>(
+  const row = database.queryOne<StoreItemPreferenceRow>(
     `SELECT
       ingredient_key AS ingredientKey,
       ingredient_name AS ingredientName,
@@ -635,7 +632,7 @@ function getStoreItemPreference(
   return row ? toStoreItemPreference(row) : null;
 }
 
-export function saveStoreItemPreference(
+function saveStoreItemPreference(
   dataScope: DataScope,
   provider: string,
   ingredientName: string,
@@ -647,7 +644,7 @@ export function saveStoreItemPreference(
     throw new Error("An ingredient name is required to remember a store item.");
   }
 
-  run(
+  database.run(
     `INSERT INTO store_item_preferences (
       data_scope, ingredient_key, ingredient_name, provider, store_item_id, upc,
       description, brand, size, image_url, is_store_brand
@@ -677,16 +674,16 @@ export function saveStoreItemPreference(
       storeItem.isStoreBrand ? 1 : 0
     ]
   );
-  saveDb();
+  database.save();
   return getStoreItemPreference(dataScope, provider, normalizedIngredientName)!;
 }
 
-export function deleteStoreItemPreference(dataScope: DataScope, provider: string, ingredientKey: string) {
-  run(
+function deleteStoreItemPreference(dataScope: DataScope, provider: string, ingredientKey: string) {
+  database.run(
     "DELETE FROM store_item_preferences WHERE data_scope = ? AND provider = ? AND ingredient_key = ?",
     [dataScope, provider, ingredientKey]
   );
-  saveDb();
+  database.save();
 }
 
 function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandidate {
@@ -790,7 +787,7 @@ async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
   await krogerClient.addToCart({ accessToken, items });
 }
 
-export async function previewQfcCart(
+async function previewQfcCart(
   dataScope: DataScope,
   items: CartSubmissionItem[],
   onProgress?: CartSubmissionProgressHandler
@@ -834,7 +831,7 @@ export async function previewQfcCart(
   };
 }
 
-export async function addQfcMatchesToCart(
+async function addQfcMatchesToCart(
   items: CartSubmissionItem[],
   matched: CartSubmissionMatch[],
   skipped: CartSubmissionSkip[],
@@ -882,7 +879,6 @@ export async function addQfcMatchesToCart(
   };
 }
 
-export function createQfcService() {
   return {
     addQfcMatchesToCart,
     createCustomerAuthorizationUrl,

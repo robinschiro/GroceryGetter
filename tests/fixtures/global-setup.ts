@@ -3,12 +3,11 @@ import path from "node:path";
 import type { Server } from "node:http";
 import { build, preview, type PreviewServer } from "vite";
 import { createApp } from "../../server/app.js";
-import { createDatabase, productionDatabasePath } from "../../server/db.js";
+import { createDatabase, productionDatabasePath } from "../../server/infrastructure/database/database.js";
 import {
   createQfcService,
-  FakeKrogerClient,
-  setKrogerClient
-} from "../../server/qfcAdapter.js";
+  FakeKrogerClient
+} from "../../server/infrastructure/kroger/krogerService.js";
 
 const apiPort = 5194;
 const webPort = 5193;
@@ -29,11 +28,9 @@ export default async function globalSetup() {
 
   const database = createDatabase({ filePath: disposableDatabasePath });
   await database.initialize();
-  setKrogerClient(new FakeKrogerClient());
-
   const app = createApp({
     database,
-    qfcService: createQfcService(),
+    qfcService: createQfcService(database, new FakeKrogerClient()),
     testMode: true
   });
   const apiServer = await new Promise<Server>((resolve, reject) => {

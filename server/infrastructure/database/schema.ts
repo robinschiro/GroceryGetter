@@ -1,27 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-import initSqlJs, { type Database, type SqlValue } from "sql.js";
-
-export type RecipeCategory = "entree" | "vegetable_side" | "starch_side";
-
-export type Row = Record<string, string | number | null>;
-
-export const productionDatabasePath = path.resolve(process.cwd(), "data", "grocery-getter.sqlite");
-
-export type GroceryDatabase = {
-  readonly filePath: string;
-  readonly initialized: boolean;
-  initialize(): Promise<void>;
-  reset(): Promise<void>;
-  close(): void;
-  save(): void;
-  exec(sql: string): void;
-  run(sql: string, params?: SqlValue[]): void;
-  insert(sql: string, params?: SqlValue[]): number;
-  queryAll<T extends Row>(sql: string, params?: SqlValue[]): T[];
-  queryOne<T extends Row>(sql: string, params?: SqlValue[]): T | null;
-  transaction<T>(callback: () => T): T;
-};
+import type { GroceryDatabase } from "./database.js";
 
 function columnExists(database: GroceryDatabase, tableName: string, columnName: string) {
   const { queryAll } = database;
@@ -56,7 +33,7 @@ function customShoppingListsHaveScopedNameKey(database: GroceryDatabase) {
   return /UNIQUE\s*\(\s*data_scope\s*,\s*name(?:\s+COLLATE\s+NOCASE)?\s*\)/i.test(definition);
 }
 
-async function initializeSchema(database: GroceryDatabase) {
+export async function initializeSchema(database: GroceryDatabase) {
   const { exec, queryAll, queryOne, run, save: saveDb, transaction } = database;
 
   if (tableExists(database, "shopping_list_items") && !tableExists(database, "menu_shopping_list_items")) {
@@ -410,135 +387,4 @@ async function initializeSchema(database: GroceryDatabase) {
     ON CONFLICT(data_scope, key) DO NOTHING`
   );
   saveDb();
-}
-
-export function createDatabase({ filePath }: { filePath: string }): GroceryDatabase {
-  const resolvedFilePath = path.resolve(filePath);
-  let rawDatabase: Database | null = null;
-
-  const requireDatabase = () => {
-    if (!rawDatabase) {
-      throw new Error(`Database has not been initialized: ${resolvedFilePath}`);
-    }
-    return rawDatabase;
-  };
-
-  const database: GroceryDatabase = {
-    filePath: resolvedFilePath,
-    get initialized() {
-      return rawDatabase !== null;
-    },
-    async initialize() {
-      if (rawDatabase) return;
-      fs.mkdirSync(path.dirname(resolvedFilePath), { recursive: true });
-      const SQL = await initSqlJs();
-      rawDatabase = fs.existsSync(resolvedFilePath)
-        ? new SQL.Database(fs.readFileSync(resolvedFilePath))
-        : new SQL.Database();
-      rawDatabase.run("PRAGMA foreign_keys = ON");
-      await initializeSchema(database);
-    },
-    async reset() {
-      rawDatabase?.close();
-      rawDatabase = null;
-      if (fs.existsSync(resolvedFilePath)) {
-        fs.rmSync(resolvedFilePath);
-      }
-      await database.initialize();
-    },
-    close() {
-      rawDatabase?.close();
-      rawDatabase = null;
-    },
-    save() {
-      fs.writeFileSync(resolvedFilePath, Buffer.from(requireDatabase().export()));
-    },
-    exec(sql) {
-      requireDatabase().exec(sql);
-    },
-    run(sql, params = []) {
-      requireDatabase().run(sql, params);
-    },
-    insert(sql, params = []) {
-      requireDatabase().run(sql, params);
-      const row = database.queryOne<{ id: number }>("SELECT last_insert_rowid() AS id");
-      return row?.id ?? 0;
-    },
-    queryAll<T extends Row>(sql: string, params: SqlValue[] = []) {
-      const stmt = requireDatabase().prepare(sql, params);
-      const rows: T[] = [];
-      while (stmt.step()) {
-        rows.push(stmt.getAsObject() as T);
-      }
-      stmt.free();
-      return rows;
-    },
-    queryOne<T extends Row>(sql: string, params: SqlValue[] = []): T | null {
-      return database.queryAll<T>(sql, params)[0] ?? null;
-    },
-    transaction<T>(callback: () => T) {
-      database.run("BEGIN");
-      try {
-        const result = callback();
-        database.run("COMMIT");
-        database.save();
-        return result;
-      } catch (error) {
-        database.run("ROLLBACK");
-        throw error;
-      }
-    }
-  };
-
-  return database;
-}
-
-let defaultDatabase: GroceryDatabase | null = null;
-
-export function setDefaultDatabase(database: GroceryDatabase) {
-  defaultDatabase = database;
-}
-
-function getDefaultDatabase() {
-  if (!defaultDatabase) {
-    throw new Error("The default database has not been configured.");
-  }
-  return defaultDatabase;
-}
-
-/** @deprecated Prefer an injected GroceryDatabase instance. */
-export async function initializeDb() {
-  const database = createDatabase({ filePath: productionDatabasePath });
-  await database.initialize();
-  setDefaultDatabase(database);
-}
-
-/** @deprecated Prefer database.save(). */
-export function saveDb() {
-  getDefaultDatabase().save();
-}
-
-/** @deprecated Prefer database.run(). */
-export function run(sql: string, params: SqlValue[] = []) {
-  getDefaultDatabase().run(sql, params);
-}
-
-/** @deprecated Prefer database.insert(). */
-export function insert(sql: string, params: SqlValue[] = []) {
-  return getDefaultDatabase().insert(sql, params);
-}
-
-/** @deprecated Prefer database.queryAll(). */
-export function queryAll<T extends Row>(sql: string, params: SqlValue[] = []): T[] {
-  return getDefaultDatabase().queryAll<T>(sql, params);
-}
-
-/** @deprecated Prefer database.queryOne(). */
-export function queryOne<T extends Row>(sql: string, params: SqlValue[] = []): T | null {
-  return getDefaultDatabase().queryOne<T>(sql, params);
-}
-
-/** @deprecated Prefer database.transaction(). */
-export function transaction<T>(callback: () => T): T {
-  return getDefaultDatabase().transaction(callback);
 }

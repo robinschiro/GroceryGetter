@@ -8,7 +8,7 @@ The goal is to replace the frontend, API, persistence, QFC, and CSS monoliths wi
 
 ## Progress
 
-Phases 1 and 2 were completed on 2026-07-29. No phase 3 feature extraction has started.
+Phases 1–5 were completed on 2026-07-29.
 
 - Phase 1 testability seams were committed in `9f59f33`:
   - `GROCERY_GETTER_DB_PATH` selects the database while normal startup retains `data/grocery-getter.sqlite`.
@@ -25,6 +25,64 @@ Phases 1 and 2 were completed on 2026-07-29. No phase 3 feature extraction has s
   - After `npm install`, run `npx playwright install chromium` once to install the local browser binary.
   - Local scripts are available as `npm run test:api`, `npm run test:e2e`, `npm run test:mobile`, `npm run test:characterization`, `npm run test:headed`, and `npm run test:ui`.
   - No CI configuration was added.
+
+Phase 3 foundation extraction completed on 2026-07-29:
+
+- Cross-process domain and response contracts now live in `shared/contracts`.
+- The frontend uses a data-scope-bound API client from `src/shared`; individual requests no longer read browser storage.
+- Lightweight route parsing and route construction live in `src/shared/router.ts`.
+- `src/main.tsx` now only imports the global stylesheet and mounts the application.
+- The existing ingredient-add focus behavior was made conditional so its deferred focus cannot steal focus from a user's next field. The recipe characterization journey covers this behavior and passed three consecutive runs after the cleanup.
+- Feature UI/state and CSS have moved to their phase 4 owners; the application module now retains shell and cross-feature composition concerns.
+
+Phase 4 recipe extraction completed on 2026-07-29:
+
+- Recipe HTTP calls now live behind `src/features/recipes/api.ts`.
+- Recipe routes are mounted from a feature router with validation/workflow behavior in a service and all recipe SQL/row mapping in an explicitly injected repository.
+- The superseded recipe handlers, validation, and row mapping were removed from `server/app.ts`.
+- Recipe form state, mutations, validation display, management filtering, pagination, and generation toggles now live in `src/features/recipes/RecipesPage.tsx`; the superseded application-shell components were removed.
+- Recipe-specific rules now live in `src/features/recipes/styles.css`.
+
+Phase 4 reusable shopping-list extraction completed on 2026-07-29:
+
+- Reusable shopping-list HTTP calls now live behind `src/features/shoppingLists/api.ts`.
+- Reusable shopping-list routes, validation/workflow behavior, and persistence are separated into a feature router, service, and explicitly injected repository.
+- The superseded shopping-list handlers, validation, item replacement, row mapping, and text helper were removed from `server/app.ts`.
+- Reusable-list create/edit/delete state, validation display, item ordering, default inclusion, and management UI now live in `src/features/shoppingLists/ShoppingListsPage.tsx`; the superseded shell components were removed.
+- Reusable-list-specific rules now live in `src/features/shoppingLists/styles.css`.
+
+Phase 4 planner extraction completed on 2026-07-29:
+
+- Menu creation/editing and generated shopping-list HTTP calls now live behind `src/features/planner/api.ts`.
+- Shopping-list quantity parsing/formatting and ingredient normalization now live in the planner domain module.
+- Generated shopping-list row mapping and source-target queries now live in the explicitly injected planner repository.
+- Menu preview, creation, retrieval, meal editing, recipe replacement, and reusable-list selection now run through a thin planner router, workflow service, and explicitly injected repository.
+- Aggregation, generated-list retrieval/clearing, dirty saves, approval updates, and save-to-source now run through the planner router, focused shopping-list workflow service, domain rules, and persistence repository.
+- The superseded planner and generated-shopping-list handlers and SQL were removed from `server/app.ts`.
+- Menu-builder and generated-list review UI now live under `src/features/planner`; shared QFC submission progress presentation lives under `src/features/qfc`.
+- Menu and generated-list lifecycle state now lives in `src/features/planner/usePlanner.ts`; the shell retains only the cross-feature approval/store-review coordination that will move with the QFC slice.
+- Planner page composition now lives in `src/features/planner/PlannerPage.tsx`; planner-specific rules live in `src/features/planner/styles.css`.
+
+Phase 4 QFC extraction completed on 2026-07-29:
+
+- The application factory now limits itself to middleware and feature composition.
+- Settings, OAuth, store search, matching/review, and cart-submission routes are mounted from `server/features/qfc/qfcRouter.ts` with explicit database, planner-repository, and QFC-service dependencies.
+- Disposable characterization seeding now lives in `server/testing` instead of the production application module.
+- Expiring preview/submission job state and QFC-owned persistence now live behind focused job-store and repository modules.
+- Kroger integration now lives in `server/infrastructure/kroger` and receives both its database and `KrogerClient` explicitly; the characterization server constructs it with `FakeKrogerClient`.
+- Database creation/schema/persistence now lives in `server/infrastructure/database`; the process-wide default database and deprecated global query helpers were removed.
+- QFC HTTP calls now live behind `src/features/qfc/api.ts`; settings/OAuth/catalog UI, store-item review UI, and submission-progress UI now live under `src/features/qfc`.
+- QFC settings, preview polling, approval/review synchronization, remembered selections, quantities, removal, and cart-submission state now live in `src/features/qfc/useQfc.ts`.
+- QFC-specific rules now live in `src/features/qfc/styles.css`; base, shared-form, theme, responsive, and application-shell rules have explicit cross-cutting owners.
+- Preview matching, review mutation, job polling, and cart-submission orchestration now live in `server/features/qfc/qfcWorkflowService.ts`; the router translates HTTP inputs, errors, and responses.
+
+Phase 5 infrastructure cleanup completed on 2026-07-29:
+
+- Runtime database mechanics and schema/migration initialization are separate modules under `server/infrastructure/database`.
+- Database access is instance-based and explicitly injected; process-wide database state and compatibility query helpers were removed.
+- Kroger clients and token/catalog/cart behavior live under `server/infrastructure/kroger`, and each service receives its database and client explicitly.
+- QFC job state is intentionally process-local and encapsulated by `QfcJobStore`.
+- `docs/architecture.md` documents ownership, dependency rules, verification commands, disposable data, and fake-QFC guarantees.
 
 The completion run passed typecheck, production build, 7 API tests, 6 desktop Chromium journeys, and 1 mobile smoke journey. The full run also compared the production database SHA-256 before and after execution; it was unchanged.
 
