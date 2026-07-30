@@ -10,6 +10,7 @@ data/*.sqlite-wal
 logs/
 .env
 .codex-git-commit.json
+.codex-git-command.json
 imports/dropbox-recipes/raw/*
 !imports/dropbox-recipes/raw/.gitkeep
 imports/dropbox-recipes/review/*

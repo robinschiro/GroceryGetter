@@ -26,6 +26,8 @@
 - Use Vite's native config loader in Codex (`--configLoader native`). The default bundled config loader invokes esbuild while loading `vite.config.*`, and this sandbox can deny esbuild reads above the workspace.
 
 ## Git Commits and Pushes from Codex
+- For Git operations that need to update `.git` metadata other than commits or pushes, write a gitignored `.codex-git-command.json` manifest containing an `arguments` array, then use this exact standalone command: `& .\scripts\git.ps1`.
+- The generic wrapper removes the manifest after every attempt. Keep each invocation focused, review destructive Git operations carefully, and continue using the dedicated commit and push wrappers below for those operations.
 - Do not run `git add` or `git commit` directly from the Codex shell. Write a gitignored `.codex-git-commit.json` manifest containing a single-line `commitMessage` string and a `paths` array of repository-relative paths, then use this exact standalone command: `& .\scripts\git-commit.ps1`.
 - Invoke the commit wrapper without chaining, prefixes, suffixes, or surrounding PowerShell logic. A narrow Codex rule allows this exact command to run outside the sandbox so Git can update protected `.git` files. The wrapper removes the manifest after every attempt and refuses `.git`, `.env*`, `data/`, absolute paths, and path traversal.
 - Do not run `git push` directly from the Codex shell. Use the repository wrapper with this exact standalone command: `& .\scripts\git-push.ps1`.
