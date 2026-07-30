@@ -102,7 +102,7 @@ test("reusable shopping lists preserve conflicts, ordering, defaults, edits, del
   const [weekly] = await initial.json();
   expect(weekly).toMatchObject({ name: "Weekly Staples", includeInMenuByDefault: true });
   expect(weekly.items.map((item: { item: string }) => item.item))
-    .toEqual(["tomato", "milk", "unmatched item"]);
+    .toEqual(["tomato", "milk", "preferred unavailable item", "unmatched item"]);
 
   const invalid = await request.post("/api/custom-shopping-lists", {
     headers: productionHeaders,
