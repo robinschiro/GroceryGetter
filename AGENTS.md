@@ -8,6 +8,7 @@
 
 ## Commands
 - Install dependencies: `npm install`
+- Install the workspace-local Playwright browser: `npm run setup:browsers`
 - Start frontend and API together: `npm run dev`
 - Start API only: `npm run dev:api`
 - Start web only: `npm run dev:web`

@@ -89,7 +89,12 @@ From the project root, install npm dependencies from the lockfile:
 
 ```powershell
 npm ci
+npm run setup:browsers
 ```
+
+The browser setup command installs Playwright's Chromium binary in the gitignored
+`.cache/ms-playwright` directory inside this workspace. Run it again after upgrading
+Playwright to ensure the matching browser version is available.
 
 The important npm packages are recorded in `package.json` and `package-lock.json`. They include:
 
@@ -99,6 +104,7 @@ The important npm packages are recorded in `package.json` and `package-lock.json
 - `tsx` for running the TypeScript API in development
 - `concurrently` for running Vite and the API together
 - `sql.js` for the local database layer
+- Playwright and its workspace-local Chromium binary for browser tests
 
 After installing dependencies, run a quick verification:
 

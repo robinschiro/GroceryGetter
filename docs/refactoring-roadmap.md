@@ -22,7 +22,7 @@ Phases 1–5 were completed on 2026-07-29.
   - Playwright is the only test framework. The `api`, `chromium`, and `mobile-smoke` projects run serially with one worker.
   - Global test setup constructs the API and production-preview frontend in-process against `.cache/tests/characterization.sqlite`.
   - Every test resets and seeds deterministic disposable data. The suite covers the application shell, recipes, reusable shopping lists, planner, aggregation, settings, fake-QFC review/submission, API errors, scope isolation, and mobile navigation/overflow.
-  - After `npm install`, run `npx playwright install chromium` once to install the local browser binary.
+  - After `npm install`, run `npm run setup:browsers` once to install the Chromium binary in the workspace-local cache.
   - Local scripts are available as `npm run test:api`, `npm run test:e2e`, `npm run test:mobile`, `npm run test:characterization`, `npm run test:headed`, and `npm run test:ui`.
   - No CI configuration was added.
 

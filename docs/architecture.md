@@ -38,7 +38,12 @@ Characterization setup creates `.cache/tests/characterization.sqlite`, refuses t
 
 ## Local verification
 
-After `npm ci`, install Chromium once with `npx playwright install chromium`.
+After `npm ci`, install the matching Chromium binary into the workspace-local,
+gitignored browser cache:
+
+```powershell
+npm run setup:browsers
+```
 
 ```powershell
 npm run typecheck
