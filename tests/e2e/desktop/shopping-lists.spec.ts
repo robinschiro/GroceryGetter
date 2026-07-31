@@ -34,11 +34,16 @@ test("reusable-list creation, validation, conflict, ordering, defaults, edit, de
   await page.getByLabel("Name").fill("Browser Pantry");
   await page.getByRole("button", { name: "Update list" }).click();
   await expect(page.getByRole("status")).toContainText("Browser Pantry");
+  await page.getByRole("button", { name: "Remove item" }).first().click();
+  await expect(page.getByRole("status")).toContainText("Browser Pantry");
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByText("Browser Pantry", { exact: true })).toBeVisible();
   await expect(page.getByText("Included by default", { exact: true }).last()).toBeVisible();
 
   await page.getByRole("button", { name: /Browser Pantry/ }).click();
+  expect(await page.getByRole("textbox", { name: "Coffee" }).evaluateAll((inputs) =>
+    inputs.map((input) => (input as HTMLInputElement).value)
+  )).toEqual(["coffee"]);
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Delete list" }).click();
   await expect(page.getByText("Editing shopping list")).toBeVisible();

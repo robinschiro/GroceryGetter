@@ -194,23 +194,28 @@ function ShoppingListForm({
     });
   }
 
-  async function save() {
-    const items = form.items
+  function inputFromForm(nextForm: typeof form): CustomShoppingListInput {
+    const items = nextForm.items
       .map((entry) => {
         const item = entry.item.trim();
         return { ...entry, item, text: entry.text.trim() || item };
       })
       .filter((entry) => entry.item);
+
+    return {
+      name: nextForm.name.trim(),
+      includeInMenuByDefault: nextForm.includeInMenuByDefault,
+      items
+    };
+  }
+
+  async function save() {
     setError("");
     setCreatedList(null);
     setUpdatedListName(null);
     setIsSubmitting(true);
     try {
-      const list = await onSubmit({
-        name: form.name.trim(),
-        includeInMenuByDefault: form.includeInMenuByDefault,
-        items
-      });
+      const list = await onSubmit(inputFromForm(form));
       if (mode === "create") {
         if (list) setCreatedList(list);
         setForm({ name: "", includeInMenuByDefault: false, items: [emptyItem()] });
@@ -219,6 +224,33 @@ function ShoppingListForm({
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save the shopping list.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function removeItem(index: number) {
+    const previousForm = form;
+    const nextForm = {
+      ...form,
+      items: form.items.filter((_, itemIndex) => itemIndex !== index)
+    };
+    setForm(nextForm);
+
+    if (mode === "create") return;
+
+    setError("");
+    setCreatedList(null);
+    setUpdatedListName(null);
+    setIsSubmitting(true);
+    try {
+      await onSubmit(inputFromForm(nextForm));
+      setUpdatedListName(nextForm.name.trim());
+    } catch (caught) {
+      setForm(previousForm);
+      setError(
+        caught instanceof Error ? caught.message : "Unable to remove the shopping list item."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -319,10 +351,8 @@ function ShoppingListForm({
             </button>
             <button
               className="icon-button"
-              onClick={() => setForm((current) => ({
-                ...current,
-                items: current.items.filter((_, itemIndex) => itemIndex !== index)
-              }))}
+              disabled={isSubmitting}
+              onClick={() => void removeItem(index)}
               aria-label="Remove item"
               type="button"
             >
