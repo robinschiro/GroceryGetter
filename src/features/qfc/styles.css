@@ -77,6 +77,13 @@
   justify-self: start;
 }
 
+.store-item-quantity-controls {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .store-item-number-control {
   display: grid;
   grid-template-columns: 44px 72px 44px;
@@ -114,6 +121,36 @@
 
 .store-item-number-control button:disabled {
   cursor: not-allowed;
+}
+
+.store-item-quantity-info-button {
+  min-height: 44px;
+  padding: 0;
+  width: 44px;
+}
+
+.store-item-quantity-details {
+  background: #fff;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: grid;
+  flex: 1 0 100%;
+  gap: 7px;
+  min-width: min(100%, 240px);
+  padding: 10px;
+}
+
+.store-item-quantity-detail {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.store-item-match-row .store-item-quantity-detail strong {
+  color: #315b53;
+  flex: 0 0 auto;
+  font-size: 0.82rem;
 }
 
 .store-item-find-button {

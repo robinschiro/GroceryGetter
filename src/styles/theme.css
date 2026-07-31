@@ -113,6 +113,15 @@
   border-color: #33443d;
 }
 
+:root[data-theme="dark"] .store-item-quantity-details {
+  background: #111613;
+  border-color: #52675f;
+}
+
+:root[data-theme="dark"] .store-item-match-row .store-item-quantity-detail strong {
+  color: #bce8cf;
+}
+
 :root[data-theme="dark"] .store-item-find-button,
 :root[data-theme="dark"] .store-item-preference-row button.secondary {
   background: #3a5148;

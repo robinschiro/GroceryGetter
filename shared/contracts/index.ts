@@ -77,6 +77,12 @@ export type ShoppingListSourceTarget = {
   name: string;
 };
 
+export type ShoppingListSourceDetail = ShoppingListSourceTarget & {
+  text: string;
+  quantity: string;
+  unit: string;
+};
+
 export type ShoppingListItem = {
   id: number;
   text: string;
@@ -88,6 +94,7 @@ export type ShoppingListItem = {
   sourceOccurrenceCount: number;
   canPersistToSource: number;
   sourceTargets: ShoppingListSourceTarget[];
+  sourceDetails: ShoppingListSourceDetail[];
 };
 
 export type CustomShoppingListItem = {

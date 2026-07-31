@@ -119,6 +119,17 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await quantity.fill("3");
   await expect(quantity).toHaveValue("3");
 
+  const tomatoRow = page.locator(".store-item-match-row").filter({
+    has: page.getByText("tomato", { exact: true })
+  });
+  await tomatoRow.getByRole("button", { name: "Show quantity sources for tomato" }).click();
+  const quantitySources = tomatoRow.getByRole("region", { name: "Quantity sources for tomato" });
+  await expect(quantitySources).toBeVisible();
+  await expect(quantitySources).toContainText("Weekly Staples");
+  await expect(quantitySources).toContainText("1");
+  await tomatoRow.getByRole("button", { name: "Hide quantity sources for tomato" }).click();
+  await expect(quantitySources).toHaveCount(0);
+
   const unmatchedRow = page.locator(".store-item-unmatched-row").filter({ hasText: "unmatched item" });
   await unmatchedRow.getByRole("button", { name: "Find item" }).click();
   await unmatchedRow.getByPlaceholder("Enter a different search term").fill("recovered item");

@@ -235,7 +235,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
     },
 
     getShoppingListItems(menuId: number, dataScope: DataScope): ShoppingListItem[] {
-      const items = database.queryAll<Omit<ShoppingListItem, "sourceTargets">>(
+      const items = database.queryAll<Omit<ShoppingListItem, "sourceTargets" | "sourceDetails">>(
         `SELECT
           menu_shopping_list_items.id,
           menu_shopping_list_items.text,
@@ -250,9 +250,6 @@ export function createPlannerRepository(database: GroceryDatabase) {
             JOIN menu_items
               ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
               AND menu_items.menu_id = menu_shopping_list_items.menu_id
-            JOIN recipe_ingredients
-              ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
-              AND recipe_ingredients.recipe_id = menu_items.recipe_id
             WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id =
               menu_shopping_list_items.id
           ) + (
@@ -270,9 +267,6 @@ export function createPlannerRepository(database: GroceryDatabase) {
             JOIN menu_items
               ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
               AND menu_items.menu_id = menu_shopping_list_items.menu_id
-            JOIN recipe_ingredients
-              ON recipe_ingredients.id = menu_shopping_list_item_recipe_sources.recipe_ingredient_id
-              AND recipe_ingredients.recipe_id = menu_items.recipe_id
             WHERE menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id =
               menu_shopping_list_items.id
           ) + (
@@ -294,11 +288,17 @@ export function createPlannerRepository(database: GroceryDatabase) {
         shoppingListItemId: number;
         id: number;
         name: string;
+        text: string;
+        quantity: string;
+        unit: string;
       }>(
-        `SELECT DISTINCT
+        `SELECT
           menu_shopping_list_item_recipe_sources.menu_shopping_list_item_id AS shoppingListItemId,
           recipes.id,
-          recipes.name
+          recipes.name,
+          COALESCE(recipe_ingredients.text, '') AS text,
+          COALESCE(recipe_ingredients.quantity, '') AS quantity,
+          COALESCE(recipe_ingredients.unit, '') AS unit
         FROM menu_shopping_list_item_recipe_sources
         JOIN menu_shopping_list_items
           ON menu_shopping_list_items.id =
@@ -307,20 +307,30 @@ export function createPlannerRepository(database: GroceryDatabase) {
         JOIN menu_items
           ON menu_items.id = menu_shopping_list_item_recipe_sources.menu_item_id
           AND menu_items.menu_id = menu_shopping_list_items.menu_id
+        LEFT JOIN recipe_ingredients
+          ON recipe_ingredients.id =
+            menu_shopping_list_item_recipe_sources.recipe_ingredient_id
+          AND recipe_ingredients.recipe_id = menu_items.recipe_id
         JOIN recipes ON recipes.id = menu_items.recipe_id
         WHERE recipes.data_scope = ?
-        ORDER BY recipes.name COLLATE NOCASE, recipes.id`,
+        ORDER BY recipes.name COLLATE NOCASE, recipes.id, recipe_ingredients.sort_order`,
         [menuId, dataScope]
       );
       const customSources = database.queryAll<{
         shoppingListItemId: number;
         id: number;
         name: string;
+        text: string;
+        quantity: string;
+        unit: string;
       }>(
-        `SELECT DISTINCT
+        `SELECT
           menu_shopping_list_item_custom_sources.menu_shopping_list_item_id AS shoppingListItemId,
           custom_shopping_lists.id,
-          custom_shopping_lists.name
+          custom_shopping_lists.name,
+          custom_shopping_list_items.text,
+          custom_shopping_list_items.quantity,
+          custom_shopping_list_items.unit
         FROM menu_shopping_list_item_custom_sources
         JOIN menu_shopping_list_items
           ON menu_shopping_list_items.id =
@@ -332,25 +342,44 @@ export function createPlannerRepository(database: GroceryDatabase) {
         JOIN custom_shopping_lists
           ON custom_shopping_lists.id = custom_shopping_list_items.custom_shopping_list_id
         WHERE custom_shopping_lists.data_scope = ?
-        ORDER BY custom_shopping_lists.name COLLATE NOCASE, custom_shopping_lists.id`,
+        ORDER BY
+          custom_shopping_lists.name COLLATE NOCASE,
+          custom_shopping_lists.id,
+          custom_shopping_list_items.sort_order`,
         [menuId, dataScope]
       );
 
-      return items.map((item) => ({
-        ...item,
-        sourceTargets: [
+      return items.map((item) => {
+        const sourceDetails = [
           ...recipeSources
             .filter((source) => source.shoppingListItemId === item.id)
-            .map((source) => ({ type: "recipe" as const, id: source.id, name: source.name })),
+            .map((source) => ({
+              type: "recipe" as const,
+              id: source.id,
+              name: source.name,
+              text: source.text,
+              quantity: source.quantity,
+              unit: source.unit
+            })),
           ...customSources
             .filter((source) => source.shoppingListItemId === item.id)
             .map((source) => ({
               type: "shoppingList" as const,
               id: source.id,
-              name: source.name
+              name: source.name,
+              text: source.text,
+              quantity: source.quantity,
+              unit: source.unit
             }))
-        ]
-      }));
+        ];
+        const sourceTargets = sourceDetails.filter((source, index, sources) =>
+          sources.findIndex((candidate) =>
+            candidate.type === source.type && candidate.id === source.id
+          ) === index
+        ).map(({ type, id, name }) => ({ type, id, name }));
+
+        return { ...item, sourceTargets, sourceDetails };
+      });
     }
   };
 }

@@ -163,6 +163,15 @@ test("shopping-list aggregation preserves grouping, provenance, approval, dirty 
   expect(tomato.approved).toBe(1);
   expect(tomato.sourceNames).toContain("Weekly Staples");
   expect(tomato.sourceTargets.length).toBeGreaterThan(1);
+  expect(tomato.sourceDetails).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "shoppingList",
+      name: "Weekly Staples",
+      quantity: "1",
+      unit: ""
+    })
+  ]));
+  expect(tomato.sourceDetails.length).toBe(tomato.sourceOccurrenceCount);
 
   const unique = items.find((item: { item: string; sourceTargets: unknown[] }) => item.sourceTargets.length === 1);
   const approval = await request.patch(`/api/menus/${id}/shopping-list/items/${unique.id}/approval`, {
@@ -190,6 +199,36 @@ test("shopping-list aggregation preserves grouping, provenance, approval, dirty 
     headers: productionHeaders,
     data: { item: "grouped tomato" }
   })).status()).toBe(409);
+
+  const tomatoRecipeSource = tomato.sourceTargets.find(
+    (source: { type: string }) => source.type === "recipe"
+  );
+  const recipes = await (await request.get("/api/recipes", {
+    headers: productionHeaders
+  })).json();
+  const sourceRecipe = recipes.find(
+    (recipe: { id: number }) => recipe.id === tomatoRecipeSource.id
+  );
+  expect((await request.put(`/api/recipes/${sourceRecipe.id}`, {
+    headers: productionHeaders,
+    data: sourceRecipe
+  })).status()).toBe(200);
+  const afterRecipeEdit = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  const tomatoAfterRecipeEdit = afterRecipeEdit.find(
+    (item: { id: number }) => item.id === tomato.id
+  );
+  expect(tomatoAfterRecipeEdit.sourceTargets).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "recipe",
+      id: sourceRecipe.id,
+      name: sourceRecipe.name
+    })
+  ]));
+  expect(tomatoAfterRecipeEdit.sourceDetails.length)
+    .toBe(tomatoAfterRecipeEdit.sourceOccurrenceCount);
+
   expect((await request.get(`/api/menus/${id}/shopping-list`, { headers: sandboxHeaders })).status()).toBe(404);
   expect((await request.get("/api/menus/not-a-number/shopping-list", {
     headers: productionHeaders

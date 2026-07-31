@@ -3,6 +3,7 @@ import {
   BookmarkPlus,
   ChevronRight,
   ExternalLink,
+  Info,
   LoaderCircle,
   Minus,
   Package,
@@ -94,6 +95,7 @@ export function StoreItemReviewPanel({
   const [selectingItemId, setSelectingItemId] = useState<number | null>(null);
   const [updatingQuantityItemId, setUpdatingQuantityItemId] = useState<number | null>(null);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
+  const [quantityDetailsOpen, setQuantityDetailsOpen] = useState<Record<number, boolean>>({});
   const [findingItemId, setFindingItemId] = useState<number | null>(null);
   const [searchingItemId, setSearchingItemId] = useState<number | null>(null);
   const [removingItemId, setRemovingItemId] = useState<number | null>(null);
@@ -109,6 +111,7 @@ export function StoreItemReviewPanel({
     setFindingItemId(null);
     setUpdatingQuantityItemId(null);
     setQuantityDrafts({});
+    setQuantityDetailsOpen({});
     setSearchingItemId(null);
     setRemovingItemId(null);
     setCustomSearchTerm("");
@@ -157,6 +160,53 @@ export function StoreItemReviewPanel({
       ? draftQuantity
       : match.cartQuantity;
     return Math.max(1, currentQuantity + change);
+  }
+
+  function renderQuantityDetails(match: StoreItemMatch) {
+    const itemName = match.item.item || match.item.text;
+    const detailsId = `store-item-quantity-details-${match.item.id}`;
+    const isOpen = Boolean(quantityDetailsOpen[match.item.id]);
+
+    return (
+      <>
+        <button
+          className="secondary icon-button store-item-quantity-info-button"
+          type="button"
+          aria-label={`${isOpen ? "Hide" : "Show"} quantity sources for ${itemName}`}
+          aria-expanded={isOpen}
+          aria-controls={detailsId}
+          title={`${isOpen ? "Hide" : "Show"} recipe and list quantities`}
+          onClick={() => setQuantityDetailsOpen((current) => ({
+            ...current,
+            [match.item.id]: !current[match.item.id]
+          }))}
+        >
+          <Info size={18} aria-hidden="true" />
+        </button>
+        {isOpen ? (
+          <div
+            className="store-item-quantity-details"
+            id={detailsId}
+            role="region"
+            aria-label={`Quantity sources for ${itemName}`}
+          >
+            <span className="eyebrow">Recipe and list quantities</span>
+            {match.item.sourceDetails.map((source, index) => (
+              <div
+                className="store-item-quantity-detail"
+                key={`${source.type}-${source.id}-${index}`}
+              >
+                <span>{source.name}</span>
+                <strong>
+                  {[source.quantity, source.unit].filter(Boolean).join(" ")
+                    || "Quantity not specified"}
+                </strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
   }
 
   async function removeReviewItem(item: ShoppingListItem) {
@@ -403,36 +453,39 @@ export function StoreItemReviewPanel({
                     </div>
                     <div className="store-item-quantity">
                       <span className="eyebrow">Cart quantity</span>
-                      <div className="store-item-number-control">
-                        <button
-                          type="button"
-                          aria-label={`Decrease cart quantity for ${match.storeItem.description}`}
-                          aria-busy={updatingQuantityItemId === match.item.id}
-                          disabled={updatingQuantityItemId === match.item.id || adjustedQuantity(match, 0) <= 1}
-                          onClick={() => void updateQuantity(match, String(adjustedQuantity(match, -1)))}
-                        >
-                          <Minus size={18} />
-                        </button>
-                        <input
-                          aria-label={`Cart quantity for ${match.storeItem.description}`}
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
-                          step="1"
-                          value={quantityDrafts[match.item.id] ?? String(match.cartQuantity)}
-                          disabled={updatingQuantityItemId === match.item.id}
-                          onChange={(event) => void updateQuantity(match, event.target.value)}
-                          onBlur={() => restoreQuantityIfInvalid(match)}
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Increase cart quantity for ${match.storeItem.description}`}
-                          aria-busy={updatingQuantityItemId === match.item.id}
-                          disabled={updatingQuantityItemId === match.item.id}
-                          onClick={() => void updateQuantity(match, String(adjustedQuantity(match, 1)))}
-                        >
-                          <Plus size={18} />
-                        </button>
+                      <div className="store-item-quantity-controls">
+                        <div className="store-item-number-control">
+                          <button
+                            type="button"
+                            aria-label={`Decrease cart quantity for ${match.storeItem.description}`}
+                            aria-busy={updatingQuantityItemId === match.item.id}
+                            disabled={updatingQuantityItemId === match.item.id || adjustedQuantity(match, 0) <= 1}
+                            onClick={() => void updateQuantity(match, String(adjustedQuantity(match, -1)))}
+                          >
+                            <Minus size={18} />
+                          </button>
+                          <input
+                            aria-label={`Cart quantity for ${match.storeItem.description}`}
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            step="1"
+                            value={quantityDrafts[match.item.id] ?? String(match.cartQuantity)}
+                            disabled={updatingQuantityItemId === match.item.id}
+                            onChange={(event) => void updateQuantity(match, event.target.value)}
+                            onBlur={() => restoreQuantityIfInvalid(match)}
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Increase cart quantity for ${match.storeItem.description}`}
+                            aria-busy={updatingQuantityItemId === match.item.id}
+                            disabled={updatingQuantityItemId === match.item.id}
+                            onClick={() => void updateQuantity(match, String(adjustedQuantity(match, 1)))}
+                          >
+                            <Plus size={18} />
+                          </button>
+                        </div>
+                        {renderQuantityDetails(match)}
                       </div>
                     </div>
                   </div>
