@@ -91,6 +91,65 @@ test("planner preserves generation, saving, latest loading, replacement, empty s
   })).status()).toBe(400);
 });
 
+test("menu history is scope-isolated, newest-first, and safely deletes menus", async ({ request }) => {
+  const first = await createMenu(request, 1);
+  const preview = await (await request.post("/api/menus/preview", {
+    headers: productionHeaders,
+    data: { mealCount: 2 }
+  })).json();
+  const secondResponse = await request.post("/api/menus", {
+    headers: productionHeaders,
+    data: {
+      name: "Newest Week",
+      mealCount: 2,
+      items: preview.items,
+      customShoppingListIds: preview.customShoppingListIds
+    }
+  });
+  expect(secondResponse.status()).toBe(201);
+  const secondId = (await secondResponse.json()).id as number;
+
+  const historyResponse = await request.get("/api/menus", { headers: productionHeaders });
+  expect(historyResponse.status()).toBe(200);
+  expect(await historyResponse.json()).toEqual([
+    expect.objectContaining({
+      id: secondId,
+      name: "Newest Week",
+      mealCount: 2,
+      status: "draft",
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String)
+    }),
+    expect.objectContaining({
+      id: first.id,
+      name: "Characterized Week",
+      mealCount: 1
+    })
+  ]);
+
+  const sandboxHistory = await request.get("/api/menus", { headers: sandboxHeaders });
+  expect(sandboxHistory.status()).toBe(200);
+  expect(await sandboxHistory.json()).toEqual([]);
+
+  expect((await request.delete(`/api/menus/${secondId}`, {
+    headers: sandboxHeaders
+  })).status()).toBe(404);
+  const deleteResponse = await request.delete(`/api/menus/${secondId}`, {
+    headers: productionHeaders
+  });
+  expect(deleteResponse.status()).toBe(200);
+  expect(await deleteResponse.json()).toEqual({ id: secondId });
+  expect((await request.get(`/api/menus/${secondId}`, {
+    headers: productionHeaders
+  })).status()).toBe(404);
+  expect((await request.delete(`/api/menus/${secondId}`, {
+    headers: productionHeaders
+  })).status()).toBe(404);
+
+  const remainingHistory = await request.get("/api/menus", { headers: productionHeaders });
+  expect((await remainingHistory.json()).map((menu: { id: number }) => menu.id)).toEqual([first.id]);
+});
+
 test("shopping-list aggregation preserves grouping, provenance, approval, dirty saves, source saves, clear, and regeneration", async ({ request }) => {
   const { id } = await createMenu(request, 1);
   const aggregate = await request.post(`/api/menus/${id}/aggregate`, { headers: productionHeaders });

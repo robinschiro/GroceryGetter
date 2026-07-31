@@ -24,7 +24,14 @@ type MenuRow = Omit<Menu, "items" | "customShoppingListIds">;
 export function createPlannerRepository(database: GroceryDatabase) {
   function getMenu(menuId: number, dataScope: DataScope): Menu | null {
     const menu = database.queryOne<MenuRow>(
-      `SELECT id, name, meal_count AS mealCount, data_scope AS dataScope, status
+      `SELECT
+        id,
+        name,
+        meal_count AS mealCount,
+        data_scope AS dataScope,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
       FROM menus WHERE id = ? AND data_scope = ?`,
       [menuId, dataScope]
     );
@@ -58,6 +65,29 @@ export function createPlannerRepository(database: GroceryDatabase) {
 
   return {
     getMenu,
+
+    listMenus(dataScope: DataScope) {
+      return database.queryAll<{
+        id: number;
+        name: string;
+        mealCount: number;
+        status: string;
+        createdAt: string;
+        updatedAt: string;
+      }>(
+        `SELECT
+          id,
+          name,
+          meal_count AS mealCount,
+          status,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM menus
+        WHERE data_scope = ?
+        ORDER BY created_at DESC, id DESC`,
+        [dataScope]
+      );
+    },
 
     listGenerationRecipes(dataScope: DataScope) {
       return database.queryAll(
@@ -129,6 +159,15 @@ export function createPlannerRepository(database: GroceryDatabase) {
         [dataScope]
       );
       return latest ? getMenu(latest.id, dataScope) : null;
+    },
+
+    deleteMenu(menuId: number, dataScope: DataScope) {
+      database.transaction(() => {
+        database.run(
+          "DELETE FROM menus WHERE id = ? AND data_scope = ?",
+          [menuId, dataScope]
+        );
+      });
     },
 
     addMeal(menuId: number, mealNumber: number, items: MenuItemInput[], dataScope: DataScope) {

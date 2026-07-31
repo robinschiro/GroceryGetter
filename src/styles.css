@@ -4,6 +4,7 @@
 @import "./features/shoppingLists/styles.css";
 @import "./features/recipes/styles.css";
 @import "./features/planner/styles.css";
+@import "./features/menuHistory/styles.css";
 @import "./features/qfc/styles.css";
 @import "./styles/theme.css";
 @import "./styles/responsive.css";

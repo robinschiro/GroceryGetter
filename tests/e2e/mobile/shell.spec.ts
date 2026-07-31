@@ -14,6 +14,7 @@ test("phone navigation opens and closes, reaches every primary view, shows data 
 
   const destinations = [
     ["Planner", "/planner", "Menu Builder"],
+    ["Menu History", "/menus", "Menu History"],
     ["Recipes", "/recipes/manage", "Recipes"],
     ["Shopping Lists", "/shopping-lists/manage", "Shopping Lists"],
     ["QFC Settings", "/settings/qfc/api", "QFC Settings"]

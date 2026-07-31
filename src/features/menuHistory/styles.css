@@ -1,0 +1,251 @@
+.menu-history-table-wrap {
+  overflow-x: auto;
+}
+
+.menu-history-table {
+  border-collapse: collapse;
+  min-width: 640px;
+  width: 100%;
+}
+
+.menu-history-table th,
+.menu-history-table td {
+  border-bottom: 1px solid #d8dfdb;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.menu-history-table thead th {
+  color: #52615c;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-history-row {
+  cursor: pointer;
+}
+
+.menu-history-row:hover,
+.menu-history-row:focus-within {
+  background: #f3f6f4;
+}
+
+.menu-history-link {
+  background: transparent;
+  color: #286845;
+  display: inline;
+  min-height: auto;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.menu-history-link:hover {
+  background: transparent;
+  color: #174d31;
+}
+
+.menu-status {
+  background: #e5eee9;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-transform: capitalize;
+}
+
+.menu-history-back {
+  justify-self: start;
+}
+
+.menu-detail-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.menu-detail-heading {
+  align-items: flex-start;
+}
+
+.menu-detail-heading p {
+  color: #66746f;
+  font-size: 0.86rem;
+  margin: 4px 0 0;
+}
+
+.menu-detail-meals {
+  display: grid;
+  gap: 12px;
+}
+
+.menu-detail-meal {
+  background: #f8faf8;
+  border: 1px solid #d8dfdb;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.menu-detail-meal h4 {
+  margin: 0 0 12px;
+}
+
+.menu-detail-meal dl {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.menu-detail-meal dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.menu-detail-meal dt {
+  color: #66746f;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.menu-detail-meal dd {
+  margin: 0;
+}
+
+:root[data-theme="dark"] .menu-history-table th,
+:root[data-theme="dark"] .menu-history-table td {
+  border-bottom-color: #33443d;
+}
+
+:root[data-theme="dark"] .menu-history-row:hover,
+:root[data-theme="dark"] .menu-history-row:focus-within,
+:root[data-theme="dark"] .menu-detail-meal {
+  background: #263630;
+}
+
+:root[data-theme="dark"] .menu-detail-meal {
+  border-color: #33443d;
+}
+
+:root[data-theme="dark"] .menu-history-link {
+  background: transparent;
+  color: #8ed1aa;
+}
+
+:root[data-theme="dark"] .menu-status {
+  background: #173528;
+  color: #bce8cf;
+}
+
+:root[data-theme="dark"] .menu-history-table thead th,
+:root[data-theme="dark"] .menu-detail-heading p,
+:root[data-theme="dark"] .menu-detail-meal dt {
+  color: #9fb2aa;
+}
+
+@media (max-width: 720px) {
+  .menu-history-table-wrap {
+    overflow-x: visible;
+  }
+
+  .menu-history-table {
+    min-width: 0;
+  }
+
+  .menu-history-table,
+  .menu-history-table tbody,
+  .menu-history-table tr {
+    display: block;
+  }
+
+  .menu-history-table thead {
+    display: none;
+  }
+
+  .menu-history-row {
+    background: #f8faf8;
+    border: 1px solid #d8dfdb;
+    border-radius: 8px;
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 12px;
+  }
+
+  .menu-history-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .menu-history-table .menu-history-row th,
+  .menu-history-table .menu-history-row td {
+    border: 0;
+    padding: 0;
+  }
+
+  .menu-history-table .menu-history-row th {
+    flex: 0 0 100%;
+    margin-bottom: 2px;
+  }
+
+  .menu-history-link {
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+  .menu-history-chip {
+    align-items: center;
+    background: #eef2ef;
+    border: 1px solid #d8dfdb !important;
+    border-radius: 999px;
+    color: #52615c;
+    display: inline-flex;
+    font-size: 0.76rem;
+    gap: 4px;
+    line-height: 1.2;
+    padding: 4px 8px !important;
+    white-space: nowrap;
+  }
+
+  .menu-history-chip::before {
+    content: attr(data-label) ":";
+    font-weight: 800;
+  }
+
+  .menu-history-status-chip .menu-status {
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    padding: 0;
+  }
+
+  :root[data-theme="dark"] .menu-history-row {
+    background: #1d2621;
+    border-color: #33443d;
+  }
+
+  :root[data-theme="dark"] .menu-history-chip {
+    background: #263630;
+    border-color: #33443d !important;
+    color: #b8c8c1;
+  }
+
+  .menu-detail-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .menu-detail-actions button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .menu-detail-meal dl {
+    grid-template-columns: 1fr;
+  }
+}

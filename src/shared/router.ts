@@ -1,7 +1,7 @@
 export type RecipeAdminTab = "create" | "manage";
 export type ShoppingListsTab = "create" | "manage";
 export type QfcSettingsTab = "api" | "preferences";
-export type AppView = "recipe-admin" | "shopping-lists" | "qfc-api" | "planner";
+export type AppView = "recipe-admin" | "shopping-lists" | "qfc-api" | "planner" | "menu-history";
 
 export type AppRoute = {
   path: string;
@@ -11,10 +11,12 @@ export type AppRoute = {
   shoppingListsTab?: ShoppingListsTab;
   shoppingListId?: number;
   qfcSettingsTab?: QfcSettingsTab;
+  menuId?: number;
 };
 
 const appRoutes: AppRoute[] = [
   { path: "/planner", view: "planner" },
+  { path: "/menus", view: "menu-history" },
   { path: "/recipes/manage", view: "recipe-admin", recipeAdminTab: "manage" },
   { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
   { path: "/shopping-lists/manage", view: "shopping-lists", shoppingListsTab: "manage" },
@@ -29,6 +31,10 @@ function normalizePathname(pathname: string) {
 
 export function routeFromPathname(pathname: string) {
   const normalizedPathname = normalizePathname(pathname);
+  const menuDetailMatch = /^\/menus\/([1-9]\d*)$/.exec(normalizedPathname);
+  if (menuDetailMatch) {
+    return menuDetailRoute(Number(menuDetailMatch[1]));
+  }
   const recipeEditMatch = /^\/recipes\/manage\/([1-9]\d*)$/.exec(normalizedPathname);
   if (recipeEditMatch) {
     return recipeEditRoute(Number(recipeEditMatch[1]));
@@ -38,6 +44,14 @@ export function routeFromPathname(pathname: string) {
     return shoppingListEditRoute(Number(shoppingListEditMatch[1]));
   }
   return appRoutes.find((route) => route.path === normalizedPathname) ?? appRoutes[0];
+}
+
+export function menuDetailRoute(menuId: number): AppRoute {
+  return {
+    path: `/menus/${menuId}`,
+    view: "menu-history",
+    menuId
+  };
 }
 
 export function shoppingListEditRoute(shoppingListId: number): AppRoute {

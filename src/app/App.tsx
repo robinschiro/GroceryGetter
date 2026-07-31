@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
+  History,
   ListChecks,
   Menu as MenuIcon,
   Moon,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   defaultRouteForView,
+  menuDetailRoute,
   recipeEditRoute,
   routeFromPathname,
   shoppingListEditRoute,
@@ -34,6 +36,7 @@ import { usePlanner } from "../features/planner/usePlanner.js";
 import { StoreSettingsPanel } from "../features/qfc/StoreSettingsPanel.js";
 import { StoreItemReviewPanel } from "../features/qfc/StoreItemReviewPanel.js";
 import { useQfc } from "../features/qfc/useQfc.js";
+import { MenuHistoryPage } from "../features/menuHistory/MenuHistoryPage.js";
 
 type ThemeMode = "light" | "dark";
 
@@ -43,6 +46,7 @@ const dataScopeStorageKey = "grocery-getter-data-scope";
 
 const views: Array<{ id: AppView; label: string; title: string; eyebrow: string; icon: typeof Shuffle }> = [
   { id: "planner", label: "Planner", title: "Planner", eyebrow: "Weekly menu workflow", icon: Shuffle },
+  { id: "menu-history", label: "Menu History", title: "Menu History", eyebrow: "Saved weekly menus", icon: History },
   { id: "recipe-admin", label: "Recipes", title: "Recipes", eyebrow: "Recipe library", icon: Database },
   {
     id: "shopping-lists",
@@ -405,6 +409,20 @@ export function App() {
                 message={storeItemReviewMessage}
               />
             )}
+          />
+        ) : null}
+
+        {activeView === "menu-history" ? (
+          <MenuHistoryPage
+            api={api}
+            menuId={activeRoute.menuId ?? null}
+            onOpenMenu={(menuId) => navigate(menuDetailRoute(menuId))}
+            onBack={() => navigate(routeFromPathname("/menus"))}
+            onDeleted={async () => {
+              await loadLatestMenu();
+              invalidateStoreReview();
+              navigate(routeFromPathname("/menus"));
+            }}
           />
         ) : null}
       </section>

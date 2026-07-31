@@ -1,5 +1,6 @@
 import type {
   Menu,
+  MenuSummary,
   ShoppingListItem
 } from "../../../shared/contracts/index.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
@@ -33,6 +34,14 @@ export function getMenu(api: ApiRequest, menuId: number) {
 
 export function getLatestMenu(api: ApiRequest) {
   return api<Menu | null>("/api/menus/latest");
+}
+
+export function listMenus(api: ApiRequest) {
+  return api<MenuSummary[]>("/api/menus");
+}
+
+export function deleteMenu(api: ApiRequest, menuId: number) {
+  return api<{ id: number }>(`/api/menus/${menuId}`, { method: "DELETE" });
 }
 
 export function addMenuMeal(api: ApiRequest, menuId: number, items: Menu["items"]) {

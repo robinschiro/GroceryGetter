@@ -37,6 +37,10 @@ export function createPlannerRouter(
     }
   });
 
+  router.get("/menus", (_req, res) => {
+    res.json(service.list(requestScope(res)));
+  });
+
   router.get("/menus/latest", (_req, res) => {
     res.json(service.getLatest(requestScope(res)));
   });
@@ -44,6 +48,14 @@ export function createPlannerRouter(
   router.get("/menus/:id", (req, res) => {
     try {
       res.json(service.get(Number(req.params.id), requestScope(res)));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.delete("/menus/:id", (req, res) => {
+    try {
+      res.json(service.delete(Number(req.params.id), requestScope(res)));
     } catch (error) {
       handlePlannerError(error, res);
     }

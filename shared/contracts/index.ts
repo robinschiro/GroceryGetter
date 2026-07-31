@@ -56,8 +56,19 @@ export type Menu = {
   mealCount: number;
   dataScope: DataScope;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
   items: MenuItem[];
   customShoppingListIds: number[];
+};
+
+export type MenuSummary = {
+  id: number;
+  name: string;
+  mealCount: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ShoppingListSourceTarget = {

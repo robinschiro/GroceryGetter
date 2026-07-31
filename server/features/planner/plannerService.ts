@@ -55,6 +55,10 @@ export function createPlannerService(repository: PlannerRepository) {
   }
 
   return {
+    list(dataScope: DataScope) {
+      return repository.listMenus(dataScope);
+    },
+
     preview(mealCount: number, dataScope: DataScope) {
       if (!validMealCount(mealCount)) {
         throw new PlannerError("Meal count must be between 1 and 14.", 400);
@@ -168,6 +172,12 @@ export function createPlannerService(repository: PlannerRepository) {
 
     get(menuId: number, dataScope: DataScope) {
       return requireMenu(menuId, dataScope);
+    },
+
+    delete(menuId: number, dataScope: DataScope) {
+      requireMenu(menuId, dataScope);
+      repository.deleteMenu(menuId, dataScope);
+      return { id: menuId };
     },
 
     addMeal(menuId: number, rawItems: unknown, dataScope: DataScope) {

@@ -10,6 +10,7 @@ test("direct routes, navigation, history, refresh, theme, data mode, and scope i
 }) => {
   const directRoutes = [
     ["/planner", "Menu Builder"],
+    ["/menus", "Menu History"],
     ["/recipes/manage", "Recipes"],
     ["/recipes/create", "Recipes"],
     ["/shopping-lists/manage", "Shopping Lists"],
@@ -56,4 +57,51 @@ test("direct routes, navigation, history, refresh, theme, data mode, and scope i
   await page.getByLabel("Data mode").selectOption("production");
   await expect(page.getByText("Entree 02", { exact: true })).toBeVisible();
   await expect(page.getByText("Sandbox Tacos", { exact: true })).toHaveCount(0);
+});
+
+test("menu history lists newest menus first and deletes only from detail after confirmation", async ({
+  page
+}) => {
+  await page.goto("/planner");
+  await page.getByLabel("Meals").fill("1");
+  await page.getByRole("button", { name: "Generate" }).click();
+  await page.getByRole("button", { name: "Save menu" }).click();
+  await expect(page.getByRole("button", { name: "Aggregate ingredients" })).toBeVisible();
+  await page.getByRole("button", { name: "Generate" }).click();
+  await page.getByRole("button", { name: "Save menu" }).click();
+  await expect(page.getByRole("button", { name: "Aggregate ingredients" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await page.getByRole("button", { name: "Menu History", exact: true }).click();
+  await expect(page).toHaveURL(/\/menus$/);
+  await expect(page.getByRole("heading", { name: "Menu History", level: 3 })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete menu" })).toHaveCount(0);
+
+  const firstMenu = page.locator(".menu-history-table tbody tr").first();
+  await expect(firstMenu).toContainText("1");
+  const menuName = await firstMenu.getByRole("button").textContent();
+  await firstMenu.locator("td").first().click();
+  await expect(page).toHaveURL(/\/menus\/\d+$/);
+  await expect(page.getByRole("heading", { name: menuName ?? "", level: 3 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Meal 1", level: 4 })).toBeVisible();
+  await expect(page.getByText("Entrée", { exact: true })).toBeVisible();
+
+  const cancelDialogPromise = page.waitForEvent("dialog");
+  await page.getByRole("button", { name: "Delete menu" }).click();
+  const cancelDialog = await cancelDialogPromise;
+  expect(cancelDialog.type()).toBe("confirm");
+  expect(cancelDialog.message()).toContain("This action cannot be undone.");
+  await cancelDialog.dismiss();
+  await expect(page).toHaveURL(/\/menus\/\d+$/);
+
+  const confirmDialogPromise = page.waitForEvent("dialog");
+  await page.getByRole("button", { name: "Delete menu" }).click();
+  const confirmDialog = await confirmDialogPromise;
+  await confirmDialog.accept();
+  await expect(page).toHaveURL(/\/menus$/);
+
+  const remainingMenus = page.locator(".menu-history-link");
+  await expect(remainingMenus).toHaveCount(1);
+  await remainingMenus.click();
+  await expect(page.getByRole("button", { name: "Delete menu" })).toBeEnabled();
 });
