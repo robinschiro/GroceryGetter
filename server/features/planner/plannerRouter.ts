@@ -21,17 +21,17 @@ export function createPlannerRouter(
 ) {
   const router = express.Router();
 
-  router.post("/menus/preview", (req, res) => {
+  router.post("/menus/preview", async (req, res) => {
     try {
-      res.json(service.preview(Number(req.body.mealCount ?? 5), requestScope(res)));
+      res.json(await service.preview(Number(req.body.mealCount ?? 5), requestScope(res)));
     } catch (error) {
       handlePlannerError(error, res);
     }
   });
 
-  router.post("/menus", (req, res) => {
+  router.post("/menus", async (req, res) => {
     try {
-      res.status(201).json(service.create(req.body, requestScope(res)));
+      res.status(201).json(await service.create(req.body, requestScope(res)));
     } catch (error) {
       handlePlannerError(error, res);
     }
@@ -109,9 +109,21 @@ export function createPlannerRouter(
     }
   });
 
-  router.post("/menus/:id/aggregate", (req, res) => {
+  router.put("/menus/:id/ourgroceries-list", async (req, res) => {
     try {
-      res.status(201).json(shoppingLists.aggregate(
+      res.json(await service.updateOurGroceriesList(
+        Number(req.params.id),
+        req.body.listId,
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
+  router.post("/menus/:id/aggregate", async (req, res) => {
+    try {
+      res.status(201).json(await shoppingLists.aggregate(
         Number(req.params.id),
         requestScope(res)
       ));

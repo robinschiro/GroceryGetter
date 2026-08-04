@@ -13,23 +13,28 @@ import { createPlannerService } from "./features/planner/plannerService.js";
 import { createShoppingListWorkflowRepository } from "./features/planner/shoppingListRepository.js";
 import { createShoppingListWorkflowService } from "./features/planner/shoppingListService.js";
 import { createQfcRouter } from "./features/qfc/qfcRouter.js";
+import { createOurGroceriesRouter } from "./features/ourGroceries/ourGroceriesRouter.js";
+import type { OurGroceriesService } from "./infrastructure/ourGroceries/ourGroceriesService.js";
 import { seedTestDatabase, type TestSeed } from "./testing/seedTestDatabase.js";
 import type { DataScope } from "./types.js";
 
 export function createApp({
   database,
   qfcService,
+  ourGroceriesService,
   testMode = false
 }: {
   database: GroceryDatabase;
   qfcService: QfcService;
+  ourGroceriesService: OurGroceriesService;
   testMode?: boolean;
 }) {
   const plannerRepository = createPlannerRepository(database);
-  const plannerService = createPlannerService(plannerRepository);
+  const plannerService = createPlannerService(plannerRepository, ourGroceriesService);
   const shoppingListWorkflowService = createShoppingListWorkflowService(
     plannerRepository,
-    createShoppingListWorkflowRepository(database)
+    createShoppingListWorkflowRepository(database),
+    ourGroceriesService
   );
 
   const app = express();
@@ -66,6 +71,7 @@ export function createApp({
   );
   app.use("/api", createPlannerRouter(plannerService, shoppingListWorkflowService));
   app.use(createQfcRouter({ database, plannerRepository, qfcService }));
+  app.use(createOurGroceriesRouter(ourGroceriesService));
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const message = error instanceof Error ? error.message : "Unknown server error.";

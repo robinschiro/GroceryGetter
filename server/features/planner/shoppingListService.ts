@@ -1,5 +1,6 @@
 import type { DataScope, ShoppingListItem } from "../../../shared/contracts/index.js";
 import type { PlannerRepository } from "./plannerRepository.js";
+import type { OurGroceriesService } from "../../infrastructure/ourGroceries/ourGroceriesService.js";
 import {
   formatQuantity,
   normalizeAggregateItem,
@@ -13,19 +14,55 @@ import { PlannerError } from "./plannerService.js";
 
 export function createShoppingListWorkflowService(
   plannerRepository: PlannerRepository,
-  repository: ShoppingListWorkflowRepository
+  repository: ShoppingListWorkflowRepository,
+  ourGroceriesService: OurGroceriesService
 ) {
   function requireMenu(menuId: number, dataScope: DataScope) {
-    if (!Number.isInteger(menuId) || !plannerRepository.getMenu(menuId, dataScope)) {
+    const menu = Number.isInteger(menuId) ? plannerRepository.getMenu(menuId, dataScope) : null;
+    if (!menu) {
       throw new PlannerError("Menu not found.", 404);
     }
+    return menu;
   }
 
   return {
-    aggregate(menuId: number, dataScope: DataScope) {
-      requireMenu(menuId, dataScope);
+    async aggregate(menuId: number, dataScope: DataScope) {
+      const menu = requireMenu(menuId, dataScope);
+      let fetchedRemoteItems = [] as Awaited<ReturnType<typeof ourGroceriesService.getListItems>>;
+      if (menu.ourGroceriesList) {
+        try {
+          fetchedRemoteItems = await ourGroceriesService.getListItems(menu.ourGroceriesList.id);
+        } catch (error) {
+          throw new PlannerError(
+            error instanceof Error ? error.message : "Unable to refresh the selected OurGroceries list.",
+            502
+          );
+        }
+      }
+      const remoteItems = menu.ourGroceriesList
+        ? fetchedRemoteItems
+            .filter((item) => !item.crossedOff)
+            .map((item, sortOrder) => ({
+              remoteItemId: item.id,
+              text: item.name,
+              item: item.name,
+              sortOrder
+            }))
+        : [];
       const grouped = new Map<string, ReturnType<typeof repository.getAggregateSources>>();
-      for (const source of repository.getAggregateSources(menuId)) {
+      const remoteSources = remoteItems.map((item) => ({
+        sourceType: "ourGroceries" as const,
+        menuItemId: null,
+        recipeIngredientId: null,
+        customShoppingListItemId: null,
+        ourGroceriesItemId: item.remoteItemId,
+        text: item.text,
+        quantity: "",
+        unit: "",
+        item: item.item,
+        sourceName: `OurGroceries: ${menu.ourGroceriesList?.name ?? "List"}`
+      }));
+      for (const source of [...repository.getAggregateSources(menuId), ...remoteSources]) {
         const key = normalizeAggregateItem(source.item) || normalizeAggregateItem(source.text);
         grouped.set(key, [...(grouped.get(key) ?? []), source]);
       }
@@ -50,7 +87,7 @@ export function createShoppingListWorkflowService(
             sources
           };
         });
-      repository.replaceAggregatedItems(menuId, groups);
+      repository.replaceAggregatedItems(menuId, groups, remoteItems);
       return { ok: true };
     },
 
@@ -129,6 +166,9 @@ export function createShoppingListWorkflowService(
       const context = repository.getSourceContext(menuId, itemId, dataScope);
       if (!context.shoppingItem) {
         throw new PlannerError("Shopping-list item not found for this menu.", 404);
+      }
+      if (context.ourGroceriesSources.length) {
+        throw new PlannerError("OurGroceries sources are read-only in Grocery Getter.", 409);
       }
       const sourceCount = context.recipeSources.length + context.customSources.length;
       if (sourceCount !== 1) {

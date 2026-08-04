@@ -141,6 +141,23 @@ export async function initializeSchema(database: GroceryDatabase) {
     PRIMARY KEY (menu_id, custom_shopping_list_id)
   );
 
+  CREATE TABLE IF NOT EXISTS menu_ourgroceries_lists (
+    menu_id INTEGER PRIMARY KEY REFERENCES menus(id) ON DELETE CASCADE,
+    remote_list_id TEXT NOT NULL,
+    remote_list_name TEXT NOT NULL,
+    web_url TEXT NOT NULL,
+    refreshed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS menu_ourgroceries_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+    remote_item_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    item TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+  );
+
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -340,6 +357,13 @@ export async function initializeSchema(database: GroceryDatabase) {
       menu_shopping_list_item_id INTEGER NOT NULL REFERENCES menu_shopping_list_items(id) ON DELETE CASCADE,
       custom_shopping_list_item_id INTEGER NOT NULL REFERENCES custom_shopping_list_items(id) ON DELETE CASCADE,
       PRIMARY KEY (menu_shopping_list_item_id, custom_shopping_list_item_id)
+    )
+  `);
+  run(`
+    CREATE TABLE IF NOT EXISTS menu_shopping_list_item_ourgroceries_sources (
+      menu_shopping_list_item_id INTEGER NOT NULL REFERENCES menu_shopping_list_items(id) ON DELETE CASCADE,
+      menu_ourgroceries_item_id INTEGER NOT NULL REFERENCES menu_ourgroceries_items(id) ON DELETE CASCADE,
+      PRIMARY KEY (menu_shopping_list_item_id, menu_ourgroceries_item_id)
     )
   `);
   saveDb();

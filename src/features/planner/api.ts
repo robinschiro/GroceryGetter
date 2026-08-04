@@ -19,6 +19,7 @@ export function createMenu(api: ApiRequest, menu: Menu) {
       name: menu.name,
       mealCount: menu.mealCount,
       customShoppingListIds: menu.customShoppingListIds,
+      ourGroceriesListId: menu.ourGroceriesList?.id ?? null,
       items: menu.items.map(({ mealNumber, slot, recipeId }) => ({
         mealNumber,
         slot,
@@ -76,6 +77,17 @@ export function updateMenuShoppingLists(
   return api<{ ok: true }>(`/api/menus/${menuId}/custom-shopping-lists`, {
     method: "PUT",
     body: JSON.stringify({ customShoppingListIds })
+  });
+}
+
+export function updateMenuOurGroceriesList(
+  api: ApiRequest,
+  menuId: number,
+  listId: string | null
+) {
+  return api<Menu>(`/api/menus/${menuId}/ourgroceries-list`, {
+    method: "PUT",
+    body: JSON.stringify({ listId })
   });
 }
 

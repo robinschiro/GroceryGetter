@@ -2,6 +2,7 @@ import type { GroceryDatabase } from "../../infrastructure/database/database.js"
 import type {
   DataScope,
   Menu,
+  OurGroceriesListSummary,
   RecipeCategory,
   ShoppingListItem
 } from "../../../shared/contracts/index.js";
@@ -19,7 +20,7 @@ export type MenuItemInput = {
   recipeId: number | null;
 };
 
-type MenuRow = Omit<Menu, "items" | "customShoppingListIds">;
+type MenuRow = Omit<Menu, "items" | "customShoppingListIds" | "ourGroceriesList">;
 
 export function createPlannerRepository(database: GroceryDatabase) {
   function getMenu(menuId: number, dataScope: DataScope): Menu | null {
@@ -60,7 +61,17 @@ export function createPlannerRepository(database: GroceryDatabase) {
       [menuId]
     ).map((row) => row.customShoppingListId);
 
-    return { ...menu, items, customShoppingListIds };
+    const ourGroceriesList = database.queryOne<{
+      id: string;
+      name: string;
+      webUrl: string;
+    }>(
+      `SELECT remote_list_id AS id, remote_list_name AS name, web_url AS webUrl
+      FROM menu_ourgroceries_lists WHERE menu_id = ?`,
+      [menuId]
+    ) as OurGroceriesListSummary | null;
+
+    return { ...menu, items, customShoppingListIds, ourGroceriesList };
   }
 
   return {
@@ -130,6 +141,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
       mealCount: number,
       items: MenuItemInput[],
       shoppingListIds: number[],
+      ourGroceriesList: OurGroceriesListSummary | null,
       dataScope: DataScope
     ) {
       return database.transaction(() => {
@@ -147,6 +159,14 @@ export function createPlannerRepository(database: GroceryDatabase) {
           database.run(
             "INSERT INTO menu_custom_shopping_lists (menu_id, custom_shopping_list_id) VALUES (?, ?)",
             [menuId, shoppingListId]
+          );
+        }
+        if (ourGroceriesList) {
+          database.run(
+            `INSERT INTO menu_ourgroceries_lists
+              (menu_id, remote_list_id, remote_list_name, web_url)
+            VALUES (?, ?, ?, ?)`,
+            [menuId, ourGroceriesList.id, ourGroceriesList.name, ourGroceriesList.webUrl]
           );
         }
         return menuId;
@@ -234,6 +254,23 @@ export function createPlannerRepository(database: GroceryDatabase) {
       });
     },
 
+    replaceOurGroceriesList(menuId: number, list: OurGroceriesListSummary | null) {
+        database.transaction(() => {
+          database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+          database.run("DELETE FROM menu_ourgroceries_items WHERE menu_id = ?", [menuId]);
+          database.run("DELETE FROM menu_ourgroceries_lists WHERE menu_id = ?", [menuId]);
+        if (list) {
+          database.run(
+            `INSERT INTO menu_ourgroceries_lists
+              (menu_id, remote_list_id, remote_list_name, web_url)
+            VALUES (?, ?, ?, ?)`,
+            [menuId, list.id, list.name, list.webUrl]
+          );
+        }
+        database.run("UPDATE menus SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [menuId]);
+      });
+    },
+
     getShoppingListItems(menuId: number, dataScope: DataScope): ShoppingListItem[] {
       const items = database.queryAll<Omit<ShoppingListItem, "sourceTargets" | "sourceDetails">>(
         `SELECT
@@ -260,6 +297,11 @@ export function createPlannerRepository(database: GroceryDatabase) {
                 menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
             WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
               menu_shopping_list_items.id
+          ) + (
+            SELECT COUNT(*)
+            FROM menu_shopping_list_item_ourgroceries_sources
+            WHERE menu_shopping_list_item_ourgroceries_sources.menu_shopping_list_item_id =
+              menu_shopping_list_items.id
           ) AS sourceOccurrenceCount,
           CASE WHEN (
             SELECT COUNT(*)
@@ -277,7 +319,12 @@ export function createPlannerRepository(database: GroceryDatabase) {
                 menu_shopping_list_item_custom_sources.custom_shopping_list_item_id
             WHERE menu_shopping_list_item_custom_sources.menu_shopping_list_item_id =
               menu_shopping_list_items.id
-          ) = 1 THEN 1 ELSE 0 END AS canPersistToSource
+          ) = 1 AND (
+            SELECT COUNT(*)
+            FROM menu_shopping_list_item_ourgroceries_sources
+            WHERE menu_shopping_list_item_ourgroceries_sources.menu_shopping_list_item_id =
+              menu_shopping_list_items.id
+          ) = 0 THEN 1 ELSE 0 END AS canPersistToSource
         FROM menu_shopping_list_items
         JOIN menus ON menus.id = menu_shopping_list_items.menu_id
         WHERE menu_shopping_list_items.menu_id = ? AND menus.data_scope = ?
@@ -348,6 +395,34 @@ export function createPlannerRepository(database: GroceryDatabase) {
           custom_shopping_list_items.sort_order`,
         [menuId, dataScope]
       );
+      const ourGroceriesSources = database.queryAll<{
+        shoppingListItemId: number;
+        id: string;
+        name: string;
+        webUrl: string;
+        text: string;
+      }>(
+        `SELECT
+          menu_shopping_list_item_ourgroceries_sources.menu_shopping_list_item_id AS shoppingListItemId,
+          menu_ourgroceries_lists.remote_list_id AS id,
+          menu_ourgroceries_lists.remote_list_name AS name,
+          menu_ourgroceries_lists.web_url AS webUrl,
+          menu_ourgroceries_items.text
+        FROM menu_shopping_list_item_ourgroceries_sources
+        JOIN menu_shopping_list_items
+          ON menu_shopping_list_items.id =
+            menu_shopping_list_item_ourgroceries_sources.menu_shopping_list_item_id
+          AND menu_shopping_list_items.menu_id = ?
+        JOIN menu_ourgroceries_items
+          ON menu_ourgroceries_items.id =
+            menu_shopping_list_item_ourgroceries_sources.menu_ourgroceries_item_id
+          AND menu_ourgroceries_items.menu_id = menu_shopping_list_items.menu_id
+        JOIN menu_ourgroceries_lists
+          ON menu_ourgroceries_lists.menu_id = menu_shopping_list_items.menu_id
+        ORDER BY menu_ourgroceries_lists.remote_list_name COLLATE NOCASE,
+          menu_ourgroceries_items.sort_order`,
+        [menuId]
+      );
 
       return items.map((item) => {
         const sourceDetails = [
@@ -370,13 +445,31 @@ export function createPlannerRepository(database: GroceryDatabase) {
               text: source.text,
               quantity: source.quantity,
               unit: source.unit
+            })),
+          ...ourGroceriesSources
+            .filter((source) => source.shoppingListItemId === item.id)
+            .map((source) => ({
+              type: "ourGroceries" as const,
+              id: source.id,
+              name: source.name,
+              webUrl: source.webUrl,
+              text: source.text,
+              quantity: "",
+              unit: ""
             }))
         ];
         const sourceTargets = sourceDetails.filter((source, index, sources) =>
           sources.findIndex((candidate) =>
             candidate.type === source.type && candidate.id === source.id
           ) === index
-        ).map(({ type, id, name }) => ({ type, id, name }));
+        ).map((source) => source.type === "ourGroceries"
+          ? {
+              type: source.type,
+              id: source.id,
+              name: source.name,
+              webUrl: source.webUrl
+            }
+          : { type: source.type, id: source.id, name: source.name });
 
         return { ...item, sourceTargets, sourceDetails };
       });

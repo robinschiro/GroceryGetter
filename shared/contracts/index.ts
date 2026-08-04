@@ -60,6 +60,7 @@ export type Menu = {
   updatedAt?: string;
   items: MenuItem[];
   customShoppingListIds: number[];
+  ourGroceriesList: OurGroceriesListSummary | null;
 };
 
 export type MenuSummary = {
@@ -71,11 +72,32 @@ export type MenuSummary = {
   updatedAt: string;
 };
 
-export type ShoppingListSourceTarget = {
-  type: "recipe" | "shoppingList";
-  id: number;
+export type OurGroceriesListSummary = {
+  id: string;
   name: string;
+  webUrl: string;
 };
+
+export type OurGroceriesStatus = {
+  connected: boolean;
+  accountLabel: string;
+  hasStoredCredentials: boolean;
+  defaultList: OurGroceriesListSummary | null;
+  defaultListAvailable: boolean;
+};
+
+export type ShoppingListSourceTarget =
+  | {
+      type: "recipe" | "shoppingList";
+      id: number;
+      name: string;
+    }
+  | {
+      type: "ourGroceries";
+      id: string;
+      name: string;
+      webUrl: string;
+    };
 
 export type ShoppingListSourceDetail = ShoppingListSourceTarget & {
   text: string;

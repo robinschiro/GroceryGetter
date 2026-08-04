@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "playwright/test";
+import { parseOurGroceriesItems } from "../../server/infrastructure/ourGroceries/ourGroceriesService.js";
 import {
   productionHeaders,
   resetDatabase,
@@ -26,12 +27,129 @@ async function createMenu(request: APIRequestContext, mealCount = 1) {
       name: "Characterized Week",
       mealCount,
       items: preview.items,
-      customShoppingListIds: preview.customShoppingListIds
+      customShoppingListIds: preview.customShoppingListIds,
+      ourGroceriesListId: preview.ourGroceriesList?.id ?? null
     }
   });
   expect(savedResponse.status()).toBe(201);
   return { id: (await savedResponse.json()).id as number, preview };
 }
+
+test("OurGroceries defaults are scope-specific and saved menus retain their selection", async ({ request }) => {
+  const listsResponse = await request.get("/api/ourgroceries/lists", { headers: productionHeaders });
+  expect(listsResponse.status()).toBe(200);
+  const lists = await listsResponse.json() as Array<{ id: string; name: string; webUrl: string }>;
+  const costco = lists.find((list) => list.name === "Costco")!;
+  const weekly = lists.find((list) => list.name === "OurGroceries Weekly")!;
+  expect(costco.webUrl).toContain("ourgroceries.com/your-lists/");
+
+  expect((await request.put("/api/ourgroceries/default-list", {
+    headers: productionHeaders,
+    data: { listId: costco.id }
+  })).status()).toBe(200);
+  expect((await request.put("/api/ourgroceries/default-list", {
+    headers: sandboxHeaders,
+    data: { listId: weekly.id }
+  })).status()).toBe(200);
+
+  const productionPreview = await (await request.post("/api/menus/preview", {
+    headers: productionHeaders,
+    data: { mealCount: 1 }
+  })).json();
+  const sandboxPreview = await (await request.post("/api/menus/preview", {
+    headers: sandboxHeaders,
+    data: { mealCount: 1 }
+  })).json();
+  expect(productionPreview.ourGroceriesList).toEqual(costco);
+  expect(sandboxPreview.ourGroceriesList).toEqual(weekly);
+
+  const savedResponse = await request.post("/api/menus", {
+    headers: productionHeaders,
+    data: {
+      name: "Remote list week",
+      mealCount: 1,
+      items: productionPreview.items,
+      customShoppingListIds: [],
+      ourGroceriesListId: costco.id
+    }
+  });
+  expect(savedResponse.status()).toBe(201);
+  const menuId = (await savedResponse.json()).id as number;
+
+  await request.put("/api/ourgroceries/default-list", {
+    headers: productionHeaders,
+    data: { listId: weekly.id }
+  });
+  expect((await (await request.get(`/api/menus/${menuId}`, {
+    headers: productionHeaders
+  })).json()).ourGroceriesList).toEqual(costco);
+
+  const deselected = await request.put(`/api/menus/${menuId}/ourgroceries-list`, {
+    headers: productionHeaders,
+    data: { listId: null }
+  });
+  expect(deselected.status()).toBe(200);
+  expect((await deselected.json()).ourGroceriesList).toBeNull();
+  expect((await request.put(`/api/menus/${menuId}/ourgroceries-list`, {
+    headers: productionHeaders,
+    data: { listId: "missing-list" }
+  })).status()).toBe(400);
+});
+
+test("OurGroceries response parsing marks items with crossedOffAt as crossed off", () => {
+  expect(parseOurGroceriesItems({
+    list: {
+      items: [
+        { id: "active", value: "milk" },
+        { id: "crossed-timestamp", value: "bread", crossedOffAt: 1_785_831_234_567 },
+        { id: "crossed-string", value: "eggs", crossedOffAt: "2026-08-04T12:00:00Z" }
+      ]
+    }
+  })).toEqual([
+    { id: "active", name: "milk", crossedOff: false },
+    { id: "crossed-timestamp", name: "bread", crossedOff: true },
+    { id: "crossed-string", name: "eggs", crossedOff: true }
+  ]);
+});
+
+test("OurGroceries active items aggregate with remote provenance and remain read-only", async ({ request }) => {
+  const lists = await (await request.get("/api/ourgroceries/lists", {
+    headers: productionHeaders
+  })).json() as Array<{ id: string; name: string; webUrl: string }>;
+  const costco = lists.find((list) => list.name === "Costco")!;
+  const { id } = await createMenu(request, 1);
+  expect((await request.put(`/api/menus/${id}/ourgroceries-list`, {
+    headers: productionHeaders,
+    data: { listId: costco.id }
+  })).status()).toBe(200);
+
+  expect((await request.post(`/api/menus/${id}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+  const items = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  expect(items.some((item: { item: string }) => item.item === "already bought")).toBeFalsy();
+
+  const coffee = items.find((item: { item: string }) => item.item === "coffee");
+  expect(coffee).toMatchObject({ text: "coffee", quantity: "", unit: "", canPersistToSource: 0 });
+  expect(coffee.sourceTargets).toEqual([
+    { type: "ourGroceries", id: costco.id, name: "Costco", webUrl: costco.webUrl }
+  ]);
+  expect(coffee.sourceDetails).toEqual([
+    expect.objectContaining({ type: "ourGroceries", id: costco.id, text: "coffee", webUrl: costco.webUrl })
+  ]);
+  expect((await request.patch(`/api/menus/${id}/shopping-list/items/${coffee.id}/source`, {
+    headers: productionHeaders,
+    data: { item: "different coffee" }
+  })).status()).toBe(409);
+
+  const tomato = items.find((item: { item: string }) => item.item === "tomato");
+  expect(tomato.sourceTargets).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "ourGroceries", id: costco.id, webUrl: costco.webUrl }),
+    expect.objectContaining({ type: "recipe" })
+  ]));
+});
 
 test("planner preserves generation, saving, latest loading, replacement, empty sides, and meal changes", async ({ request }) => {
   expect((await request.post("/api/menus/preview", {
@@ -241,4 +359,72 @@ test("shopping-list aggregation preserves grouping, provenance, approval, dirty 
   expect((await (await request.get(`/api/menus/${id}/shopping-list`, {
     headers: productionHeaders
   })).json()).length).toBeGreaterThan(0);
+});
+
+test("OurGroceries connection controls are production-only and stale defaults are reported", async ({ request }) => {
+  const lists = await (await request.get("/api/ourgroceries/lists", {
+    headers: productionHeaders
+  })).json() as Array<{ id: string }>;
+  await request.put("/api/ourgroceries/default-list", {
+    headers: productionHeaders,
+    data: { listId: lists[0].id }
+  });
+  const { id: menuId } = await createMenu(request, 1);
+  expect((await request.post(`/api/menus/${menuId}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+  const originalSnapshot = await (await request.get(`/api/menus/${menuId}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+
+  expect((await request.put("/api/ourgroceries/connection", {
+    headers: sandboxHeaders,
+    data: { email: "test@example.com", password: "secret-value" }
+  })).status()).toBe(403);
+  const connection = await request.put("/api/ourgroceries/connection", {
+    headers: productionHeaders,
+    data: { email: "test@example.com", password: "secret-value" }
+  });
+  expect(connection.status()).toBe(200);
+  expect(JSON.stringify(await connection.json())).not.toContain("secret-value");
+  const connectedStatus = await (await request.get("/api/ourgroceries/status", {
+    headers: productionHeaders
+  })).json();
+  expect(connectedStatus).toMatchObject({
+    connected: true,
+    hasStoredCredentials: true,
+    accountLabel: "te**@example.com"
+  });
+  expect(JSON.stringify(connectedStatus)).not.toContain("secret-value");
+  expect((await request.delete("/api/ourgroceries/connection", {
+    headers: sandboxHeaders
+  })).status()).toBe(403);
+  expect((await request.delete("/api/ourgroceries/connection", {
+    headers: productionHeaders
+  })).status()).toBe(200);
+  expect((await request.post(`/api/menus/${menuId}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(502);
+  expect(await (await request.get(`/api/menus/${menuId}/shopping-list`, {
+    headers: productionHeaders
+  })).json()).toEqual(originalSnapshot);
+
+  const status = await (await request.get("/api/ourgroceries/status", {
+    headers: productionHeaders
+  })).json();
+  expect(status).toMatchObject({
+    connected: false,
+    hasStoredCredentials: false,
+    defaultList: expect.objectContaining({ id: lists[0].id }),
+    defaultListAvailable: false
+  });
+  const disconnectedPreview = await (await request.post("/api/menus/preview", {
+    headers: productionHeaders,
+    data: { mealCount: 1 }
+  })).json();
+  expect(disconnectedPreview.ourGroceriesList).toBeNull();
+  expect((await request.put("/api/ourgroceries/default-list", {
+    headers: productionHeaders,
+    data: { listId: null }
+  })).status()).toBe(200);
 });

@@ -1,0 +1,27 @@
+.ourgroceries-list-row {
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.ourgroceries-list-row:hover {
+  background: #e7efeb;
+  border-color: #9cb8ad;
+}
+
+.ourgroceries-list-row:focus-visible {
+  outline: 2px solid #315b53;
+  outline-offset: 2px;
+}
+
+:root[data-theme="dark"] .ourgroceries-list-row {
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .ourgroceries-list-row:hover {
+  background: #263630;
+  border-color: #5c766c;
+}
+
+:root[data-theme="dark"] .ourgroceries-list-row:focus-visible {
+  outline-color: #8ed1aa;
+}

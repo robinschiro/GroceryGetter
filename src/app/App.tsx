@@ -23,6 +23,8 @@ import {
 import type {
   CustomShoppingList,
   DataScope,
+  OurGroceriesListSummary,
+  OurGroceriesStatus,
   Recipe
 } from "../../shared/contracts/index.js";
 import { createApiClient } from "../shared/apiClient.js";
@@ -37,6 +39,8 @@ import { StoreSettingsPanel } from "../features/qfc/StoreSettingsPanel.js";
 import { StoreItemReviewPanel } from "../features/qfc/StoreItemReviewPanel.js";
 import { useQfc } from "../features/qfc/useQfc.js";
 import { MenuHistoryPage } from "../features/menuHistory/MenuHistoryPage.js";
+import { OurGroceriesSettingsPage } from "../features/ourGroceries/OurGroceriesSettingsPage.js";
+import { listOurGroceriesLists, loadOurGroceriesStatus } from "../features/ourGroceries/api.js";
 
 type ThemeMode = "light" | "dark";
 
@@ -55,7 +59,14 @@ const views: Array<{ id: AppView; label: string; title: string; eyebrow: string;
     eyebrow: "Reusable grocery templates",
     icon: ListChecks
   },
-  { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings }
+  { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings },
+  {
+    id: "ourgroceries",
+    label: "OurGroceries",
+    title: "OurGroceries Settings",
+    eyebrow: "Integration settings",
+    icon: ListChecks
+  }
 ];
 
 function getInitialTheme(): ThemeMode {
@@ -74,6 +85,8 @@ export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
+  const [ourGroceriesStatus, setOurGroceriesStatus] = useState<OurGroceriesStatus | null>(null);
+  const [ourGroceriesLists, setOurGroceriesLists] = useState<OurGroceriesListSummary[]>([]);
   const invalidateStoreReviewRef = useRef<() => void>(() => undefined);
   const {
     activeMenu,
@@ -99,6 +112,7 @@ export function App() {
     shoppingList,
     sourceMetadataDirtyItemIds,
     updateCustomShoppingListSelection,
+    updateOurGroceriesListSelection,
     updateMenuItem
   } = usePlanner({
     api,
@@ -154,9 +168,24 @@ export function App() {
     setCustomShoppingLists(await listShoppingLists(api));
   }
 
+  async function loadOurGroceries() {
+    const status = await loadOurGroceriesStatus(api);
+    setOurGroceriesStatus(status);
+    if (!status.connected) {
+      setOurGroceriesLists([]);
+      return;
+    }
+    try {
+      setOurGroceriesLists(await listOurGroceriesLists(api));
+    } catch {
+      setOurGroceriesLists([]);
+    }
+  }
+
   useEffect(() => {
     void loadRecipes();
     void loadCustomShoppingLists();
+    void loadOurGroceries();
     void loadSettings();
     void loadLatestMenu();
   }, [dataScope]);
@@ -190,6 +219,8 @@ export function App() {
     setDataScope(next);
     setRecipes([]);
     setCustomShoppingLists([]);
+    setOurGroceriesStatus(null);
+    setOurGroceriesLists([]);
     resetPlanner(next === "sandbox" ? "Sandbox mode is active." : "");
     resetQfc();
   }
@@ -264,7 +295,7 @@ export function App() {
               </button>
               <button
                 className="icon-button"
-                onClick={() => void Promise.all([loadRecipes(), loadCustomShoppingLists()])}
+                onClick={() => void Promise.all([loadRecipes(), loadCustomShoppingLists(), loadOurGroceries()])}
                 aria-label="Refresh data"
                 type="button"
               >
@@ -355,11 +386,22 @@ export function App() {
           />
         ) : null}
 
+        {activeView === "ourgroceries" ? (
+          <OurGroceriesSettingsPage
+            api={api}
+            dataScope={dataScope}
+            status={ourGroceriesStatus}
+            lists={ourGroceriesLists}
+            refresh={loadOurGroceries}
+          />
+        ) : null}
+
         {activeView === "planner" ? (
           <PlannerPage
             menuBuilder={{
               recipes,
               customShoppingLists,
+              ourGroceriesLists,
               mealCount,
               setMealCount,
               activeMenu,
@@ -370,16 +412,19 @@ export function App() {
               addMeal,
               removeMeal,
               updateCustomShoppingListSelection,
+              updateOurGroceriesListSelection,
               editCustomShoppingList: (listId) => navigate(shoppingListEditRoute(listId)),
               aggregateIngredients
             }}
             shoppingListReview={{
               items: shoppingList,
-              openSource: (source) => navigate(
-                source.type === "recipe"
-                  ? recipeEditRoute(source.id)
-                  : shoppingListEditRoute(source.id)
-              ),
+              openSource: (source) => {
+                if (source.type === "ourGroceries") {
+                  window.open(source.webUrl, "_blank", "noopener,noreferrer");
+                  return;
+                }
+                navigate(source.type === "recipe" ? recipeEditRoute(source.id) : shoppingListEditRoute(source.id));
+              },
               savingApprovalItemIds,
               searchingStoreItemIds,
               savingSourceItemIds,
@@ -399,11 +444,13 @@ export function App() {
                 updateCartQuantity={updateStoreItemQuantity}
                 searchStoreItems={searchStoreItemsForReview}
                 removeStoreItem={removeStoreItemFromReview}
-                openSource={(source) => navigate(
-                  source.type === "recipe"
-                    ? recipeEditRoute(source.id)
-                    : shoppingListEditRoute(source.id)
-                )}
+                openSource={(source) => {
+                  if (source.type === "ourGroceries") {
+                    window.open(source.webUrl, "_blank", "noopener,noreferrer");
+                    return;
+                  }
+                  navigate(source.type === "recipe" ? recipeEditRoute(source.id) : shoppingListEditRoute(source.id));
+                }}
                 openQfcCart={openQfcCart}
                 qfcSubmitProgress={qfcSubmitProgress}
                 message={storeItemReviewMessage}

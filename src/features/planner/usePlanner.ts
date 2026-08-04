@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type {
   Menu,
+  OurGroceriesListSummary,
   Recipe,
   RecipeCategory,
   ShoppingListItem
@@ -19,6 +20,7 @@ import {
   removeMenuMeal,
   saveShoppingListItemToSource,
   updateMenuItem as updateMenuItemRequest,
+  updateMenuOurGroceriesList,
   updateMenuShoppingLists,
   updateShoppingListApproval,
   updateShoppingListItems
@@ -211,6 +213,19 @@ export function usePlanner({
     }
   }
 
+  async function updateOurGroceriesListSelection(list: OurGroceriesListSummary | null) {
+    if (!activeMenu) return;
+
+    setActiveMenu({ ...activeMenu, ourGroceriesList: list });
+    invalidateGeneratedList();
+
+    if (activeMenu.id !== null) {
+      const updated = await updateMenuOurGroceriesList(api, activeMenu.id, list?.id ?? null);
+      setActiveMenu(updated);
+      await clearShoppingList(api, activeMenu.id);
+    }
+  }
+
   async function aggregateIngredients() {
     if (!activeMenu) return;
     if (activeMenu.id === null) {
@@ -314,6 +329,7 @@ export function usePlanner({
     shoppingList,
     sourceMetadataDirtyItemIds,
     updateCustomShoppingListSelection,
+    updateOurGroceriesListSelection,
     updateMenuItem
   };
 }

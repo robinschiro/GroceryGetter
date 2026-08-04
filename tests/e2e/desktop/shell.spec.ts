@@ -16,7 +16,8 @@ test("direct routes, navigation, history, refresh, theme, data mode, and scope i
     ["/shopping-lists/manage", "Shopping Lists"],
     ["/shopping-lists/create", "Shopping Lists"],
     ["/settings/qfc/api", "QFC Settings"],
-    ["/settings/qfc/preferences", "QFC Settings"]
+    ["/settings/qfc/preferences", "QFC Settings"],
+    ["/settings/ourgroceries", "OurGroceries Settings"]
   ] as const;
   for (const [route, heading] of directRoutes) {
     await page.goto(route);
@@ -87,17 +88,19 @@ test("menu history lists newest menus first and deletes only from detail after c
   await expect(page.getByText("Entrée", { exact: true })).toBeVisible();
 
   const cancelDialogPromise = page.waitForEvent("dialog");
-  await page.getByRole("button", { name: "Delete menu" }).click();
+  const cancelClickPromise = page.getByRole("button", { name: "Delete menu" }).click();
   const cancelDialog = await cancelDialogPromise;
   expect(cancelDialog.type()).toBe("confirm");
   expect(cancelDialog.message()).toContain("This action cannot be undone.");
   await cancelDialog.dismiss();
+  await cancelClickPromise;
   await expect(page).toHaveURL(/\/menus\/\d+$/);
 
   const confirmDialogPromise = page.waitForEvent("dialog");
-  await page.getByRole("button", { name: "Delete menu" }).click();
+  const confirmClickPromise = page.getByRole("button", { name: "Delete menu" }).click();
   const confirmDialog = await confirmDialogPromise;
   await confirmDialog.accept();
+  await confirmClickPromise;
   await expect(page).toHaveURL(/\/menus$/);
 
   const remainingMenus = page.locator(".menu-history-link");

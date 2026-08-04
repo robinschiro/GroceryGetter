@@ -2,10 +2,11 @@ import type { GroceryDatabase } from "../../infrastructure/database/database.js"
 import type { ShoppingListItem } from "../../../shared/contracts/index.js";
 
 export type AggregateSource = {
-  sourceType: "recipe" | "custom";
+  sourceType: "recipe" | "custom" | "ourGroceries";
   menuItemId: number | null;
   recipeIngredientId: number | null;
   customShoppingListItemId: number | null;
+  ourGroceriesItemId: string | null;
   text: string;
   quantity: string;
   unit: string;
@@ -18,6 +19,13 @@ export type AggregatedGroup = {
   quantity: string;
   sourceNames: string;
   sources: AggregateSource[];
+};
+
+export type OurGroceriesSnapshotItem = {
+  remoteItemId: string;
+  text: string;
+  item: string;
+  sortOrder: number;
 };
 
 export type ShoppingItemUpdate = Pick<
@@ -34,6 +42,7 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
           menu_items.id AS menuItemId,
           recipe_ingredients.id AS recipeIngredientId,
           NULL AS customShoppingListItemId,
+          NULL AS ourGroceriesItemId,
           recipe_ingredients.text,
           recipe_ingredients.quantity,
           recipe_ingredients.unit,
@@ -52,6 +61,7 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
           NULL AS menuItemId,
           NULL AS recipeIngredientId,
           custom_shopping_list_items.id AS customShoppingListItemId,
+          NULL AS ourGroceriesItemId,
           custom_shopping_list_items.text,
           custom_shopping_list_items.quantity,
           custom_shopping_list_items.unit,
@@ -69,9 +79,34 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
       return [...recipeSources, ...customSources];
     },
 
-    replaceAggregatedItems(menuId: number, groups: AggregatedGroup[]) {
+    replaceAggregatedItems(
+      menuId: number,
+      groups: AggregatedGroup[],
+      remoteItems: OurGroceriesSnapshotItem[] = []
+    ) {
       database.transaction(() => {
         database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+        database.run("DELETE FROM menu_ourgroceries_items WHERE menu_id = ?", [menuId]);
+        const remoteItemIds = new Map<string, number>();
+        for (const remoteItem of remoteItems) {
+          const id = database.insert(
+            `INSERT INTO menu_ourgroceries_items
+              (menu_id, remote_item_id, text, item, sort_order)
+            VALUES (?, ?, ?, ?, ?)`,
+            [
+              menuId,
+              remoteItem.remoteItemId,
+              remoteItem.text,
+              remoteItem.item,
+              remoteItem.sortOrder
+            ]
+          );
+          remoteItemIds.set(remoteItem.remoteItemId, id);
+        }
+          database.run(
+            "UPDATE menu_ourgroceries_lists SET refreshed_at = CURRENT_TIMESTAMP WHERE menu_id = ?",
+            [menuId]
+          );
         groups.forEach((group, index) => {
           const shoppingItemId = database.insert(
             `INSERT INTO menu_shopping_list_items
@@ -98,6 +133,16 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
                 VALUES (?, ?)`,
                 [shoppingItemId, source.customShoppingListItemId]
               );
+            } else if (source.ourGroceriesItemId !== null) {
+              const remoteSnapshotId = remoteItemIds.get(source.ourGroceriesItemId);
+              if (remoteSnapshotId) {
+                database.run(
+                  `INSERT INTO menu_shopping_list_item_ourgroceries_sources
+                    (menu_shopping_list_item_id, menu_ourgroceries_item_id)
+                  VALUES (?, ?)`,
+                  [shoppingItemId, remoteSnapshotId]
+                );
+              }
             }
           }
         });
@@ -186,7 +231,18 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
           AND custom_shopping_lists.data_scope = ?`,
         [itemId, dataScope]
       );
-      return { shoppingItem, recipeSources, customSources };
+      const ourGroceriesSources = database.queryAll<{ remoteItemId: string }>(
+        `SELECT menu_ourgroceries_items.remote_item_id AS remoteItemId
+        FROM menu_shopping_list_item_ourgroceries_sources
+        JOIN menu_ourgroceries_items
+          ON menu_ourgroceries_items.id =
+            menu_shopping_list_item_ourgroceries_sources.menu_ourgroceries_item_id
+        JOIN menus ON menus.id = menu_ourgroceries_items.menu_id
+        WHERE menu_shopping_list_item_ourgroceries_sources.menu_shopping_list_item_id = ?
+          AND menus.data_scope = ?`,
+        [itemId, dataScope]
+      );
+      return { shoppingItem, recipeSources, customSources, ourGroceriesSources };
     },
 
     saveToSource(input: {

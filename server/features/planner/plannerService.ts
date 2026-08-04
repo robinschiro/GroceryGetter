@@ -1,4 +1,5 @@
 import type { DataScope, RecipeCategory } from "../../../shared/contracts/index.js";
+import type { OurGroceriesService } from "../../infrastructure/ourGroceries/ourGroceriesService.js";
 import type {
   MenuItemInput,
   PlannerRecipe,
@@ -34,7 +35,21 @@ function byCategory(recipes: PlannerRecipe[]) {
   };
 }
 
-export function createPlannerService(repository: PlannerRepository) {
+export function createPlannerService(
+  repository: PlannerRepository,
+  ourGroceriesService: OurGroceriesService
+) {
+  async function resolveOurGroceriesList(listId: string) {
+    try {
+      return await ourGroceriesService.resolveList(listId);
+    } catch (error) {
+      throw new PlannerError(
+        error instanceof Error ? error.message : "Unable to load the selected OurGroceries list.",
+        400
+      );
+    }
+  }
+
   function requireMenu(menuId: number, dataScope: DataScope) {
     const menu = Number.isInteger(menuId) ? repository.getMenu(menuId, dataScope) : null;
     if (!menu) {
@@ -59,7 +74,7 @@ export function createPlannerService(repository: PlannerRepository) {
       return repository.listMenus(dataScope);
     },
 
-    preview(mealCount: number, dataScope: DataScope) {
+    async preview(mealCount: number, dataScope: DataScope) {
       if (!validMealCount(mealCount)) {
         throw new PlannerError("Meal count must be between 1 and 14.", 400);
       }
@@ -94,15 +109,17 @@ export function createPlannerService(repository: PlannerRepository) {
             };
           })
         ),
-        customShoppingListIds: repository.listDefaultShoppingListIds(dataScope)
+        customShoppingListIds: repository.listDefaultShoppingListIds(dataScope),
+        ourGroceriesList: await ourGroceriesService.getAvailableDefaultList(dataScope)
       };
     },
 
-    create(input: {
+    async create(input: {
       name?: unknown;
       mealCount?: unknown;
       items?: unknown;
       customShoppingListIds?: unknown;
+      ourGroceriesListId?: unknown;
     }, dataScope: DataScope) {
       const mealCount = Number(input.mealCount);
       const items = Array.isArray(input.items) ? input.items as MenuItemInput[] : [];
@@ -111,6 +128,11 @@ export function createPlannerService(repository: PlannerRepository) {
           input.customShoppingListIds.map((id: unknown) => Number(id))
         ))
         : [];
+      const ourGroceriesListId = input.ourGroceriesListId === null
+        || input.ourGroceriesListId === undefined
+        || input.ourGroceriesListId === ""
+        ? null
+        : String(input.ourGroceriesListId).trim();
       if (!validMealCount(mealCount)) {
         throw new PlannerError("Meal count must be between 1 and 14.", 400);
       }
@@ -161,8 +183,18 @@ export function createPlannerService(repository: PlannerRepository) {
         }
       }
       const name = String(input.name || `Week of ${new Date().toLocaleDateString("en-US")}`);
+      const ourGroceriesList = ourGroceriesListId
+        ? await resolveOurGroceriesList(ourGroceriesListId)
+        : null;
       return {
-        id: repository.createMenu(name, mealCount, items, shoppingListIds, dataScope)
+        id: repository.createMenu(
+          name,
+          mealCount,
+          items,
+          shoppingListIds,
+          ourGroceriesList,
+          dataScope
+        )
       };
     },
 
@@ -272,6 +304,19 @@ export function createPlannerService(repository: PlannerRepository) {
       }
       repository.replaceShoppingLists(menuId, ids);
       return { customShoppingListIds: ids };
+    },
+
+    async updateOurGroceriesList(menuId: number, rawListId: unknown, dataScope: DataScope) {
+      requireMenu(menuId, dataScope);
+      const listId = rawListId === null || rawListId === ""
+        ? null
+        : String(rawListId ?? "").trim();
+      if (rawListId !== null && !listId) {
+        throw new PlannerError("An OurGroceries list id or null is required.", 400);
+      }
+      const list = listId ? await resolveOurGroceriesList(listId) : null;
+      repository.replaceOurGroceriesList(menuId, list);
+      return requireMenu(menuId, dataScope);
     }
   };
 }

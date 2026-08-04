@@ -251,13 +251,18 @@ export function StoreItemReviewPanel({
           <React.Fragment key={`${source.type}-${source.id}`}>
             {index ? ", " : null}
             <a
-              href={
-                source.type === "recipe"
+              href={source.type === "ourGroceries"
+                ? source.webUrl
+                : source.type === "recipe"
                   ? recipeEditRoute(source.id).path
-                  : shoppingListEditRoute(source.id).path
-              }
+                  : shoppingListEditRoute(source.id).path}
+              target={source.type === "ourGroceries" ? "_blank" : undefined}
+              rel={source.type === "ourGroceries" ? "noopener noreferrer" : undefined}
+              aria-label={source.type === "ourGroceries" ? `Open ${source.name} in OurGroceries` : undefined}
               onClick={(event) => {
                 if (
+                  source.type !== "ourGroceries"
+                  &&
                   event.button === 0
                   && !event.altKey
                   && !event.ctrlKey

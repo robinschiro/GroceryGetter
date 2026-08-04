@@ -6,6 +6,11 @@ import {
   FakeKrogerClient,
   KrogerHttpClient
 } from "./infrastructure/kroger/krogerService.js";
+import {
+  createFakeOurGroceriesClient,
+  createCredentialOurGroceriesClient,
+  createOurGroceriesService
+} from "./infrastructure/ourGroceries/ourGroceriesService.js";
 
 export function resolveDatabasePath(environment: NodeJS.ProcessEnv = process.env) {
   return path.resolve(environment.GROCERY_GETTER_DB_PATH || productionDatabasePath);
@@ -32,6 +37,10 @@ const app = createApp({
   qfcService: createQfcService(
     database,
     testMode ? new FakeKrogerClient() : new KrogerHttpClient()
+  ),
+  ourGroceriesService: createOurGroceriesService(
+    database,
+    testMode ? createFakeOurGroceriesClient() : createCredentialOurGroceriesClient(database)
   ),
   testMode
 });

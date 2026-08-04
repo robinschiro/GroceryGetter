@@ -8,6 +8,10 @@ import {
   createQfcService,
   FakeKrogerClient
 } from "../../server/infrastructure/kroger/krogerService.js";
+import {
+  createFakeOurGroceriesClient,
+  createOurGroceriesService
+} from "../../server/infrastructure/ourGroceries/ourGroceriesService.js";
 
 const apiPort = 5194;
 const webPort = 5193;
@@ -31,6 +35,7 @@ export default async function globalSetup() {
   const app = createApp({
     database,
     qfcService: createQfcService(database, new FakeKrogerClient()),
+    ourGroceriesService: createOurGroceriesService(database, createFakeOurGroceriesClient()),
     testMode: true
   });
   const apiServer = await new Promise<Server>((resolve, reject) => {

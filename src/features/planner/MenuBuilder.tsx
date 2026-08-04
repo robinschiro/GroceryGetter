@@ -2,6 +2,7 @@ import { Check, Pencil, Plus, Settings, Shuffle, Trash2 } from "lucide-react";
 import type {
   CustomShoppingList,
   Menu,
+  OurGroceriesListSummary,
   Recipe,
   RecipeCategory
 } from "../../../shared/contracts/index.js";
@@ -10,6 +11,7 @@ import { recipeCategories } from "../../shared/recipeCategories.js";
 export function MenuBuilder({
   recipes,
   customShoppingLists,
+  ourGroceriesLists,
   mealCount,
   setMealCount,
   activeMenu,
@@ -20,11 +22,13 @@ export function MenuBuilder({
   addMeal,
   removeMeal,
   updateCustomShoppingListSelection,
+  updateOurGroceriesListSelection,
   editCustomShoppingList,
   aggregateIngredients
 }: {
   recipes: Recipe[];
   customShoppingLists: CustomShoppingList[];
+  ourGroceriesLists: OurGroceriesListSummary[];
   mealCount: number | "";
   setMealCount: (value: number | "") => void;
   activeMenu: Menu | null;
@@ -40,6 +44,7 @@ export function MenuBuilder({
   addMeal: () => Promise<void>;
   removeMeal: (mealNumber: number) => Promise<void>;
   updateCustomShoppingListSelection: (listId: number, included: boolean) => Promise<void>;
+  updateOurGroceriesListSelection: (list: OurGroceriesListSummary | null) => Promise<void>;
   editCustomShoppingList: (listId: number) => void;
   aggregateIngredients: () => Promise<void>;
 }) {
@@ -183,6 +188,32 @@ export function MenuBuilder({
                 Add a custom shopping list from the Shopping Lists tab.
               </div>
             )}
+          </div>
+          <div className="custom-list-picker">
+            <div>
+              <strong>OurGroceries list</strong>
+              <span>Include active items from one remote list when ingredients are aggregated.</span>
+            </div>
+            <label>
+              List
+              <select
+                value={activeMenu.ourGroceriesList?.id ?? ""}
+                onChange={(event) => {
+                  const list = ourGroceriesLists.find((candidate) => candidate.id === event.target.value) ?? null;
+                  void updateOurGroceriesListSelection(list);
+                }}
+              >
+                <option value="">Do not include</option>
+                {activeMenu.ourGroceriesList && !ourGroceriesLists.some((list) => list.id === activeMenu.ourGroceriesList?.id) ? (
+                  <option value={activeMenu.ourGroceriesList.id}>
+                    {activeMenu.ourGroceriesList.name} (currently unavailable)
+                  </option>
+                ) : null}
+                {ourGroceriesLists.map((list) => (
+                  <option key={list.id} value={list.id}>{list.name}</option>
+                ))}
+              </select>
+            </label>
           </div>
           <div className="panel-actions">
             {activeMenu.id === null ? (

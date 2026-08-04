@@ -73,6 +73,47 @@ test("planner and aggregated-list journeys preserve menu editing, persistence, p
   await expect(page.getByRole("button", { name: "Review store items" })).toBeVisible();
 });
 
+test("OurGroceries default, per-menu selection, and external provenance links work end to end", async ({ page }) => {
+  await page.goto("/settings/ourgroceries");
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByLabel("OurGroceries email").fill("browser-test@example.com");
+  await page.getByLabel("OurGroceries password").fill("not-returned-secret");
+  await page.getByRole("button", { name: "Update credentials" }).click();
+  await expect(page.getByText("br**********@example.com", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("OurGroceries password")).toHaveValue("");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  const firstRemoteList = page.locator(".ourgroceries-list-row").first();
+  await expect(firstRemoteList).toHaveCSS("color", "rgb(238, 244, 240)");
+  await expect(firstRemoteList).toHaveCSS("background-color", "rgb(29, 38, 33)");
+  const defaultList = page.getByLabel("Default OurGroceries list");
+  await defaultList.selectOption({ label: "Costco" });
+  await expect(defaultList).toHaveValue("fake-ourgroceries-costco");
+
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await page.getByRole("button", { name: "Planner", exact: true }).click();
+  await page.getByLabel("Meals").fill("1");
+  await page.getByRole("button", { name: "Generate" }).click();
+  const menuList = page.getByRole("combobox", { name: "List", exact: true });
+  await expect(menuList).toHaveValue("fake-ourgroceries-costco");
+
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await page.getByRole("button", { name: "OurGroceries", exact: true }).click();
+  await defaultList.selectOption({ label: "OurGroceries Weekly" });
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await page.getByRole("button", { name: "Planner", exact: true }).click();
+  await expect(menuList).toHaveValue("fake-ourgroceries-costco");
+
+  await page.getByRole("button", { name: "Save menu" }).click();
+  await page.getByRole("button", { name: "Aggregate ingredients" }).click();
+  const remoteLinks = page.getByRole("link", { name: "Open Costco in OurGroceries" });
+  await expect(remoteLinks.first()).toHaveAttribute("href", /ourgroceries\.com\/your-lists/);
+  await expect(remoteLinks.first()).toHaveAttribute("target", "_blank");
+  await expect(remoteLinks.first()).toHaveAttribute("rel", "noopener noreferrer");
+
+  await page.getByRole("button", { name: "Review store items" }).click();
+  await expect(page.getByRole("link", { name: "Open Costco in OurGroceries" }).first()).toBeVisible();
+});
+
 test("fake-QFC review preserves matching, unmatched recovery, candidates, memory, quantity, removal/restoration, polling, and fake submission", async ({
   page
 }) => {
