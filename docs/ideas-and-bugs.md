@@ -6,6 +6,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ## Feature ideas
 
+### Add column headers to recipe ingredient fields
+
+- Status: `Idea`
+- Reported: 2026-08-06
+- Area: Recipe create/edit
+- Description: Add column headers above the ingredient fields on the recipe create and edit pages.
+- Expected: Ingredient inputs are clearly labeled `Quantity`, `Unit`, `Name`, and `Notes` so users can quickly understand what belongs in each column.
+
 ### Add edit shortcuts to planner recipe and custom-list selectors
 
 - Status: `Done`
