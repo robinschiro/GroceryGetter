@@ -151,6 +151,91 @@ test("OurGroceries active items aggregate with remote provenance and remain read
   ]));
 });
 
+test("pantry preferences are scoped and only auto-uncheck after a successful OurGroceries refresh", async ({ request }) => {
+  const ingredientsResponse = await request.get("/api/ingredients", { headers: productionHeaders });
+  expect(ingredientsResponse.status()).toBe(200);
+  const ingredients = await ingredientsResponse.json() as Array<{
+    ingredientKey: string;
+    ingredientName: string;
+    isPantry: boolean;
+    recipeCount: number;
+    shoppingListCount: number;
+  }>;
+  expect(ingredients.find((ingredient) => ingredient.ingredientKey === "tomato")).toMatchObject({
+    isPantry: false,
+    recipeCount: 2,
+    shoppingListCount: 1,
+    sources: expect.arrayContaining([
+      expect.objectContaining({ type: "recipe", name: "Weeknight Pasta" }),
+      expect.objectContaining({ type: "recipe", name: "Roasted Broccoli" }),
+      expect.objectContaining({ type: "shoppingList", name: "Weekly Staples" })
+    ])
+  });
+
+  for (const ingredientName of ["milk", "tomato"]) {
+    const response = await request.put(
+      `/api/ingredients/${encodeURIComponent(ingredientName)}/pantry`,
+      { headers: productionHeaders, data: { ingredientName, isPantry: true } }
+    );
+    expect(response.status()).toBe(200);
+  }
+  expect((await (await request.get("/api/ingredients", {
+    headers: sandboxHeaders
+  })).json()).some((ingredient: { isPantry: boolean }) => ingredient.isPantry)).toBeFalsy();
+
+  const { id } = await createMenu(request, 1);
+  const lists = await (await request.get("/api/ourgroceries/lists", {
+    headers: productionHeaders
+  })).json() as Array<{ id: string }>;
+  expect((await request.put(`/api/menus/${id}/ourgroceries-list`, {
+    headers: productionHeaders,
+    data: { listId: lists[0].id }
+  })).status()).toBe(200);
+  expect((await request.post(`/api/menus/${id}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+
+  let items = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  expect(items.find((item: { item: string }) => item.item === "milk")).toMatchObject({
+    approved: 0,
+    automaticExclusionReason: "pantry"
+  });
+  expect(items.find((item: { item: string }) => item.item === "tomato")).toMatchObject({
+    approved: 1,
+    automaticExclusionReason: null
+  });
+
+  const milk = items.find((item: { item: string }) => item.item === "milk");
+  expect((await request.patch(`/api/menus/${id}/shopping-list/items/${milk.id}/approval`, {
+    headers: productionHeaders,
+    data: { approved: true }
+  })).status()).toBe(200);
+  items = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  expect(items.find((item: { item: string }) => item.item === "milk")).toMatchObject({
+    approved: 1,
+    automaticExclusionReason: null
+  });
+
+  expect((await request.put(`/api/menus/${id}/ourgroceries-list`, {
+    headers: productionHeaders,
+    data: { listId: null }
+  })).status()).toBe(200);
+  expect((await request.post(`/api/menus/${id}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+  items = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  expect(items.find((item: { item: string }) => item.item === "milk")).toMatchObject({
+    approved: 1,
+    automaticExclusionReason: null
+  });
+});
+
 test("planner preserves generation, saving, latest loading, replacement, empty sides, and meal changes", async ({ request }) => {
   expect((await request.post("/api/menus/preview", {
     headers: productionHeaders,

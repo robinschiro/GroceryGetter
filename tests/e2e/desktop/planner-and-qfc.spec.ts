@@ -76,6 +76,9 @@ test("planner and aggregated-list journeys preserve menu editing, persistence, p
 test("OurGroceries default, per-menu selection, and external provenance links work end to end", async ({ page }) => {
   await page.goto("/settings/ourgroceries");
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  const remoteLists = page.getByLabel("OurGroceries shopping lists");
+  await expect(remoteLists).toHaveCSS("max-height", "none");
+  await expect(remoteLists).toHaveCSS("overflow", "visible");
   await page.getByLabel("OurGroceries email").fill("browser-test@example.com");
   await page.getByLabel("OurGroceries password").fill("not-returned-secret");
   await page.getByRole("button", { name: "Update credentials" }).click();
@@ -221,11 +224,81 @@ test("fake-QFC review explains an available fallback without replacing the prefe
     }).locator("option:checked")
   ).toContainText("Test Kitchen preferred unavailable item");
 
-  await page.goto("/settings/qfc/preferences");
-  const rememberedPreference = page.locator(".store-item-preference-row").filter({
+  await page.goto("/ingredients");
+  const rememberedPreference = page.locator(".ingredient-preference-row").filter({
     hasText: "preferred unavailable item"
   });
   await expect(rememberedPreference).toContainText("Kroger preferred unavailable item");
+});
+
+test("Ingredients manages pantry status with search, filters, persistence, and scope isolation", async ({
+  page
+}) => {
+  await page.goto("/ingredients");
+  const tomato = page.locator(".ingredient-preference-row").filter({
+    has: page.getByText("tomato", { exact: true })
+  });
+  const tomatoSources = tomato.getByRole("button", {
+    name: "Used in 2 recipes and 1 shopping list",
+    exact: true
+  });
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(tomatoSources).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(tomatoSources).toHaveCSS("color", "rgb(185, 200, 193)");
+  await tomatoSources.click();
+  await expect(page.getByRole("link", { name: "Weeknight Pasta", exact: true }))
+    .toHaveAttribute("href", /\/recipes\/manage\/\d+$/);
+  await expect(page.getByRole("link", { name: "Roasted Broccoli", exact: true }))
+    .toHaveAttribute("href", /\/recipes\/manage\/\d+$/);
+  await expect(page.getByRole("link", { name: "Weekly Staples", exact: true }))
+    .toHaveAttribute("href", /\/shopping-lists\/manage\/\d+$/);
+  const oliveOil = page.locator(".ingredient-preference-row").filter({
+    has: page.getByText("olive oil", { exact: true })
+  });
+  await expect(oliveOil).toContainText("Used in 1 recipe");
+  await expect(oliveOil.getByRole("checkbox")).not.toBeChecked();
+  await oliveOil.getByRole("checkbox").check();
+  await expect(oliveOil.getByText("Assumed on hand unless active in OurGroceries.")).toBeVisible();
+
+  await page.getByLabel("Ingredient filter").selectOption("pantry");
+  await expect(page.locator(".ingredient-preference-row")).toHaveCount(1);
+  await expect(page.getByText("olive oil", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Ingredient filter")).toHaveValue("all");
+  await expect(page.locator(".ingredient-preference-row").filter({
+    has: page.getByText("olive oil", { exact: true })
+  }).getByRole("checkbox")).toBeChecked();
+
+  await page.getByLabel("Data mode").selectOption("sandbox");
+  await expect(page.getByText("olive oil", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("unmatched shells", { exact: true })).toBeVisible();
+  await page.getByLabel("Ingredient filter").selectOption("pantry");
+  await expect(page.getByText("No ingredients match these filters.")).toBeVisible();
+});
+
+test("pantry ingredients explain automatic exclusion and can be restored for the current menu", async ({
+  page,
+  request
+}) => {
+  expect((await request.put("/api/ingredients/milk/pantry", {
+    data: { ingredientName: "milk", isPantry: true }
+  })).status()).toBe(200);
+  const lists = await (await request.get("/api/ourgroceries/lists")).json() as Array<{ id: string }>;
+  expect((await request.put("/api/ourgroceries/default-list", {
+    data: { listId: lists[0].id }
+  })).status()).toBe(200);
+
+  await page.goto("/planner");
+  await page.getByLabel("Meals").fill("1");
+  await page.getByRole("button", { name: "Generate" }).click();
+  await page.getByRole("button", { name: "Save menu" }).click();
+  await page.getByRole("button", { name: "Aggregate ingredients" }).click();
+  await page.getByRole("button", { name: /unchecked ingredient/ }).click();
+  const milk = page.getByRole("button", { name: "Restore milk" });
+  await expect(milk).toContainText("Automatically unchecked — pantry ingredient");
+  await milk.click();
+  await expect(page.getByText("Automatically unchecked — pantry ingredient")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Cross off milk" })).toBeVisible();
 });
 
 test("QFC settings preserve scoped preferences, production-only credentials, fake searches, and sandbox cart safeguards", async ({

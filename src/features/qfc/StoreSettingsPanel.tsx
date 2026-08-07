@@ -4,8 +4,7 @@ import type {
   DataScope,
   QfcLocation,
   QfcStatus,
-  StoreItemCandidate,
-  StoreItemPreference
+  StoreItemCandidate
 } from "../../../shared/contracts/index.js";
 import type { QfcSettingsTab } from "../../shared/router.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
@@ -35,9 +34,7 @@ export function StoreSettingsPanel({
   preferStoreBrands,
   updateStoreBrandPreference,
   allowRealQfcCartMutation,
-  updateRealQfcCartPermission,
-  storeItemPreferences,
-  forgetStoreItemPreference
+  updateRealQfcCartPermission
 }: {
   api: ApiRequest;
   activeTab: QfcSettingsTab;
@@ -49,8 +46,6 @@ export function StoreSettingsPanel({
   updateStoreBrandPreference: (next: boolean) => Promise<void>;
   allowRealQfcCartMutation: boolean;
   updateRealQfcCartPermission: (next: boolean) => Promise<void>;
-  storeItemPreferences: StoreItemPreference[];
-  forgetStoreItemPreference: (provider: string, ingredientKey: string) => Promise<void>;
 }) {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -307,31 +302,10 @@ export function StoreSettingsPanel({
           </label>
           <div className="store-item-preference-section">
             <div>
-              <h4>Remembered store items</h4>
-              <p>Selections made during store item review are reused whenever the same ingredient appears again.</p>
+              <h4>Ingredient preferences</h4>
+              <p>Pantry status and remembered store-item matches are managed on the Ingredients page.</p>
             </div>
-            {storeItemPreferences.length ? (
-              <div className="store-item-preference-list">
-                {storeItemPreferences.map((preference) => (
-                  <div className="store-item-preference-row" key={preference.ingredientKey}>
-                    <div>
-                      <strong>{preference.ingredientName}</strong>
-                      <span>{preference.description}</span>
-                      <span>{[preference.brand, preference.size].filter(Boolean).join(" · ")}</span>
-                    </div>
-                    <button
-                      className="secondary"
-                      onClick={() => void forgetStoreItemPreference(preference.provider, preference.ingredientKey)}
-                      type="button"
-                    >
-                      Forget
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">No store item choices have been remembered yet.</div>
-            )}
+            <a href="/ingredients">Manage ingredients</a>
           </div>
         </div>
       )}

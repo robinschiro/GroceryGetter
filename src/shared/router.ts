@@ -1,7 +1,7 @@
 export type RecipeAdminTab = "create" | "manage";
 export type ShoppingListsTab = "create" | "manage";
 export type QfcSettingsTab = "api" | "preferences";
-export type AppView = "recipe-admin" | "shopping-lists" | "qfc-api" | "ourgroceries" | "planner" | "menu-history";
+export type AppView = "recipe-admin" | "shopping-lists" | "ingredients" | "qfc-api" | "ourgroceries" | "planner" | "menu-history";
 
 export type AppRoute = {
   path: string;
@@ -21,6 +21,7 @@ const appRoutes: AppRoute[] = [
   { path: "/recipes/create", view: "recipe-admin", recipeAdminTab: "create" },
   { path: "/shopping-lists/manage", view: "shopping-lists", shoppingListsTab: "manage" },
   { path: "/shopping-lists/create", view: "shopping-lists", shoppingListsTab: "create" },
+  { path: "/ingredients", view: "ingredients" },
   { path: "/settings/qfc/api", view: "qfc-api", qfcSettingsTab: "api" },
   { path: "/settings/qfc/preferences", view: "qfc-api", qfcSettingsTab: "preferences" },
   { path: "/settings/ourgroceries", view: "ourgroceries" }

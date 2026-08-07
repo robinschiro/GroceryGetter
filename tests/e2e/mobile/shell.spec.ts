@@ -17,6 +17,7 @@ test("phone navigation opens and closes, reaches every primary view, shows data 
     ["Menu History", "/menus", "Menu History"],
     ["Recipes", "/recipes/manage", "Recipes"],
     ["Shopping Lists", "/shopping-lists/manage", "Shopping Lists"],
+    ["Ingredients", "/ingredients", "Ingredients"],
     ["QFC Settings", "/settings/qfc/api", "QFC Settings"],
     ["OurGroceries", "/settings/ourgroceries", "OurGroceries Settings"]
   ] as const;

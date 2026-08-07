@@ -151,7 +151,7 @@ export function OurGroceriesSettingsPage({
         </button>
       </div>
 
-      <div className="result-list" aria-label="OurGroceries shopping lists">
+      <div className="result-list ourgroceries-list" aria-label="OurGroceries shopping lists">
         {lists.map((list) => (
           <a
             className="result-row ourgroceries-list-row"

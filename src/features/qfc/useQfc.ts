@@ -85,7 +85,13 @@ export function useQfc({
     setPlannerMessage("");
     setStoreItemReviewMessage("");
     setShoppingList((current) => current.map((item) => (
-      item.id === itemId ? { ...item, approved: approved ? 1 : 0 } : item
+      item.id === itemId
+        ? {
+            ...item,
+            approved: approved ? 1 : 0,
+            automaticExclusionReason: approved ? null : item.automaticExclusionReason
+          }
+        : item
     )));
     setSavingApprovalItemIds((current) => new Set(current).add(itemId));
     if (approved && currentReview) {
@@ -153,7 +159,13 @@ export function useQfc({
       }
     } catch (err) {
       setShoppingList((current) => current.map((item) => (
-        item.id === itemId ? { ...item, approved: previousItem.approved } : item
+        item.id === itemId
+          ? {
+              ...item,
+              approved: previousItem.approved,
+              automaticExclusionReason: previousItem.automaticExclusionReason
+            }
+          : item
       )));
       setPlannerMessage(err instanceof Error ? err.message : "Unable to save ingredient approval.");
     } finally {

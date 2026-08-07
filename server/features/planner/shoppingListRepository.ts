@@ -19,6 +19,8 @@ export type AggregatedGroup = {
   quantity: string;
   sourceNames: string;
   sources: AggregateSource[];
+  approved: boolean;
+  automaticExclusionReason: "pantry" | null;
 };
 
 export type OurGroceriesSnapshotItem = {
@@ -110,9 +112,11 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
         groups.forEach((group, index) => {
           const shoppingItemId = database.insert(
             `INSERT INTO menu_shopping_list_items
-              (menu_id, text, quantity, unit, item, source_names, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [menuId, group.item, group.quantity, "", group.item, group.sourceNames, index]
+              (menu_id, text, quantity, unit, item, source_names, approved,
+                automatic_exclusion_reason, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [menuId, group.item, group.quantity, "", group.item, group.sourceNames,
+              group.approved ? 1 : 0, group.automaticExclusionReason, index]
           );
           for (const source of group.sources) {
             if (
@@ -159,13 +163,16 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
         for (const item of items) {
           database.run(
             `UPDATE menu_shopping_list_items
-            SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?
+            SET text = ?, quantity = ?, unit = ?, item = ?, approved = ?,
+              automatic_exclusion_reason = CASE WHEN ? = 1 THEN NULL
+                ELSE automatic_exclusion_reason END
             WHERE id = ? AND menu_id = ?`,
             [
               item.text ?? "",
               item.quantity ?? "",
               item.unit ?? "",
               item.item ?? "",
+              item.approved ? 1 : 0,
               item.approved ? 1 : 0,
               Number(item.id),
               menuId
@@ -184,8 +191,11 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
 
     setApproval(menuId: number, itemId: number, approved: boolean) {
       database.run(
-        "UPDATE menu_shopping_list_items SET approved = ? WHERE id = ? AND menu_id = ?",
-        [approved ? 1 : 0, itemId, menuId]
+        `UPDATE menu_shopping_list_items
+        SET approved = ?, automatic_exclusion_reason = CASE WHEN ? = 1 THEN NULL
+          ELSE automatic_exclusion_reason END
+        WHERE id = ? AND menu_id = ?`,
+        [approved ? 1 : 0, approved ? 1 : 0, itemId, menuId]
       );
       database.save();
     },

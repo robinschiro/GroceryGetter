@@ -11,11 +11,13 @@ import type {
   ShoppingListWorkflowRepository
 } from "./shoppingListRepository.js";
 import { PlannerError } from "./plannerService.js";
+import type { IngredientRepository } from "../ingredients/ingredientRepository.js";
 
 export function createShoppingListWorkflowService(
   plannerRepository: PlannerRepository,
   repository: ShoppingListWorkflowRepository,
-  ourGroceriesService: OurGroceriesService
+  ourGroceriesService: OurGroceriesService,
+  ingredientRepository: IngredientRepository
 ) {
   function requireMenu(menuId: number, dataScope: DataScope) {
     const menu = Number.isInteger(menuId) ? plannerRepository.getMenu(menuId, dataScope) : null;
@@ -50,6 +52,9 @@ export function createShoppingListWorkflowService(
             }))
         : [];
       const grouped = new Map<string, ReturnType<typeof repository.getAggregateSources>>();
+      const pantryKeys = menu.ourGroceriesList
+        ? ingredientRepository.getPantryKeys(dataScope)
+        : new Set<string>();
       const remoteSources = remoteItems.map((item) => ({
         sourceType: "ourGroceries" as const,
         menuItemId: null,
@@ -75,6 +80,12 @@ export function createShoppingListWorkflowService(
         .map((sources) => {
           const first = sources[0];
           const item = first.item.trim() || first.text.trim();
+          const ingredientKey = normalizeAggregateItem(item);
+          const hasActiveOurGroceriesItem = sources.some(
+            (source) => source.sourceType === "ourGroceries"
+          );
+          const automaticallyExcluded = pantryKeys.has(ingredientKey)
+            && !hasActiveOurGroceriesItem;
           const quantities = sources.map((source) => parseQuantity(source.quantity));
           const canSumUnitless = sources.every((source) => !source.unit.trim())
             && quantities.every((quantity): quantity is number => quantity !== null);
@@ -84,7 +95,9 @@ export function createShoppingListWorkflowService(
               ? formatQuantity(quantities.reduce<number>((sum, value) => sum + value, 0))
               : "",
             sourceNames: Array.from(new Set(sources.map((source) => source.sourceName))).join(", "),
-            sources
+            sources,
+            approved: !automaticallyExcluded,
+            automaticExclusionReason: automaticallyExcluded ? "pantry" as const : null
           };
         });
       repository.replaceAggregatedItems(menuId, groups, remoteItems);

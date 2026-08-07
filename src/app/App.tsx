@@ -5,6 +5,7 @@ import {
   ListChecks,
   Menu as MenuIcon,
   Moon,
+  PackageSearch,
   RefreshCw,
   Settings,
   Shuffle,
@@ -41,6 +42,7 @@ import { useQfc } from "../features/qfc/useQfc.js";
 import { MenuHistoryPage } from "../features/menuHistory/MenuHistoryPage.js";
 import { OurGroceriesSettingsPage } from "../features/ourGroceries/OurGroceriesSettingsPage.js";
 import { listOurGroceriesLists, loadOurGroceriesStatus } from "../features/ourGroceries/api.js";
+import { IngredientsPage } from "../features/ingredients/IngredientsPage.js";
 
 type ThemeMode = "light" | "dark";
 
@@ -59,6 +61,7 @@ const views: Array<{ id: AppView; label: string; title: string; eyebrow: string;
     eyebrow: "Reusable grocery templates",
     icon: ListChecks
   },
+  { id: "ingredients", label: "Ingredients", title: "Ingredients", eyebrow: "Ingredient preferences", icon: PackageSearch },
   { id: "qfc-api", label: "QFC Settings", title: "QFC Settings", eyebrow: "Integration settings", icon: Settings },
   {
     id: "ourgroceries",
@@ -139,7 +142,6 @@ export function App() {
     searchingStoreItemIds,
     searchStoreItemsForReview,
     selectStoreItem,
-    storeItemPreferences,
     storeItemReview,
     storeItemReviewMessage,
     updateRealQfcCartPermission,
@@ -369,6 +371,13 @@ export function App() {
           />
         ) : null}
 
+        {activeView === "ingredients" ? (
+          <IngredientsPage
+            api={api}
+            forgetStoreItemPreference={forgetStoreItemPreference}
+          />
+        ) : null}
+
         {activeView === "qfc-api" ? (
           <StoreSettingsPanel
             api={api}
@@ -381,8 +390,6 @@ export function App() {
             updateStoreBrandPreference={updateStoreBrandPreference}
             allowRealQfcCartMutation={allowRealQfcCartMutation}
             updateRealQfcCartPermission={updateRealQfcCartPermission}
-            storeItemPreferences={storeItemPreferences}
-            forgetStoreItemPreference={forgetStoreItemPreference}
           />
         ) : null}
 

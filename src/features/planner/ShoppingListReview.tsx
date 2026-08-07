@@ -203,6 +203,11 @@ export function ShoppingListReview({
             <span>{item.sourceNames}</span>
           )}
         </div>
+        {item.automaticExclusionReason === "pantry" ? (
+          <span className="automatic-exclusion-reason">
+            Automatically unchecked — pantry ingredient
+          </span>
+        ) : null}
         {isSearchingStoreItems ? (
           <span className="approval-save-status store-search-status" role="status">
             Searching store items...

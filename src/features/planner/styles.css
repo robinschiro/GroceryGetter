@@ -290,3 +290,13 @@
 .shopping-persistence-status {
   line-height: 1.25;
 }
+
+.automatic-exclusion-reason {
+  color: #6b5415 !important;
+  font-weight: 700;
+  grid-column: 1 / -1;
+}
+
+:root[data-theme="dark"] .automatic-exclusion-reason {
+  color: #ebcf7a !important;
+}

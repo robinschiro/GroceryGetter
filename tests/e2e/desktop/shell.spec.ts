@@ -15,6 +15,7 @@ test("direct routes, navigation, history, refresh, theme, data mode, and scope i
     ["/recipes/create", "Recipes"],
     ["/shopping-lists/manage", "Shopping Lists"],
     ["/shopping-lists/create", "Shopping Lists"],
+    ["/ingredients", "Ingredients"],
     ["/settings/qfc/api", "QFC Settings"],
     ["/settings/qfc/preferences", "QFC Settings"],
     ["/settings/ourgroceries", "OurGroceries Settings"]

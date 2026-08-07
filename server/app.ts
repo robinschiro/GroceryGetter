@@ -17,6 +17,8 @@ import { createOurGroceriesRouter } from "./features/ourGroceries/ourGroceriesRo
 import type { OurGroceriesService } from "./infrastructure/ourGroceries/ourGroceriesService.js";
 import { seedTestDatabase, type TestSeed } from "./testing/seedTestDatabase.js";
 import type { DataScope } from "./types.js";
+import { createIngredientRepository } from "./features/ingredients/ingredientRepository.js";
+import { createIngredientRouter } from "./features/ingredients/ingredientRouter.js";
 
 export function createApp({
   database,
@@ -30,11 +32,13 @@ export function createApp({
   testMode?: boolean;
 }) {
   const plannerRepository = createPlannerRepository(database);
+  const ingredientRepository = createIngredientRepository(database);
   const plannerService = createPlannerService(plannerRepository, ourGroceriesService);
   const shoppingListWorkflowService = createShoppingListWorkflowService(
     plannerRepository,
     createShoppingListWorkflowRepository(database),
-    ourGroceriesService
+    ourGroceriesService,
+    ingredientRepository
   );
 
   const app = express();
@@ -65,6 +69,7 @@ export function createApp({
     "/api/recipes",
     createRecipeRouter(createRecipeService(createRecipeRepository(database)))
   );
+  app.use("/api/ingredients", createIngredientRouter(ingredientRepository));
   app.use(
     "/api/custom-shopping-lists",
     createShoppingListRouter(createShoppingListService(createShoppingListRepository(database)))

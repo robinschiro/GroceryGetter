@@ -1,3 +1,8 @@
+.ourgroceries-list {
+  max-height: none;
+  overflow: visible;
+}
+
 .ourgroceries-list-row {
   text-decoration: none;
   transition: background-color 120ms ease, border-color 120ms ease;

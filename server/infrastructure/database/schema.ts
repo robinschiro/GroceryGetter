@@ -111,6 +111,8 @@ export async function initializeSchema(database: GroceryDatabase) {
     item TEXT NOT NULL,
     source_names TEXT NOT NULL,
     approved INTEGER NOT NULL DEFAULT 1,
+    automatic_exclusion_reason TEXT
+      CHECK (automatic_exclusion_reason IS NULL OR automatic_exclusion_reason = 'pantry'),
     sort_order INTEGER NOT NULL DEFAULT 0
   );
 
@@ -188,8 +190,28 @@ export async function initializeSchema(database: GroceryDatabase) {
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (data_scope, provider, ingredient_key)
   );
+
+  CREATE TABLE IF NOT EXISTS ingredient_preferences (
+    data_scope TEXT NOT NULL
+      CHECK (data_scope IN ('production', 'sandbox')),
+    ingredient_key TEXT NOT NULL,
+    ingredient_name TEXT NOT NULL,
+    is_pantry INTEGER NOT NULL DEFAULT 0 CHECK (is_pantry IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (data_scope, ingredient_key)
+  );
   `);
   saveDb();
+
+  if (!columnExists(database, "menu_shopping_list_items", "automatic_exclusion_reason")) {
+    run(
+      `ALTER TABLE menu_shopping_list_items
+      ADD COLUMN automatic_exclusion_reason TEXT
+      CHECK (automatic_exclusion_reason IS NULL OR automatic_exclusion_reason = 'pantry')`
+    );
+    saveDb();
+  }
 
   if (!columnExists(database, "custom_shopping_lists", "include_in_menu_by_default")) {
     run(

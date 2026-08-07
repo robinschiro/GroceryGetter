@@ -281,6 +281,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
           menu_shopping_list_items.item,
           menu_shopping_list_items.source_names AS sourceNames,
           menu_shopping_list_items.approved,
+          menu_shopping_list_items.automatic_exclusion_reason AS automaticExclusionReason,
           (
             SELECT COUNT(*)
             FROM menu_shopping_list_item_recipe_sources

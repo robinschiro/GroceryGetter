@@ -3,8 +3,10 @@
 @import "./styles/forms.css";
 @import "./features/shoppingLists/styles.css";
 @import "./features/recipes/styles.css";
+@import "./features/ingredients/styles.css";
 @import "./features/planner/styles.css";
 @import "./features/menuHistory/styles.css";
 @import "./features/qfc/styles.css";
+@import "./features/ourGroceries/styles.css";
 @import "./styles/theme.css";
 @import "./styles/responsive.css";

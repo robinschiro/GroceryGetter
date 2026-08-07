@@ -113,10 +113,25 @@ export type ShoppingListItem = {
   item: string;
   sourceNames: string;
   approved: number;
+  automaticExclusionReason: "pantry" | null;
   sourceOccurrenceCount: number;
   canPersistToSource: number;
   sourceTargets: ShoppingListSourceTarget[];
   sourceDetails: ShoppingListSourceDetail[];
+};
+
+export type IngredientSummary = {
+  ingredientKey: string;
+  ingredientName: string;
+  isPantry: boolean;
+  recipeCount: number;
+  shoppingListCount: number;
+  sources: Array<{
+    type: "recipe" | "shoppingList";
+    id: number;
+    name: string;
+  }>;
+  storeItemPreferences: StoreItemPreference[];
 };
 
 export type CustomShoppingListItem = {
