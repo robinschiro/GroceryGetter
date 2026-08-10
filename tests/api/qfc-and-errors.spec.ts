@@ -253,3 +253,87 @@ test("QFC review uses an available search result without replacing an unavailabl
     upc: unavailableCandidate.upc
   });
 });
+
+test("QFC review restores saved edits by menu and is invalidated by aggregation changes", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const previewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const preview = await pollJob(request, (await previewResponse.json()).jobId);
+  const firstMatch = preview.result.matched[0];
+  const removedItem = preview.result.items.find(
+    (item: { id: number }) => item.id !== firstMatch.item.id
+  );
+  expect(removedItem).toBeTruthy();
+
+  expect((await request.put(
+    `/api/store-item-reviews/${preview.id}/quantities/${firstMatch.item.id}`,
+    { headers: productionHeaders, data: { cartQuantity: 4 } }
+  )).status()).toBe(200);
+  expect((await request.delete(
+    `/api/store-item-reviews/${preview.id}/items/${removedItem.id}`,
+    { headers: productionHeaders }
+  )).status()).toBe(200);
+
+  const restoredResponse = await request.get(`/api/menus/${menuId}/store-item-review`, {
+    headers: productionHeaders
+  });
+  expect(restoredResponse.status()).toBe(200);
+  const restored = await restoredResponse.json();
+  expect(restored).toMatchObject({ id: preview.id, status: "complete" });
+  expect(restored.result.matched.find(
+    (match: { item: { id: number } }) => match.item.id === firstMatch.item.id
+  ).cartQuantity).toBe(4);
+  expect(restored.result.items.some(
+    (item: { id: number }) => item.id === removedItem.id
+  )).toBeFalsy();
+
+  expect((await request.post(`/api/menus/${menuId}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+  expect(await (await request.get(`/api/menus/${menuId}/store-item-review`, {
+    headers: productionHeaders
+  })).json()).toBeNull();
+  expect((await request.put(
+    `/api/store-item-reviews/${preview.id}/quantities/${firstMatch.item.id}`,
+    { headers: productionHeaders, data: { cartQuantity: 2 } }
+  )).status()).toBe(409);
+});
+
+test("new previews supersede cached jobs and menu edits invalidate saved reviews", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const firstResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const first = await pollJob(request, (await firstResponse.json()).jobId);
+
+  const secondResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  expect(secondResponse.status()).toBe(202);
+  expect((await request.get(`/api/qfc/submit-jobs/${first.id}`, {
+    headers: productionHeaders
+  })).status()).toBe(409);
+  const second = await pollJob(request, (await secondResponse.json()).jobId);
+  expect(await (await request.get(`/api/menus/${menuId}/store-item-review`, {
+    headers: productionHeaders
+  })).json()).toMatchObject({ id: second.id });
+
+  const menu = await (await request.get(`/api/menus/${menuId}`, {
+    headers: productionHeaders
+  })).json();
+  const menuItem = menu.items[0];
+  expect((await request.put(`/api/menu-items/${menuItem.id}`, {
+    headers: productionHeaders,
+    data: { recipeId: menuItem.recipeId }
+  })).status()).toBe(200);
+  expect(await (await request.get(`/api/menus/${menuId}/store-item-review`, {
+    headers: productionHeaders
+  })).json()).toBeNull();
+  expect(await (await request.get(`/api/menus/${menuId}/shopping-list`, {
+    headers: productionHeaders
+  })).json()).toEqual([]);
+  expect((await request.post(`/api/qfc/submit-jobs/${second.id}/add-to-cart`, {
+    headers: productionHeaders
+  })).status()).toBe(409);
+});

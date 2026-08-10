@@ -77,6 +77,10 @@ export function startStoreItemPreview(api: ApiRequest, menuId: number) {
   return api<QfcSubmitJob>(`/api/menus/${menuId}/preview-qfc`, { method: "POST" });
 }
 
+export function getMenuStoreItemReview(api: ApiRequest, menuId: number) {
+  return api<QfcSubmitJob | null>(`/api/menus/${menuId}/store-item-review`);
+}
+
 export function getQfcSubmitJob(api: ApiRequest, jobId: string) {
   return api<QfcSubmitJob>(`/api/qfc/submit-jobs/${jobId}`);
 }

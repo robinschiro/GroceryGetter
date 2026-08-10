@@ -11,6 +11,7 @@ export type QfcSubmitJob = {
   result?: CartSubmissionResult;
   error?: string;
   createdAt: number;
+  reviewRevision?: number;
 };
 
 export class QfcJobStore {

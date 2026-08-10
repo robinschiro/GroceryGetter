@@ -23,6 +23,16 @@ export type MenuItemInput = {
 type MenuRow = Omit<Menu, "items" | "customShoppingListIds" | "ourGroceriesList">;
 
 export function createPlannerRepository(database: GroceryDatabase) {
+  function invalidateGeneratedShoppingState(menuId: number) {
+    database.run(
+      `UPDATE menus SET qfc_review_revision = qfc_review_revision + 1
+      WHERE id = ?`,
+      [menuId]
+    );
+    database.run("DELETE FROM store_item_reviews WHERE menu_id = ?", [menuId]);
+    database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+  }
+
   function getMenu(menuId: number, dataScope: DataScope): Menu | null {
     const menu = database.queryOne<MenuRow>(
       `SELECT
@@ -192,7 +202,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
 
     addMeal(menuId: number, mealNumber: number, items: MenuItemInput[], dataScope: DataScope) {
       database.transaction(() => {
-        database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+        invalidateGeneratedShoppingState(menuId);
         for (const item of items) {
           database.run(
             "INSERT INTO menu_items (menu_id, meal_number, slot, recipe_id) VALUES (?, ?, ?, ?)",
@@ -209,7 +219,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
 
     removeMeal(menuId: number, mealNumber: number, dataScope: DataScope) {
       database.transaction(() => {
-        database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+        invalidateGeneratedShoppingState(menuId);
         database.run(
           "DELETE FROM menu_items WHERE menu_id = ? AND meal_number = ?",
           [menuId, mealNumber]
@@ -237,12 +247,19 @@ export function createPlannerRepository(database: GroceryDatabase) {
     },
 
     updateMenuItem(menuItemId: string, recipeId: number | null) {
-      database.run("UPDATE menu_items SET recipe_id = ? WHERE id = ?", [recipeId, menuItemId]);
-      database.save();
+      const menuId = database.queryOne<{ menuId: number }>(
+        "SELECT menu_id AS menuId FROM menu_items WHERE id = ?",
+        [menuItemId]
+      )?.menuId;
+      database.transaction(() => {
+        if (menuId) invalidateGeneratedShoppingState(menuId);
+        database.run("UPDATE menu_items SET recipe_id = ? WHERE id = ?", [recipeId, menuItemId]);
+      });
     },
 
     replaceShoppingLists(menuId: number, ids: number[]) {
       database.transaction(() => {
+        invalidateGeneratedShoppingState(menuId);
         database.run("DELETE FROM menu_custom_shopping_lists WHERE menu_id = ?", [menuId]);
         for (const id of ids) {
           database.run(
@@ -255,10 +272,10 @@ export function createPlannerRepository(database: GroceryDatabase) {
     },
 
     replaceOurGroceriesList(menuId: number, list: OurGroceriesListSummary | null) {
-        database.transaction(() => {
-          database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
-          database.run("DELETE FROM menu_ourgroceries_items WHERE menu_id = ?", [menuId]);
-          database.run("DELETE FROM menu_ourgroceries_lists WHERE menu_id = ?", [menuId]);
+      database.transaction(() => {
+        invalidateGeneratedShoppingState(menuId);
+        database.run("DELETE FROM menu_ourgroceries_items WHERE menu_id = ?", [menuId]);
+        database.run("DELETE FROM menu_ourgroceries_lists WHERE menu_id = ?", [menuId]);
         if (list) {
           database.run(
             `INSERT INTO menu_ourgroceries_lists

@@ -231,6 +231,27 @@ test("fake-QFC review explains an available fallback without replacing the prefe
   await expect(rememberedPreference).toContainText("Kroger preferred unavailable item");
 });
 
+test("QFC review selections survive a page reload", async ({ page }) => {
+  await saveAndAggregateMenu(page);
+  await page.getByRole("button", { name: "Review store items" }).click();
+  await expect(page.locator(".store-item-match-row").first()).toBeVisible();
+
+  const firstQuantity = page.getByLabel(/^Cart quantity for /).first();
+  const quantityLabel = await firstQuantity.getAttribute("aria-label");
+  await firstQuantity.fill("3");
+  await expect(firstQuantity).toHaveValue("3");
+
+  const removeButton = page.getByRole("button", { name: /^Remove .* from review$/ }).last();
+  const removedLabel = await removeButton.getAttribute("aria-label");
+  await removeButton.click();
+  await expect(page.getByRole("button", { name: removedLabel ?? "" })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Store Item Review" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: quantityLabel ?? "" })).toHaveValue("3");
+  await expect(page.getByRole("button", { name: removedLabel ?? "" })).toHaveCount(0);
+});
+
 test("Ingredients manages pantry status with search, filters, persistence, and scope isolation", async ({
   page
 }) => {

@@ -22,6 +22,7 @@ This app has a Kroger API adapter boundary for service-to-service APIs, customer
 - `GET /api/qfc/store-items?term=milk&locationId=<locationId>`
 - `GET /api/store-item-preferences`
 - `DELETE /api/store-item-preferences/:provider/:ingredientKey`
+- `GET /api/menus/:id/store-item-review`
 - `PUT /api/store-item-reviews/:jobId/selections/:shoppingItemId`
 - `PUT /api/store-item-reviews/:jobId/quantities/:shoppingItemId`
 - `POST /api/store-item-reviews/:jobId/items/:shoppingItemId/search`
@@ -105,6 +106,7 @@ Current cart submission behavior:
 - Allows a custom search term during review and replaces that ingredient's dropdown with the new results.
 - Allows unmatched ingredients to be searched manually and promoted into the matched review list when results are found.
 - Allows an ingredient to be removed from the current review and cart submission without changing the saved shopping list or its remembered store-item preference.
+- Persists each completed menu review and every selection, quantity, search, and removal change in SQLite so a browser or API restart can restore it.
 - Shows the selected store item's Kroger image when the API provides one.
 - Requires explicit confirmation from the review step before mutating the cart.
 - Defaults to one cart unit per approved grocery row and allows the quantity to be changed during review.

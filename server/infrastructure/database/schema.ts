@@ -90,6 +90,7 @@ export async function initializeSchema(database: GroceryDatabase) {
     data_scope TEXT NOT NULL DEFAULT 'production'
       CHECK (data_scope IN ('production', 'sandbox')),
     status TEXT NOT NULL DEFAULT 'draft',
+    qfc_review_revision INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -191,6 +192,17 @@ export async function initializeSchema(database: GroceryDatabase) {
     PRIMARY KEY (data_scope, provider, ingredient_key)
   );
 
+  CREATE TABLE IF NOT EXISTS store_item_reviews (
+    menu_id INTEGER PRIMARY KEY REFERENCES menus(id) ON DELETE CASCADE,
+    data_scope TEXT NOT NULL
+      CHECK (data_scope IN ('production', 'sandbox')),
+    job_id TEXT NOT NULL UNIQUE,
+    review_revision INTEGER NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS ingredient_preferences (
     data_scope TEXT NOT NULL
       CHECK (data_scope IN ('production', 'sandbox')),
@@ -203,6 +215,16 @@ export async function initializeSchema(database: GroceryDatabase) {
   );
   `);
   saveDb();
+
+  if (!columnExists(database, "menus", "qfc_review_revision")) {
+    run("ALTER TABLE menus ADD COLUMN qfc_review_revision INTEGER NOT NULL DEFAULT 0");
+    saveDb();
+  }
+
+  if (!columnExists(database, "store_item_reviews", "review_revision")) {
+    run("ALTER TABLE store_item_reviews ADD COLUMN review_revision INTEGER NOT NULL DEFAULT 0");
+    saveDb();
+  }
 
   if (!columnExists(database, "menu_shopping_list_items", "automatic_exclusion_reason")) {
     run(

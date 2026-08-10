@@ -36,6 +36,15 @@ export type ShoppingItemUpdate = Pick<
 >;
 
 export function createShoppingListWorkflowRepository(database: GroceryDatabase) {
+  function invalidateStoreItemReview(menuId: number) {
+    database.run(
+      `UPDATE menus SET qfc_review_revision = qfc_review_revision + 1
+      WHERE id = ?`,
+      [menuId]
+    );
+    database.run("DELETE FROM store_item_reviews WHERE menu_id = ?", [menuId]);
+  }
+
   return {
     getAggregateSources(menuId: number) {
       const recipeSources = database.queryAll(
@@ -87,6 +96,7 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
       remoteItems: OurGroceriesSnapshotItem[] = []
     ) {
       database.transaction(() => {
+        invalidateStoreItemReview(menuId);
         database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
         database.run("DELETE FROM menu_ourgroceries_items WHERE menu_id = ?", [menuId]);
         const remoteItemIds = new Map<string, number>();
@@ -154,12 +164,15 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
     },
 
     clear(menuId: number) {
-      database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
-      database.save();
+      database.transaction(() => {
+        invalidateStoreItemReview(menuId);
+        database.run("DELETE FROM menu_shopping_list_items WHERE menu_id = ?", [menuId]);
+      });
     },
 
     updateItems(menuId: number, items: ShoppingItemUpdate[]) {
       database.transaction(() => {
+        invalidateStoreItemReview(menuId);
         for (const item of items) {
           database.run(
             `UPDATE menu_shopping_list_items
@@ -265,6 +278,7 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
       customSource?: { customShoppingListItemId: number; customShoppingListId: number };
     }) {
       database.transaction(() => {
+        invalidateStoreItemReview(input.menuId);
         if (input.recipeSource) {
           database.run(
             "UPDATE recipe_ingredients SET item = ? WHERE id = ? AND recipe_id = ?",

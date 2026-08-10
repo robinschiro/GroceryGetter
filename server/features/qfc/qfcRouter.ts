@@ -72,7 +72,11 @@ app.put("/api/settings/:key", (req, res) => {
     return;
   }
   const value = String(req.body.value ?? "");
-  setScopedSetting(requestScope(res), key, value);
+  const dataScope = requestScope(res);
+  setScopedSetting(dataScope, key, value);
+  if (key === "preferStoreBrands") {
+    qfcRepository.clearReviews(dataScope);
+  }
   res.json({ key, value });
 });
 
@@ -93,14 +97,18 @@ app.put("/api/qfc/settings", (req, res) => {
     res.status(403).json({ error: "Switch to production mode to change QFC credentials or OAuth settings." });
     return;
   }
-  res.json(saveQfcApiSettings({
+  const result = saveQfcApiSettings({
     clientId: req.body.clientId,
     clientSecret: req.body.clientSecret,
     locationId: req.body.locationId,
     serviceScopes: req.body.serviceScopes,
     customerScopes: req.body.customerScopes,
     redirectUri: req.body.redirectUri
-  }, dataScope));
+  }, dataScope);
+  if (req.body.locationId !== undefined) {
+    qfcRepository.clearReviews(dataScope);
+  }
+  res.json(result);
 });
 
 app.post("/api/qfc/oauth/start", (_req, res) => {
@@ -203,8 +211,18 @@ app.get("/api/store-item-preferences", (_req, res) => {
 });
 
 app.delete("/api/store-item-preferences/:provider/:ingredientKey", (req, res) => {
-  deleteStoreItemPreference(requestScope(res), req.params.provider, req.params.ingredientKey);
+  const dataScope = requestScope(res);
+  deleteStoreItemPreference(dataScope, req.params.provider, req.params.ingredientKey);
+  qfcRepository.clearReviews(dataScope);
   res.json({ ok: true });
+});
+
+app.get("/api/menus/:id/store-item-review", (req, res) => {
+  try {
+    res.json(qfcWorkflow.getMenuReview(Number(req.params.id), requestScope(res)));
+  } catch (error) {
+    sendWorkflowError(res, error);
+  }
 });
 
 app.post("/api/menus/:id/preview-qfc", (req, res) => {

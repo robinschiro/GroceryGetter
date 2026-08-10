@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type {
   QfcStatus,
   QfcSubmitProgress,
@@ -8,6 +8,7 @@ import type {
 import type { ApiRequest } from "../../shared/apiClient.js";
 import {
   deleteStoreItemPreference as deleteStoreItemPreferenceRequest,
+  getMenuStoreItemReview,
   getQfcSubmitJob,
   loadQfcSettings,
   removeStoreItemFromReview as removeStoreItemFromReviewRequest,
@@ -57,6 +58,25 @@ export function useQfc({
   const [storeItemReview, setStoreItemReview] = useState<StoreItemReview | null>(null);
   const [storeItemReviewMessage, setStoreItemReviewMessage] = useState("");
   const [storeItemPreferences, setStoreItemPreferences] = useState<StoreItemPreference[]>([]);
+
+  useEffect(() => {
+    let canceled = false;
+    setStoreItemReview(null);
+    setStoreItemReviewMessage("");
+    if (!menuId) return () => { canceled = true; };
+
+    void getMenuStoreItemReview(api, menuId)
+      .then((job) => {
+        if (!canceled && job?.result) {
+          setStoreItemReview({ jobId: job.id, result: job.result });
+        }
+      })
+      .catch(() => {
+        // A missing or temporarily unavailable saved review should not block the planner.
+      });
+
+    return () => { canceled = true; };
+  }, [api, menuId]);
 
   function invalidateStoreReview() {
     setStoreItemReview(null);

@@ -77,7 +77,7 @@ The implemented matching step returns transient store-item candidates with:
 - price
 - store-brand flag
 
-Selections made in the review are persisted in `store_item_preferences`, keyed by provider and normalized ingredient name. The current review stays in a short-lived server job so the user can change candidates or run a custom-term search that replaces the candidates for a matched ingredient. The same search can promote an unmatched ingredient when it finds results. A remembered store item is reused on future menus; otherwise the general availability and store-brand ranking chooses the initial candidate.
+Selections made in the review are persisted in `store_item_preferences`, keyed by provider and normalized ingredient name. Completed reviews are persisted per menu in `store_item_reviews`, including candidate lists, current selections, cart quantities, searches, and removed items. The in-memory job still supports progress polling while matching runs, while the persisted review lets the browser or API restore completed work after a restart. A remembered store item is reused on future menus; otherwise the general availability and store-brand ranking chooses the initial candidate.
 
 ## Cart
 

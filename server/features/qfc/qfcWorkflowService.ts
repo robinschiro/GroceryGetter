@@ -9,6 +9,7 @@ type CompletePreviewJob = QfcSubmitJob & {
   kind: "preview";
   status: "complete";
   result: NonNullable<QfcSubmitJob["result"]>;
+  reviewRevision: number;
 };
 
 export type QfcPlannerReader = {
@@ -38,14 +39,34 @@ export function createQfcWorkflowService({
 }) {
   function requirePreviewJob(jobId: string, dataScope: DataScope) {
     jobStore.prune();
-    const job = jobStore.getScoped(jobId, dataScope);
+    const job = jobStore.getScoped(jobId, dataScope)
+      ?? qfcRepository.getReviewByJobId(jobId, dataScope);
     if (!job || job.kind !== "preview" || job.status !== "complete" || !job.result) {
       throw new QfcWorkflowError(
         409,
         "The store item review is unavailable or incomplete. Preview the store items again."
       );
     }
+    const activeReview = qfcRepository.getReviewByMenuId(Number(job.menuId), dataScope);
+    if (
+      activeReview?.id !== job.id
+      || activeReview.reviewRevision !== job.reviewRevision
+    ) {
+      throw new QfcWorkflowError(
+        409,
+        "This store item review was replaced or invalidated. Preview the store items again."
+      );
+    }
     return job as CompletePreviewJob;
+  }
+
+  function persistActiveReview(job: CompletePreviewJob) {
+    if (!qfcRepository.saveReview(job)) {
+      throw new QfcWorkflowError(
+        409,
+        "This store item review was replaced or invalidated. Preview the store items again."
+      );
+    }
   }
 
   function startPreview(menuId: number, dataScope: DataScope) {
@@ -54,6 +75,7 @@ export function createQfcWorkflowService({
     }
     const rows = plannerRepository.getShoppingListItems(menuId, dataScope)
       .filter((item) => Boolean(item.approved));
+    const reviewRevision = qfcRepository.beginReview(menuId, dataScope);
 
     jobStore.prune();
     const job: QfcSubmitJob = {
@@ -68,7 +90,8 @@ export function createQfcWorkflowService({
         totalItems: rows.length,
         message: "Starting store item matching..."
       },
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      reviewRevision
     };
     jobStore.set(job);
 
@@ -84,6 +107,9 @@ export function createQfcWorkflowService({
           totalItems: rows.length,
           message: result.message
         };
+        if (!qfcRepository.saveReview(job as CompletePreviewJob)) {
+          throw new Error("The shopping list changed while store items were being matched. Preview them again.");
+        }
       })
       .catch((error: unknown) => {
         job.status = "failed";
@@ -130,6 +156,7 @@ export function createQfcWorkflowService({
           storeItem
         )
       : null;
+    persistActiveReview(previewJob);
     return { match, preference };
   }
 
@@ -148,6 +175,7 @@ export function createQfcWorkflowService({
       throw new QfcWorkflowError(400, "Cart quantity must be a positive whole number.");
     }
     match.cartQuantity = cartQuantity;
+    persistActiveReview(previewJob);
     return { match };
   }
 
@@ -214,6 +242,8 @@ export function createQfcWorkflowService({
       previewJob.result.skipped = [...skipped, skip].sort((left, right) => left.item.id - right.item.id);
     }
 
+    persistActiveReview(previewJob);
+
     return {
       match: match ?? null,
       items: previewJob.result.items,
@@ -238,6 +268,7 @@ export function createQfcWorkflowService({
       .filter((match) => match.item.id !== shoppingItemId);
     previewJob.result.skipped = (previewJob.result.skipped ?? [])
       .filter((skip) => skip.item.id !== shoppingItemId);
+    persistActiveReview(previewJob);
     return {
       removedItem: reviewItem,
       items: previewJob.result.items,
@@ -308,15 +339,36 @@ export function createQfcWorkflowService({
 
   function getJob(jobId: string, dataScope: DataScope) {
     jobStore.prune();
-    const job = jobStore.getScoped(jobId, dataScope);
+    const job = jobStore.getScoped(jobId, dataScope)
+      ?? qfcRepository.getReviewByJobId(jobId, dataScope);
     if (!job) {
       throw new QfcWorkflowError(404, "QFC submission job was not found.");
+    }
+    if (job.kind === "preview" && job.status === "complete") {
+      const activeReview = qfcRepository.getReviewByMenuId(Number(job.menuId), dataScope);
+      if (
+        activeReview?.id !== job.id
+        || activeReview.reviewRevision !== job.reviewRevision
+      ) {
+        throw new QfcWorkflowError(
+          409,
+          "This store item review was replaced or invalidated. Preview the store items again."
+        );
+      }
     }
     return job;
   }
 
+  function getMenuReview(menuId: number, dataScope: DataScope) {
+    if (!plannerRepository.getMenu(menuId, dataScope)) {
+      throw new QfcWorkflowError(404, "Menu not found.");
+    }
+    return qfcRepository.getReviewByMenuId(menuId, dataScope);
+  }
+
   return {
     getJob,
+    getMenuReview,
     removeReviewItem,
     searchReviewItems,
     selectStoreItem,

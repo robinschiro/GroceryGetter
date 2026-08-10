@@ -209,7 +209,6 @@ export function usePlanner({
 
     if (activeMenu.id !== null) {
       await updateMenuShoppingLists(api, activeMenu.id, nextIds);
-      await clearShoppingList(api, activeMenu.id);
     }
   }
 
@@ -222,7 +221,6 @@ export function usePlanner({
     if (activeMenu.id !== null) {
       const updated = await updateMenuOurGroceriesList(api, activeMenu.id, list?.id ?? null);
       setActiveMenu(updated);
-      await clearShoppingList(api, activeMenu.id);
     }
   }
 
