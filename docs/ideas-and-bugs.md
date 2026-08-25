@@ -6,6 +6,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ## Feature ideas
 
+### Allow setting pantry status during store-item review
+
+- Status: `Idea`
+- Reported: 2026-08-25
+- Area: Planner store-item review
+- Description: Allow the user to set an item's pantry status while reviewing its store-item match in the planner.
+- Expected: The user can mark or unmark the item as a pantry item directly from the store-item review section without leaving the planner workflow.
+
 ### Add column headers to recipe ingredient fields
 
 - Status: `Idea`
@@ -51,6 +59,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 - Notes: Candidate labels now show regular or promotional pricing and a normalized availability label. Missing price or availability data is stated explicitly, and out-of-stock products remain selectable.
 
 ## Bugs
+
+### Show ingredient save errors beside the affected ingredient
+
+- Status: `Open`
+- Reported: 2026-08-25
+- Area: Planner ingredient review
+- Expected: If a change to an ingredient cannot be saved, the error is displayed immediately below that ingredient.
+- Actual: The save error is displayed at the bottom of the ingredient review section, away from the ingredient that caused it.
 
 ### Ingredient aggregation does not combine some matching ingredients
 
