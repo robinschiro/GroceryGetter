@@ -6,6 +6,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ## Feature ideas
 
+### Organize store-item review by aisle
+
+- Status: `Idea`
+- Reported: 2026-09-03
+- Area: QFC store-item review
+- Description: Organize the items in Store Item Review according to the aisle where each selected store item is located.
+- Expected: Review items are grouped and ordered by aisle so the user can review the list in store-shopping order. Items without aisle information are grouped separately rather than mixed into known aisles.
+
 ### Allow setting pantry status during store-item review
 
 - Status: `Idea`
