@@ -156,6 +156,70 @@ export function createShoppingListWorkflowService(
       return { id: itemId, approved: approved ? 1 : 0 };
     },
 
+    updatePantryStatus(
+      menuId: number,
+      itemId: number,
+      isPantry: unknown,
+      dataScope: DataScope
+    ) {
+      if (!Number.isInteger(menuId) || !Number.isInteger(itemId)) {
+        throw new PlannerError(
+          "Valid menu and shopping-list item ids are required.",
+          400
+        );
+      }
+      requireMenu(menuId, dataScope);
+      if (typeof isPantry !== "boolean") {
+        throw new PlannerError("Pantry status must be true or false.", 400);
+      }
+      const item = plannerRepository.getShoppingListItems(menuId, dataScope)
+        .find((candidate) => candidate.id === itemId);
+      if (!item) {
+        throw new PlannerError("Shopping-list item not found for this menu.", 404);
+      }
+      const ingredientName = item.item.trim() || item.text.trim();
+      const ingredientKey = normalizeAggregateItem(ingredientName);
+      if (!ingredientKey) {
+        throw new PlannerError(
+          "The ingredient needs a name before its pantry status can be changed.",
+          400
+        );
+      }
+
+      ingredientRepository.setPantry(dataScope, ingredientKey, ingredientName, isPantry);
+      const hasActiveOurGroceriesItem = item.sourceTargets.some(
+        (source) => source.type === "ourGroceries"
+      );
+      const automaticallyExclude = isPantry
+        && !hasActiveOurGroceriesItem
+        && Boolean(item.approved);
+      const restoreAutomaticExclusion = !isPantry
+        && item.automaticExclusionReason === "pantry";
+      repository.setPantryOutcome(
+        menuId,
+        itemId,
+        automaticallyExclude
+          ? false
+          : restoreAutomaticExclusion
+            ? true
+            : Boolean(item.approved),
+        hasActiveOurGroceriesItem
+          ? null
+          : automaticallyExclude
+            ? "pantry"
+            : isPantry
+              ? item.automaticExclusionReason
+              : null
+      );
+
+      return {
+        item: plannerRepository.getShoppingListItems(menuId, dataScope)
+          .find((candidate) => candidate.id === itemId)!,
+        ingredientKey,
+        ingredientName
+      };
+    },
+
     saveToSource(
       menuId: number,
       itemId: number,

@@ -113,6 +113,7 @@ export type ShoppingListItem = {
   item: string;
   sourceNames: string;
   approved: number;
+  isPantry: boolean;
   automaticExclusionReason: "pantry" | null;
   sourceOccurrenceCount: number;
   canPersistToSource: number;

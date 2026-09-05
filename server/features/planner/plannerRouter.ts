@@ -173,6 +173,19 @@ export function createPlannerRouter(
     }
   });
 
+  router.patch("/menus/:id/shopping-list/items/:itemId/pantry", (req, res) => {
+    try {
+      res.json(shoppingLists.updatePantryStatus(
+        Number(req.params.id),
+        Number(req.params.itemId),
+        req.body.isPantry,
+        requestScope(res)
+      ));
+    } catch (error) {
+      handlePlannerError(error, res);
+    }
+  });
+
   router.patch("/menus/:id/shopping-list/items/:itemId/source", (req, res) => {
     try {
       res.json(shoppingLists.saveToSource(

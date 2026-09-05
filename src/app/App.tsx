@@ -108,6 +108,7 @@ export function App() {
     saveMenu,
     saveShoppingItemApproval,
     saveShoppingItemToSource,
+    savingPantryItemIds,
     savingSourceItemIds,
     setMealCount,
     setMessage,
@@ -116,6 +117,7 @@ export function App() {
     sourceMetadataDirtyItemIds,
     updateCustomShoppingListSelection,
     updateOurGroceriesListSelection,
+    updateShoppingItemPantryStatus,
     updateMenuItem
   } = usePlanner({
     api,
@@ -433,9 +435,11 @@ export function App() {
                 navigate(source.type === "recipe" ? recipeEditRoute(source.id) : shoppingListEditRoute(source.id));
               },
               savingApprovalItemIds,
+              savingPantryItemIds,
               searchingStoreItemIds,
               savingSourceItemIds,
               updateApproval: updateShoppingItemApproval,
+              updatePantry: updateShoppingItemPantryStatus,
               saveToSource: saveShoppingItemToSource,
               clearItems: clearAggregatedIngredients,
               previewStoreItems,

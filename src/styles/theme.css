@@ -59,11 +59,17 @@
   color: inherit;
 }
 
-:root[data-theme="dark"] .shopping-source-links a {
+:root[data-theme="dark"] .shopping-source-links a,
+:root[data-theme="dark"] .shopping-source a,
+:root[data-theme="dark"] button.shopping-source-multiple-button {
+  background: transparent;
   color: #8ed1aa;
 }
 
-:root[data-theme="dark"] .shopping-source-links a:hover {
+:root[data-theme="dark"] .shopping-source-links a:hover,
+:root[data-theme="dark"] .shopping-source a:hover,
+:root[data-theme="dark"] button.shopping-source-multiple-button:hover {
+  background: transparent;
   color: #b8e5c9;
 }
 

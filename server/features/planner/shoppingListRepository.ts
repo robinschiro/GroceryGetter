@@ -213,6 +213,29 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
       database.save();
     },
 
+    setPantryOutcome(
+      menuId: number,
+      itemId: number,
+      approved: boolean,
+      automaticExclusionReason: "pantry" | null
+    ) {
+      database.transaction(() => {
+        const previous = database.queryOne<{ approved: number }>(
+          "SELECT approved FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",
+          [itemId, menuId]
+        );
+        database.run(
+          `UPDATE menu_shopping_list_items
+          SET approved = ?, automatic_exclusion_reason = ?
+          WHERE id = ? AND menu_id = ?`,
+          [approved ? 1 : 0, automaticExclusionReason, itemId, menuId]
+        );
+        if (previous && Boolean(previous.approved) !== approved) {
+          invalidateStoreItemReview(menuId);
+        }
+      });
+    },
+
     getSourceContext(menuId: number, itemId: number, dataScope: string) {
       const shoppingItem = database.queryOne<{ id: number; quantity: string; unit: string }>(
         "SELECT id, quantity, unit FROM menu_shopping_list_items WHERE id = ? AND menu_id = ?",

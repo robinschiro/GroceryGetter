@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Check, ChevronRight, LoaderCircle, Pencil, Send, Trash2, X } from "lucide-react";
 import type {
   QfcSubmitProgress,
@@ -12,9 +12,11 @@ export function ShoppingListReview({
   items,
   openSource,
   savingApprovalItemIds,
+  savingPantryItemIds,
   searchingStoreItemIds,
   savingSourceItemIds,
   updateApproval,
+  updatePantry,
   saveToSource,
   clearItems,
   previewStoreItems,
@@ -24,9 +26,11 @@ export function ShoppingListReview({
   items: ShoppingListItem[];
   openSource: (source: ShoppingListSourceTarget) => void;
   savingApprovalItemIds: Set<number>;
+  savingPantryItemIds: Set<number>;
   searchingStoreItemIds: Set<number>;
   savingSourceItemIds: Set<number>;
   updateApproval: (id: number, approved: boolean) => Promise<void>;
+  updatePantry: (id: number, isPantry: boolean) => Promise<ShoppingListItem | null>;
   saveToSource: (item: ShoppingListItem) => Promise<boolean>;
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
@@ -34,6 +38,8 @@ export function ShoppingListReview({
   message: string;
 }) {
   const [showUncheckedItems, setShowUncheckedItems] = useState(false);
+  const [pantryDrafts, setPantryDrafts] = useState<Record<number, boolean>>({});
+  const [expandedSourceItemIds, setExpandedSourceItemIds] = useState<Set<number>>(() => new Set());
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [editingItemName, setEditingItemName] = useState("");
   const approvedItems = items.filter((item) => Boolean(item.approved));
@@ -47,6 +53,91 @@ export function ShoppingListReview({
   function cancelEditingItem() {
     setEditingItemId(null);
     setEditingItemName("");
+  }
+
+  function sourceLink(source: ShoppingListSourceTarget) {
+    return (
+      <a
+        href={source.type === "ourGroceries"
+          ? source.webUrl
+          : source.type === "recipe"
+            ? recipeEditRoute(source.id).path
+            : shoppingListEditRoute(source.id).path}
+        target={source.type === "ourGroceries" ? "_blank" : undefined}
+        rel={source.type === "ourGroceries" ? "noopener noreferrer" : undefined}
+        aria-label={source.type === "ourGroceries" ? `Open ${source.name} in OurGroceries` : undefined}
+        onClick={(event) => {
+          if (
+            source.type !== "ourGroceries"
+            && event.button === 0
+            && !event.altKey
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.shiftKey
+          ) {
+            event.preventDefault();
+            openSource(source);
+          }
+        }}
+      >
+        {source.name}
+      </a>
+    );
+  }
+
+  function renderSources(item: ShoppingListItem) {
+    const sources = item.sourceTargets;
+    if (!sources.length) {
+      return (
+        <div className="shopping-source">
+          <span className="shopping-source-summary">
+            <span className="shopping-source-label">For</span>
+            <span>{item.sourceNames}</span>
+          </span>
+        </div>
+      );
+    }
+    if (sources.length === 1) {
+      return (
+        <div className="shopping-source">
+          <span className="shopping-source-summary">
+            <span className="shopping-source-label">For</span>
+            {sourceLink(sources[0])}
+          </span>
+        </div>
+      );
+    }
+
+    const expanded = expandedSourceItemIds.has(item.id);
+    const detailsId = `shopping-item-sources-${item.id}`;
+    return (
+      <div className="shopping-source">
+        <span className="shopping-source-summary">
+          <span className="shopping-source-label">For</span>
+          <button
+            className="shopping-source-multiple-button"
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpandedSourceItemIds((current) => {
+              const next = new Set(current);
+              if (expanded) next.delete(item.id);
+              else next.add(item.id);
+              return next;
+            })}
+          >
+            multiple
+          </button>
+        </span>
+        {expanded ? (
+          <ul className="shopping-source-list" id={detailsId}>
+            {sources.map((source) => (
+              <li key={`${source.type}-${source.id}`}>{sourceLink(source)}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
   }
 
   async function saveEditedItemName(item: ShoppingListItem) {
@@ -65,25 +156,42 @@ export function ShoppingListReview({
     const isApproved = Boolean(item.approved);
     const isSavingApproval = savingApprovalItemIds.has(item.id);
     const isSearchingStoreItems = searchingStoreItemIds.has(item.id);
+    const isSavingPantry = savingPantryItemIds.has(item.id);
+    const isSaving = isSavingApproval || isSavingPantry;
+    const isPantry = pantryDrafts[item.id] ?? item.isPantry;
     const isEditing = editingItemId === item.id;
 
     function toggleApproval() {
-      if (!isSavingApproval) {
+      if (!isSaving) {
         void updateApproval(item.id, !isApproved);
+      }
+    }
+
+    async function togglePantry(nextIsPantry: boolean) {
+      setPantryDrafts((current) => ({ ...current, [item.id]: nextIsPantry }));
+      if (nextIsPantry) setShowUncheckedItems(true);
+      try {
+        await updatePantry(item.id, nextIsPantry);
+      } finally {
+        setPantryDrafts((current) => {
+          const next = { ...current };
+          delete next[item.id];
+          return next;
+        });
       }
     }
 
     return (
       <div
-        aria-disabled={isSavingApproval}
+        aria-disabled={isSaving}
         aria-label={`${isApproved ? "Cross off" : "Restore"} ${item.item}`}
         aria-pressed={!isApproved}
         className={`shopping-row ${isApproved ? "" : "shopping-row-crossed-off"}`}
         key={item.id}
         role="button"
-        tabIndex={isSavingApproval ? -1 : 0}
+        tabIndex={isSaving ? -1 : 0}
         onClick={(event) => {
-          if ((event.target as HTMLElement).closest("a, button, input, textarea, select")) return;
+          if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label")) return;
           if (isEditing && (event.target as HTMLElement).closest(".shopping-item-editor")) return;
           toggleApproval();
         }}
@@ -162,47 +270,18 @@ export function ShoppingListReview({
           ) : (
             <strong className="shopping-item-name">{item.item}</strong>
           )}
+          <label className="shopping-pantry-toggle">
+            <input
+              type="checkbox"
+              aria-label={`Pantry status for ${item.item}`}
+              checked={isPantry}
+              disabled={isSavingPantry}
+              onChange={(event) => void togglePantry(event.target.checked)}
+            />
+            <span>Pantry</span>
+          </label>
         </div>
-        <div className="shopping-source">
-          <span className="shopping-source-label">Used in</span>
-          {item.sourceTargets.length ? (
-            <span className="shopping-source-links">
-              {item.sourceTargets.map((source, index) => (
-                <React.Fragment key={`${source.type}-${source.id}`}>
-                  {index ? ", " : null}
-                  <a
-                    href={source.type === "ourGroceries"
-                      ? source.webUrl
-                      : source.type === "recipe"
-                        ? recipeEditRoute(source.id).path
-                        : shoppingListEditRoute(source.id).path}
-                    target={source.type === "ourGroceries" ? "_blank" : undefined}
-                    rel={source.type === "ourGroceries" ? "noopener noreferrer" : undefined}
-                    aria-label={source.type === "ourGroceries" ? `Open ${source.name} in OurGroceries` : undefined}
-                    onClick={(event) => {
-                      if (
-                        source.type !== "ourGroceries"
-                        &&
-                        event.button === 0
-                        && !event.altKey
-                        && !event.ctrlKey
-                        && !event.metaKey
-                        && !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        openSource(source);
-                      }
-                    }}
-                  >
-                    {source.name}
-                  </a>
-                </React.Fragment>
-              ))}
-            </span>
-          ) : (
-            <span>{item.sourceNames}</span>
-          )}
-        </div>
+        {renderSources(item)}
         {item.automaticExclusionReason === "pantry" ? (
           <span className="automatic-exclusion-reason">
             Automatically unchecked — pantry ingredient

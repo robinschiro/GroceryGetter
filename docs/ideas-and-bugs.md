@@ -6,6 +6,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ## Feature ideas
 
+### Show ingredient-review updates in a temporary toast
+
+- Status: `Idea`
+- Reported: 2026-09-04
+- Area: Planner ingredient review
+- Description: Make status updates visible when actions occur outside the user's current viewport, such as when a pantry ingredient remains included because it is active in the selected OurGroceries list.
+- Expected: Keep the existing status message at the bottom of the ingredient review for context, and also show new updates in a prominent temporary toast that disappears after a short time and can be dismissed manually.
+
 ### Organize store-item review by aisle
 
 - Status: `Idea`
@@ -14,13 +22,14 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 - Description: Organize the items in Store Item Review according to the aisle where each selected store item is located.
 - Expected: Review items are grouped and ordered by aisle so the user can review the list in store-shopping order. Items without aisle information are grouped separately rather than mixed into known aisles.
 
-### Allow setting pantry status during store-item review
+### Allow setting pantry status during ingredient review
 
-- Status: `Idea`
+- Status: `Done`
 - Reported: 2026-08-25
-- Area: Planner store-item review
-- Description: Allow the user to set an item's pantry status while reviewing its store-item match in the planner.
-- Expected: The user can mark or unmark the item as a pantry item directly from the store-item review section without leaving the planner workflow.
+- Area: Planner ingredient review
+- Description: Allow the user to set an aggregated ingredient's pantry status before matching it to a store item.
+- Expected: The user can mark or unmark an item as a pantry ingredient directly from the aggregated ingredient review.
+- Notes: Pantry ingredients are automatically unchecked for the current menu and future aggregation. Unmarking restores items excluded automatically, while preserving manual cross-offs. Active OurGroceries items remain included.
 
 ### Add column headers to recipe ingredient fields
 

@@ -120,11 +120,10 @@
   }
 
   .shopping-source-label {
-    display: block;
-    font-size: 0.7rem !important;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: inherit !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   .shopping-source-links {

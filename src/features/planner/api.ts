@@ -129,6 +129,21 @@ export function updateShoppingListApproval(
   );
 }
 
+export function updateShoppingListPantryStatus(
+  api: ApiRequest,
+  menuId: number,
+  itemId: number,
+  isPantry: boolean
+) {
+  return api<{ item: ShoppingListItem; ingredientKey: string; ingredientName: string }>(
+    `/api/menus/${menuId}/shopping-list/items/${itemId}/pantry`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ isPantry })
+    }
+  );
+}
+
 export function saveShoppingListItemToSource(
   api: ApiRequest,
   menuId: number,

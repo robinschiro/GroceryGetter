@@ -220,6 +220,83 @@ test("pantry preferences are scoped and only auto-uncheck after a successful Our
     automaticExclusionReason: null
   });
 
+  let pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: false } }
+  );
+  expect(pantryUpdate.status()).toBe(200);
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    id: milk.id,
+    isPantry: false,
+    approved: 1,
+    automaticExclusionReason: null
+  });
+  expect((await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: "yes" } }
+  )).status()).toBe(400);
+  expect((await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: sandboxHeaders, data: { isPantry: true } }
+  )).status()).toBe(404);
+
+  expect((await request.patch(`/api/menus/${id}/shopping-list/items/${milk.id}/approval`, {
+    headers: productionHeaders,
+    data: { approved: false }
+  })).status()).toBe(200);
+  pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: true } }
+  );
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    isPantry: true,
+    approved: 0,
+    automaticExclusionReason: null
+  });
+  pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: false } }
+  );
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    isPantry: false,
+    approved: 0,
+    automaticExclusionReason: null
+  });
+
+  expect((await request.patch(`/api/menus/${id}/shopping-list/items/${milk.id}/approval`, {
+    headers: productionHeaders,
+    data: { approved: true }
+  })).status()).toBe(200);
+  pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: true } }
+  );
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    isPantry: true,
+    approved: 0,
+    automaticExclusionReason: "pantry"
+  });
+  pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${milk.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: false } }
+  );
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    isPantry: false,
+    approved: 1,
+    automaticExclusionReason: null
+  });
+
+  const tomato = items.find((item: { item: string }) => item.item === "tomato");
+  pantryUpdate = await request.patch(
+    `/api/menus/${id}/shopping-list/items/${tomato.id}/pantry`,
+    { headers: productionHeaders, data: { isPantry: true } }
+  );
+  expect((await pantryUpdate.json()).item).toMatchObject({
+    isPantry: true,
+    approved: 1,
+    automaticExclusionReason: null
+  });
+
   expect((await request.put(`/api/menus/${id}/ourgroceries-list`, {
     headers: productionHeaders,
     data: { listId: null }

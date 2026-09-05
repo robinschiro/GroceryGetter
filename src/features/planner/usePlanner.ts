@@ -23,6 +23,7 @@ import {
   updateMenuOurGroceriesList,
   updateMenuShoppingLists,
   updateShoppingListApproval,
+  updateShoppingListPantryStatus,
   updateShoppingListItems
 } from "./api.js";
 
@@ -42,6 +43,7 @@ export function usePlanner({
   const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
   const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
   const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
+  const [savingPantryItemIds, setSavingPantryItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState<number | "">(2);
   const [message, setMessage] = useState("");
 
@@ -267,6 +269,52 @@ export function usePlanner({
     await updateShoppingListApproval(api, activeMenu.id, itemId, approved);
   }
 
+  async function updateShoppingItemPantryStatus(itemId: number, isPantry: boolean) {
+    if (!activeMenu?.id || savingPantryItemIds.has(itemId)) return null;
+    const previousItem = shoppingList.find((item) => item.id === itemId);
+    if (!previousItem) return null;
+
+    setMessage("");
+    setSavingPantryItemIds((current) => new Set(current).add(itemId));
+    try {
+      const result = await updateShoppingListPantryStatus(
+        api,
+        activeMenu.id,
+        itemId,
+        isPantry
+      );
+      setShoppingList((current) => current.map((item) =>
+        item.id === itemId ? result.item : item
+      ));
+      if (Boolean(result.item.approved) !== Boolean(previousItem.approved)) {
+        onStoreReviewInvalidated();
+      }
+
+      const hasActiveOurGroceriesItem = result.item.sourceTargets.some(
+        (source) => source.type === "ourGroceries"
+      ) && Boolean(result.item.approved);
+      setMessage(isPantry
+        ? hasActiveOurGroceriesItem
+          ? `${result.ingredientName} marked as pantry, but kept because it is active in OurGroceries.`
+          : result.item.automaticExclusionReason === "pantry"
+            ? `${result.ingredientName} marked as pantry and moved to unchecked ingredients.`
+            : `${result.ingredientName} marked as pantry; its manual cross-off was preserved.`
+        : result.item.approved && !previousItem.approved
+          ? `${result.ingredientName} removed from pantry and restored to this menu.`
+          : `${result.ingredientName} removed from pantry.`);
+      return result.item;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to update pantry status.");
+      return null;
+    } finally {
+      setSavingPantryItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  }
+
   async function saveShoppingItemToSource(item: ShoppingListItem) {
     if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return false;
 
@@ -320,6 +368,7 @@ export function usePlanner({
     saveMenu,
     saveShoppingItemApproval,
     saveShoppingItemToSource,
+    savingPantryItemIds,
     savingSourceItemIds,
     setMealCount,
     setMessage,
@@ -328,6 +377,7 @@ export function usePlanner({
     sourceMetadataDirtyItemIds,
     updateCustomShoppingListSelection,
     updateOurGroceriesListSelection,
+    updateShoppingItemPantryStatus,
     updateMenuItem
   };
 }

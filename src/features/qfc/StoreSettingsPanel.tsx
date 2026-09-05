@@ -303,7 +303,7 @@ export function StoreSettingsPanel({
           <div className="store-item-preference-section">
             <div>
               <h4>Ingredient preferences</h4>
-              <p>Pantry status and remembered store-item matches are managed on the Ingredients page.</p>
+              <p>Manage pantry status during ingredient review or on the Ingredients page. Remembered store-item matches are managed on the Ingredients page.</p>
             </div>
             <a href="/ingredients">Manage ingredients</a>
           </div>

@@ -6,6 +6,7 @@ import type {
   RecipeCategory,
   ShoppingListItem
 } from "../../../shared/contracts/index.js";
+import { normalizeAggregateItem } from "./shoppingListDomain.js";
 
 export type PlannerRecipe = {
   id: number;
@@ -289,7 +290,10 @@ export function createPlannerRepository(database: GroceryDatabase) {
     },
 
     getShoppingListItems(menuId: number, dataScope: DataScope): ShoppingListItem[] {
-      const items = database.queryAll<Omit<ShoppingListItem, "sourceTargets" | "sourceDetails">>(
+      const items = database.queryAll<Omit<
+        ShoppingListItem,
+        "isPantry" | "sourceTargets" | "sourceDetails"
+      >>(
         `SELECT
           menu_shopping_list_items.id,
           menu_shopping_list_items.text,
@@ -441,6 +445,12 @@ export function createPlannerRepository(database: GroceryDatabase) {
           menu_ourgroceries_items.sort_order`,
         [menuId]
       );
+      const pantryKeys = new Set(database.queryAll<{ ingredientKey: string }>(
+        `SELECT ingredient_key AS ingredientKey
+        FROM ingredient_preferences
+        WHERE data_scope = ? AND is_pantry = 1`,
+        [dataScope]
+      ).map(({ ingredientKey }) => ingredientKey));
 
       return items.map((item) => {
         const sourceDetails = [
@@ -489,7 +499,13 @@ export function createPlannerRepository(database: GroceryDatabase) {
             }
           : { type: source.type, id: source.id, name: source.name });
 
-        return { ...item, sourceTargets, sourceDetails };
+        const ingredientName = item.item.trim() || item.text.trim();
+        return {
+          ...item,
+          isPantry: pantryKeys.has(normalizeAggregateItem(ingredientName)),
+          sourceTargets,
+          sourceDetails
+        };
       });
     }
   };

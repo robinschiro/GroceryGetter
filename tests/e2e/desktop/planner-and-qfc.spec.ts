@@ -49,10 +49,22 @@ test("planner and aggregated-list journeys preserve menu editing, persistence, p
     await entree.selectOption({ index: 1 });
   }
   await page.getByRole("button", { name: "Aggregate ingredients" }).click();
-  await expect(page.getByRole("button", { name: "Cross off tomato" })).toBeVisible();
-  await expect(page.getByText("Weekly Staples", { exact: true }).first()).toBeVisible();
+  const broccoliRow = page.getByRole("button", { name: "Cross off broccoli" });
+  const broccoliSources = broccoliRow.locator(".shopping-source-summary");
+  await expect(broccoliSources).toContainText("For");
+  await expect(broccoliSources.getByRole("link", { name: "Roasted Broccoli" })).toBeVisible();
+  await expect(broccoliSources.getByRole("button", { name: "multiple", exact: true })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Cross off tomato" }).click();
+  const tomatoRow = page.getByRole("button", { name: "Cross off tomato" });
+  const multipleSources = tomatoRow.getByRole("button", { name: "multiple", exact: true });
+  await expect(multipleSources).toBeVisible();
+  await expect(tomatoRow.getByRole("link", { name: "Weekly Staples", exact: true })).toHaveCount(0);
+  await multipleSources.click();
+  await expect(tomatoRow.locator(".shopping-source-list li")).toHaveCount(2);
+  await expect(tomatoRow.getByRole("link", { name: "Roasted Broccoli", exact: true })).toBeVisible();
+  await expect(tomatoRow.getByRole("link", { name: "Weekly Staples", exact: true })).toBeVisible();
+
+  await tomatoRow.click();
   await expect(page.getByRole("button", { name: /unchecked ingredient/ })).toBeVisible();
   await page.getByRole("button", { name: /unchecked ingredient/ }).click();
   await page.getByRole("button", { name: "Restore tomato" }).click();
@@ -297,29 +309,39 @@ test("Ingredients manages pantry status with search, filters, persistence, and s
   await expect(page.getByText("No ingredients match these filters.")).toBeVisible();
 });
 
-test("pantry ingredients explain automatic exclusion and can be restored for the current menu", async ({
-  page,
-  request
-}) => {
-  expect((await request.put("/api/ingredients/milk/pantry", {
-    data: { ingredientName: "milk", isPantry: true }
-  })).status()).toBe(200);
-  const lists = await (await request.get("/api/ourgroceries/lists")).json() as Array<{ id: string }>;
-  expect((await request.put("/api/ourgroceries/default-list", {
-    data: { listId: lists[0].id }
-  })).status()).toBe(200);
-
+test("aggregated ingredients manage pantry status and automatic exclusion", async ({ page }) => {
   await page.goto("/planner");
   await page.getByLabel("Meals").fill("1");
   await page.getByRole("button", { name: "Generate" }).click();
   await page.getByRole("button", { name: "Save menu" }).click();
   await page.getByRole("button", { name: "Aggregate ingredients" }).click();
-  await page.getByRole("button", { name: /unchecked ingredient/ }).click();
-  const milk = page.getByRole("button", { name: "Restore milk" });
+  const milk = page.locator(".shopping-row").filter({
+    has: page.getByText("milk", { exact: true })
+  });
+  const pantry = milk.getByRole("checkbox", { name: "Pantry status for milk" });
+  await expect(milk.locator(".shopping-item-editor .shopping-pantry-toggle")).toContainText("Pantry");
+  await pantry.check();
+  await expect(pantry).toBeChecked();
+  await expect(milk.getByText("Assumed on hand; unchecked for this menu.", { exact: true })).toHaveCount(0);
   await expect(milk).toContainText("Automatically unchecked — pantry ingredient");
-  await milk.click();
+  await expect(page.getByText(
+    "milk marked as pantry and moved to unchecked ingredients.",
+    { exact: true }
+  )).toBeVisible();
+
+  await pantry.uncheck();
+  await expect(pantry).not.toBeChecked();
   await expect(page.getByText("Automatically unchecked — pantry ingredient")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cross off milk" })).toBeVisible();
+  await expect(page.getByText(
+    "milk removed from pantry and restored to this menu.",
+    { exact: true }
+  )).toBeVisible();
+
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  const multipleSources = page.getByRole("button", { name: "multiple", exact: true }).first();
+  await expect(multipleSources).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(multipleSources).toHaveCSS("color", "rgb(142, 209, 170)");
 });
 
 test("QFC settings preserve scoped preferences, production-only credentials, fake searches, and sandbox cart safeguards", async ({
