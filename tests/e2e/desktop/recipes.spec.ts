@@ -9,10 +9,19 @@ test("recipe creation, validation, edit, delete confirmation, search, filters, p
   page
 }) => {
   await page.goto("/recipes/create");
+  const ingredientEditor = page.locator(".ingredient-editor");
+  await expect(ingredientEditor.locator(".ingredient-column-headers").first()).toHaveText(/QuantityUnitName/);
+  await expect(ingredientEditor.getByLabel("Quantity for ingredient 1")).toBeVisible();
+  await expect(ingredientEditor.getByLabel("Unit for ingredient 1")).toBeVisible();
+  await expect(ingredientEditor.getByLabel("Name for ingredient 1")).toBeVisible();
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(ingredientEditor.locator(".ingredient-column-headers").first()).toBeVisible();
+  await expect(ingredientEditor.locator(".ingredient-mobile-label").first()).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page.getByText("Recipe name is required.")).toBeVisible();
 
-  await page.getByLabel("Name").fill("Browser Soup");
+  await page.getByLabel("Name", { exact: true }).fill("Browser Soup");
   await page.getByLabel("Category").selectOption("entree");
   await page.getByLabel("Servings").fill("6");
   await page.getByLabel("Notes").fill("Desktop characterization");
@@ -20,6 +29,9 @@ test("recipe creation, validation, edit, delete confirmation, search, filters, p
   await page.getByPlaceholder("cups").fill("cups");
   await page.getByPlaceholder("rice").fill("broth");
   await page.getByRole("button", { name: "Add ingredient" }).click();
+  await expect(ingredientEditor.locator(".ingredient-card")).toHaveCount(2);
+  await expect(ingredientEditor.locator(".ingredient-column-headers")).toHaveCount(1);
+  await expect(ingredientEditor.getByRole("button", { name: "Remove ingredient 2" })).toBeVisible();
   await page.getByPlaceholder("2").nth(1).fill("1");
   await page.getByPlaceholder("cups").nth(1).fill("bunch");
   await page.getByPlaceholder("rice").nth(1).fill("kale");
@@ -28,6 +40,8 @@ test("recipe creation, validation, edit, delete confirmation, search, filters, p
   await page.getByRole("link", { name: "View recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/manage\/\d+$/);
   await expect(page.getByText("Editing recipe")).toBeVisible();
+  await expect(ingredientEditor.locator(".ingredient-column-headers").first()).toHaveText(/QuantityUnitNameNotes/);
+  await expect(ingredientEditor.getByLabel("Notes for ingredient 1")).toBeVisible();
   expect(await page.getByPlaceholder("2 cups rice").evaluateAll((inputs) =>
     inputs.map((input) => (input as HTMLInputElement).value)
   )).toEqual([
@@ -35,7 +49,7 @@ test("recipe creation, validation, edit, delete confirmation, search, filters, p
     "1 bunch kale"
   ]);
 
-  await page.getByLabel("Name").fill("Browser Stew");
+  await page.getByLabel("Name", { exact: true }).fill("Browser Stew");
   await page.getByRole("button", { name: "Update recipe" }).click();
   await expect(page.getByRole("status")).toContainText("Browser Stew");
   await page.getByRole("button", { name: "Cancel" }).click();

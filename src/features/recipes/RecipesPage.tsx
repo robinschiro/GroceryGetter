@@ -327,51 +327,70 @@ function RecipeForm({
       </label>
       <div className="ingredient-editor" ref={ingredientEditorRef}>
         <div className="subhead">Ingredients</div>
+        <div
+          className={`ingredient-column-headers ${mode === "create" ? "ingredient-column-headers-create" : ""}`}
+          aria-hidden="true"
+        >
+          <span>Quantity</span>
+          <span>Unit</span>
+          <span>Name</span>
+          {mode === "edit" ? <span>Notes</span> : null}
+          <span />
+        </div>
         {form.ingredients.map((ingredient, index) => (
-          <div
-            className={`ingredient-row ${mode === "create" ? "ingredient-row-create" : ""}`}
-            key={`${ingredient.id ?? "new"}-${index}`}
-          >
-            <input
-              value={ingredient.quantity}
-              onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
-              placeholder="2"
-            />
-            <input
-              value={ingredient.unit}
-              onChange={(event) => updateIngredient(index, { unit: event.target.value })}
-              placeholder="cups"
-            />
-            <input
-              className="ingredient-item-input"
-              value={ingredient.item}
-              onChange={(event) => updateIngredient(index, { item: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  addIngredient();
-                }
-              }}
-              placeholder="rice"
-            />
-            {mode === "edit" ? (
+          <div className="ingredient-card" key={`${ingredient.id ?? "new"}-${index}`}>
+            <div className={`ingredient-row ${mode === "create" ? "ingredient-row-create" : ""}`}>
+              <span className="ingredient-mobile-label">Quantity</span>
               <input
-                value={ingredient.text}
-                onChange={(event) => updateIngredient(index, { text: event.target.value })}
-                placeholder="2 cups rice"
+                aria-label={`Quantity for ingredient ${index + 1}`}
+                value={ingredient.quantity}
+                onChange={(event) => updateIngredient(index, { quantity: event.target.value })}
+                placeholder="2"
               />
-            ) : null}
-            <button
-              className="icon-button danger"
-              onClick={() => setForm((current) => ({
-                ...current,
-                ingredients: current.ingredients.filter((_, itemIndex) => itemIndex !== index)
-              }))}
-              aria-label="Remove ingredient"
-              type="button"
-            >
-              <Trash2 size={16} />
-            </button>
+              <span className="ingredient-mobile-label">Unit</span>
+              <input
+                aria-label={`Unit for ingredient ${index + 1}`}
+                value={ingredient.unit}
+                onChange={(event) => updateIngredient(index, { unit: event.target.value })}
+                placeholder="cups"
+              />
+              <span className="ingredient-mobile-label">Name</span>
+              <input
+                aria-label={`Name for ingredient ${index + 1}`}
+                className="ingredient-item-input"
+                value={ingredient.item}
+                onChange={(event) => updateIngredient(index, { item: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    addIngredient();
+                  }
+                }}
+                placeholder="rice"
+              />
+              {mode === "edit" ? (
+                <>
+                  <span className="ingredient-mobile-label">Notes</span>
+                  <input
+                    aria-label={`Notes for ingredient ${index + 1}`}
+                    value={ingredient.text}
+                    onChange={(event) => updateIngredient(index, { text: event.target.value })}
+                    placeholder="2 cups rice"
+                  />
+                </>
+              ) : null}
+              <button
+                className="icon-button danger"
+                onClick={() => setForm((current) => ({
+                  ...current,
+                  ingredients: current.ingredients.filter((_, itemIndex) => itemIndex !== index)
+                }))}
+                aria-label={`Remove ingredient ${index + 1}`}
+                type="button"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
           </div>
         ))}
         <button className="secondary" onClick={addIngredient} type="button">

@@ -177,6 +177,7 @@
 
 :root[data-theme="dark"] .recipe-list,
 :root[data-theme="dark"] .meal-block,
+:root[data-theme="dark"] .ingredient-card,
 :root[data-theme="dark"] .custom-list-picker {
   border-top-color: #33443d;
 }

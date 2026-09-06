@@ -6,8 +6,7 @@
   .meal-block,
   .form-grid,
   .qfc-grid,
-  .qfc-tools,
-  .ingredient-row {
+  .qfc-tools {
     grid-template-columns: 1fr;
   }
 
@@ -50,6 +49,34 @@
 }
 
 @media (max-width: 720px) {
+  .ingredient-column-headers {
+    display: none;
+  }
+
+  .ingredient-row {
+    align-items: center;
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  }
+
+  .ingredient-card {
+    padding-top: 56px;
+    position: relative;
+  }
+
+  .ingredient-row > .icon-button {
+    position: absolute;
+    right: 0;
+    top: 12px;
+  }
+
+  .ingredient-mobile-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
   .workspace {
     padding: 16px;
   }

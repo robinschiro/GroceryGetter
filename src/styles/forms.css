@@ -17,12 +17,39 @@
 }
 
 .ingredient-row {
-  align-items: end;
+  align-items: start;
   display: grid;
   gap: 8px;
   grid-template-columns: 64px 88px 1fr 1.5fr 36px;
 }
 
+.ingredient-column-headers {
+  color: #52615c;
+  display: grid;
+  font-size: 0.75rem;
+  font-weight: 700;
+  gap: 8px;
+  grid-template-columns: 64px 88px 1fr 1.5fr 36px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .ingredient-row-create {
   grid-template-columns: 64px 88px 1fr 36px;
+}
+
+.ingredient-column-headers-create {
+  grid-template-columns: 64px 88px 1fr 36px;
+}
+
+.ingredient-card {
+  border-top: 1px solid #d8dfdb;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.ingredient-mobile-label {
+  color: #52615c;
+  display: none;
 }
