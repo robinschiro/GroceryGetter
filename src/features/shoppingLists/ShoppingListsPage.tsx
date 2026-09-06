@@ -350,7 +350,7 @@ function ShoppingListForm({
               <ChevronDown size={16} />
             </button>
             <button
-              className="icon-button"
+              className="icon-button danger"
               disabled={isSubmitting}
               onClick={() => void removeItem(index)}
               aria-label="Remove item"
