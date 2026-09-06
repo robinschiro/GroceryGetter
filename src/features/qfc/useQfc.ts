@@ -6,6 +6,7 @@ import type {
   StoreItemPreference
 } from "../../../shared/contracts/index.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
+import type { ToastVariant } from "../../shared/Toast.js";
 import {
   deleteStoreItemPreference as deleteStoreItemPreferenceRequest,
   getMenuStoreItemReview,
@@ -36,7 +37,7 @@ export function useQfc({
   saveDirtyShoppingItems,
   saveShoppingItemApproval,
   loadMenu,
-  setPlannerMessage
+  notifyPlanner
 }: {
   api: ApiRequest;
   menuId: number | null;
@@ -47,7 +48,7 @@ export function useQfc({
   saveDirtyShoppingItems: () => Promise<void>;
   saveShoppingItemApproval: (itemId: number, approved: boolean) => Promise<void>;
   loadMenu: (id: number) => Promise<void>;
-  setPlannerMessage: Dispatch<SetStateAction<string>>;
+  notifyPlanner: (message: string, variant?: ToastVariant) => void;
 }) {
   const [savingApprovalItemIds, setSavingApprovalItemIds] = useState<Set<number>>(() => new Set());
   const [searchingStoreItemIds, setSearchingStoreItemIds] = useState<Set<number>>(() => new Set());
@@ -102,7 +103,6 @@ export function useQfc({
     if (!previousItem) return;
     const currentReview = storeItemReview;
 
-    setPlannerMessage("");
     setStoreItemReviewMessage("");
     setShoppingList((current) => current.map((item) => (
       item.id === itemId
@@ -187,7 +187,7 @@ export function useQfc({
             }
           : item
       )));
-      setPlannerMessage(err instanceof Error ? err.message : "Unable to save ingredient approval.");
+      notifyPlanner(err instanceof Error ? err.message : "Unable to save ingredient approval.", "error");
     } finally {
       setSavingApprovalItemIds((current) => {
         const next = new Set(current);
@@ -204,30 +204,27 @@ export function useQfc({
 
   async function previewStoreItems() {
     if (!menuId) return;
-    setPlannerMessage("");
 
     if (sourceMetadataDirtyItemIds.size) {
-      setPlannerMessage("Save eligible source changes before matching store items.");
+      notifyPlanner("Save eligible source changes before matching store items.", "error");
       return;
     }
 
     if (dirtyShoppingItemIds.size) {
       const shouldSave = window.confirm("You have unsaved ingredient changes. Save them before matching store items?");
       if (!shouldSave) {
-        setPlannerMessage("Store item matching canceled. Save or discard ingredient changes first.");
+        notifyPlanner("Store item matching canceled. Save or discard ingredient changes first.", "info");
         return;
       }
 
       try {
-        setPlannerMessage("Saving ingredient changes...");
         await saveDirtyShoppingItems();
       } catch (err) {
-        setPlannerMessage(err instanceof Error ? err.message : "Unable to save ingredient changes.");
+        notifyPlanner(err instanceof Error ? err.message : "Unable to save ingredient changes.", "error");
         return;
       }
     }
 
-    setPlannerMessage("");
     setQfcSubmitProgress({
       phase: "checking",
       processedItems: 0,
@@ -251,12 +248,12 @@ export function useQfc({
         throw new Error(job.error ?? "Store item matching failed.");
       }
 
-      setPlannerMessage(job.result?.message ?? job.progress.message);
+      notifyPlanner(job.result?.message ?? job.progress.message);
       if (job.result) {
         setStoreItemReview({ jobId: started.id, result: job.result });
       }
     } catch (err) {
-      setPlannerMessage(err instanceof Error ? err.message : "Store item matching failed.");
+      notifyPlanner(err instanceof Error ? err.message : "Store item matching failed.", "error");
     } finally {
       setQfcSubmitProgress(null);
     }
@@ -264,7 +261,6 @@ export function useQfc({
 
   async function addReviewedStoreItemsToQfc() {
     if (!storeItemReview || !menuId) return;
-    setPlannerMessage("");
     setStoreItemReviewMessage("");
     setQfcSubmitProgress({
       phase: "adding",
@@ -286,11 +282,10 @@ export function useQfc({
         throw new Error(job.error ?? "QFC cart submission failed.");
       }
       const confirmation = job.result?.message ?? job.progress.message;
-      setPlannerMessage(confirmation);
-      setStoreItemReviewMessage(confirmation);
+      notifyPlanner(confirmation);
       await loadMenu(menuId);
     } catch (err) {
-      setPlannerMessage(err instanceof Error ? err.message : "QFC cart submission failed.");
+      notifyPlanner(err instanceof Error ? err.message : "QFC cart submission failed.", "error");
     } finally {
       setQfcSubmitProgress(null);
     }

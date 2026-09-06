@@ -324,19 +324,18 @@ test("aggregated ingredients manage pantry status and automatic exclusion", asyn
   await expect(pantry).toBeChecked();
   await expect(milk.getByText("Assumed on hand; unchecked for this menu.", { exact: true })).toHaveCount(0);
   await expect(milk).toContainText("Automatically unchecked — pantry ingredient");
-  await expect(page.getByText(
-    "milk marked as pantry and moved to unchecked ingredients.",
-    { exact: true }
-  )).toBeVisible();
+  const pantryMarkedMessage = "milk marked as pantry and moved to unchecked ingredients.";
+  const pantryMarkedToast = page.getByRole("status").filter({ hasText: pantryMarkedMessage });
+  await expect(pantryMarkedToast).toBeVisible();
+  await pantryMarkedToast.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(pantryMarkedToast).toHaveCount(0);
 
   await pantry.uncheck();
   await expect(pantry).not.toBeChecked();
   await expect(page.getByText("Automatically unchecked — pantry ingredient")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cross off milk" })).toBeVisible();
-  await expect(page.getByText(
-    "milk removed from pantry and restored to this menu.",
-    { exact: true }
-  )).toBeVisible();
+  const pantryRemovedMessage = "milk removed from pantry and restored to this menu.";
+  await expect(page.getByRole("status").filter({ hasText: pantryRemovedMessage })).toBeVisible();
 
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   const multipleSources = page.getByRole("button", { name: "multiple", exact: true }).first();

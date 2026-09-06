@@ -20,8 +20,7 @@ export function ShoppingListReview({
   saveToSource,
   clearItems,
   previewStoreItems,
-  qfcSubmitProgress,
-  message
+  qfcSubmitProgress
 }: {
   items: ShoppingListItem[];
   openSource: (source: ShoppingListSourceTarget) => void;
@@ -35,7 +34,6 @@ export function ShoppingListReview({
   clearItems: () => Promise<void>;
   previewStoreItems: () => Promise<void>;
   qfcSubmitProgress: QfcSubmitProgress | null;
-  message: string;
 }) {
   const [showUncheckedItems, setShowUncheckedItems] = useState(false);
   const [pantryDrafts, setPantryDrafts] = useState<Record<number, boolean>>({});
@@ -344,7 +342,6 @@ export function ShoppingListReview({
       )}
 
       {qfcSubmitProgress && qfcSubmitProgress.phase !== "adding" ? <QfcSubmitProgressBar progress={qfcSubmitProgress} /> : null}
-      {message ? <div className="success">{message}</div> : null}
     </section>
   );
 }

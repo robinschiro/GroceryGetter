@@ -1,6 +1,7 @@
 @import "./styles/base.css";
 @import "./app/shell.css";
 @import "./styles/forms.css";
+@import "./styles/toast.css";
 @import "./features/shoppingLists/styles.css";
 @import "./features/recipes/styles.css";
 @import "./features/ingredients/styles.css";

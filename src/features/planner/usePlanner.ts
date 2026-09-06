@@ -8,6 +8,7 @@ import type {
 } from "../../../shared/contracts/index.js";
 import type { ApiRequest } from "../../shared/apiClient.js";
 import { recipeCategories } from "../../shared/recipeCategories.js";
+import type { ToastVariant } from "../../shared/Toast.js";
 import {
   addMenuMeal,
   aggregateShoppingList,
@@ -31,12 +32,14 @@ export function usePlanner({
   api,
   recipes,
   onSourcesChanged,
-  onStoreReviewInvalidated
+  onStoreReviewInvalidated,
+  notify
 }: {
   api: ApiRequest;
   recipes: Recipe[];
   onSourcesChanged: () => Promise<void>;
   onStoreReviewInvalidated: () => void;
+  notify: (message: string, variant?: ToastVariant) => void;
 }) {
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
@@ -45,7 +48,6 @@ export function usePlanner({
   const [savingSourceItemIds, setSavingSourceItemIds] = useState<Set<number>>(() => new Set());
   const [savingPantryItemIds, setSavingPantryItemIds] = useState<Set<number>>(() => new Set());
   const [mealCount, setMealCount] = useState<number | "">(2);
-  const [message, setMessage] = useState("");
 
   function invalidateGeneratedList() {
     setShoppingList([]);
@@ -54,11 +56,10 @@ export function usePlanner({
     onStoreReviewInvalidated();
   }
 
-  function reset(message = "") {
+  function reset() {
     setActiveMenu(null);
     invalidateGeneratedList();
     setMealCount(2);
-    setMessage(message);
   }
 
   async function loadLatestMenu() {
@@ -80,9 +81,8 @@ export function usePlanner({
   }
 
   async function generateMenu() {
-    setMessage("");
     if (mealCount === "" || mealCount < 1 || mealCount > 14) {
-      setMessage("Meal count must be between 1 and 14.");
+      notify("Meal count must be between 1 and 14.", "error");
       return;
     }
 
@@ -90,25 +90,24 @@ export function usePlanner({
       setActiveMenu(await previewMenu(api, mealCount));
       invalidateGeneratedList();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to generate menu.");
+      notify(err instanceof Error ? err.message : "Unable to generate menu.", "error");
     }
   }
 
   async function saveMenu() {
     if (!activeMenu) return;
     if (activeMenu.id !== null) {
-      setMessage("Menu is already saved.");
+      notify("Menu is already saved.", "info");
       return;
     }
 
-    setMessage("");
     try {
       const created = await createMenu(api, activeMenu);
       setActiveMenu(await getMenu(api, created.id));
       invalidateGeneratedList();
-      setMessage("Menu saved.");
+      notify("Menu saved.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to save menu.");
+      notify(err instanceof Error ? err.message : "Unable to save menu.", "error");
     }
   }
 
@@ -159,11 +158,10 @@ export function usePlanner({
     });
 
     if (newItems.find((item) => item.slot === "entree")?.recipeId === null) {
-      setMessage("Select at least one entree recipe for menu generation before adding a meal.");
+      notify("Select at least one entree recipe for menu generation before adding a meal.", "error");
       return;
     }
 
-    setMessage("");
     try {
       const nextMenu = activeMenu.id === null
         ? { ...activeMenu, mealCount: nextMealNumber, items: [...activeMenu.items, ...newItems] }
@@ -172,14 +170,13 @@ export function usePlanner({
       setMealCount(nextMenu.mealCount);
       invalidateGeneratedList();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to add meal.");
+      notify(err instanceof Error ? err.message : "Unable to add meal.", "error");
     }
   }
 
   async function removeMeal(mealNumber: number) {
     if (!activeMenu || activeMenu.mealCount <= 1) return;
 
-    setMessage("");
     try {
       const nextMenu = activeMenu.id === null
         ? {
@@ -196,7 +193,7 @@ export function usePlanner({
       setMealCount(nextMenu.mealCount);
       invalidateGeneratedList();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to remove meal.");
+      notify(err instanceof Error ? err.message : "Unable to remove meal.", "error");
     }
   }
 
@@ -229,7 +226,7 @@ export function usePlanner({
   async function aggregateIngredients() {
     if (!activeMenu) return;
     if (activeMenu.id === null) {
-      setMessage("Save the menu before aggregating ingredients.");
+      notify("Save the menu before aggregating ingredients.", "error");
       return;
     }
     await aggregateShoppingList(api, activeMenu.id);
@@ -243,7 +240,6 @@ export function usePlanner({
     if (!activeMenu?.id) return;
     await clearShoppingList(api, activeMenu.id);
     invalidateGeneratedList();
-    setMessage("");
   }
 
   async function saveDirtyShoppingItems() {
@@ -274,7 +270,6 @@ export function usePlanner({
     const previousItem = shoppingList.find((item) => item.id === itemId);
     if (!previousItem) return null;
 
-    setMessage("");
     setSavingPantryItemIds((current) => new Set(current).add(itemId));
     try {
       const result = await updateShoppingListPantryStatus(
@@ -293,7 +288,7 @@ export function usePlanner({
       const hasActiveOurGroceriesItem = result.item.sourceTargets.some(
         (source) => source.type === "ourGroceries"
       ) && Boolean(result.item.approved);
-      setMessage(isPantry
+      notify(isPantry
         ? hasActiveOurGroceriesItem
           ? `${result.ingredientName} marked as pantry, but kept because it is active in OurGroceries.`
           : result.item.automaticExclusionReason === "pantry"
@@ -304,7 +299,7 @@ export function usePlanner({
           : `${result.ingredientName} removed from pantry.`);
       return result.item;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to update pantry status.");
+      notify(error instanceof Error ? error.message : "Unable to update pantry status.", "error");
       return null;
     } finally {
       setSavingPantryItemIds((current) => {
@@ -318,7 +313,6 @@ export function usePlanner({
   async function saveShoppingItemToSource(item: ShoppingListItem) {
     if (!activeMenu?.id || savingSourceItemIds.has(item.id)) return false;
 
-    setMessage("");
     setSavingSourceItemIds((current) => new Set(current).add(item.id));
     try {
       const result = await saveShoppingListItemToSource(api, activeMenu.id, item);
@@ -337,10 +331,10 @@ export function usePlanner({
       });
       onStoreReviewInvalidated();
       await onSourcesChanged();
-      setMessage(`Saved item details to ${item.sourceNames}. Re-aggregate to apply any new grouping.`);
+      notify(`Saved item details to ${item.sourceNames}. Re-aggregate to apply any new grouping.`);
       return true;
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to save item details to the source.");
+      notify(err instanceof Error ? err.message : "Unable to save item details to the source.", "error");
       return false;
     } finally {
       setSavingSourceItemIds((current) => {
@@ -361,7 +355,6 @@ export function usePlanner({
     loadLatestMenu,
     loadMenu,
     mealCount,
-    message,
     removeMeal,
     reset,
     saveDirtyShoppingItems,
@@ -371,7 +364,6 @@ export function usePlanner({
     savingPantryItemIds,
     savingSourceItemIds,
     setMealCount,
-    setMessage,
     setShoppingList,
     shoppingList,
     sourceMetadataDirtyItemIds,

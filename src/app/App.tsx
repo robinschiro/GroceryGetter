@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
   History,
@@ -43,6 +43,11 @@ import { MenuHistoryPage } from "../features/menuHistory/MenuHistoryPage.js";
 import { OurGroceriesSettingsPage } from "../features/ourGroceries/OurGroceriesSettingsPage.js";
 import { listOurGroceriesLists, loadOurGroceriesStatus } from "../features/ourGroceries/api.js";
 import { IngredientsPage } from "../features/ingredients/IngredientsPage.js";
+import {
+  ToastRegion,
+  type ToastNotification,
+  type ToastVariant
+} from "../shared/Toast.js";
 
 type ThemeMode = "light" | "dark";
 
@@ -90,7 +95,17 @@ export function App() {
   const [customShoppingLists, setCustomShoppingLists] = useState<CustomShoppingList[]>([]);
   const [ourGroceriesStatus, setOurGroceriesStatus] = useState<OurGroceriesStatus | null>(null);
   const [ourGroceriesLists, setOurGroceriesLists] = useState<OurGroceriesListSummary[]>([]);
+  const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
+  const nextToastId = useRef(0);
   const invalidateStoreReviewRef = useRef<() => void>(() => undefined);
+  const notify = useCallback((message: string, variant: ToastVariant = "success") => {
+    nextToastId.current += 1;
+    const notification = { id: nextToastId.current, message, variant };
+    setToastNotifications((current) => [...current, notification].slice(-3));
+  }, []);
+  const dismissToast = useCallback((id: number) => {
+    setToastNotifications((current) => current.filter((notification) => notification.id !== id));
+  }, []);
   const {
     activeMenu,
     addMeal,
@@ -101,7 +116,6 @@ export function App() {
     loadLatestMenu,
     loadMenu,
     mealCount,
-    message,
     removeMeal,
     reset: resetPlanner,
     saveDirtyShoppingItems,
@@ -111,7 +125,6 @@ export function App() {
     savingPantryItemIds,
     savingSourceItemIds,
     setMealCount,
-    setMessage,
     setShoppingList,
     shoppingList,
     sourceMetadataDirtyItemIds,
@@ -125,7 +138,8 @@ export function App() {
     onSourcesChanged: async () => {
       await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
     },
-    onStoreReviewInvalidated: () => invalidateStoreReviewRef.current()
+    onStoreReviewInvalidated: () => invalidateStoreReviewRef.current(),
+    notify
   });
   const {
     addReviewedStoreItemsToQfc,
@@ -160,7 +174,7 @@ export function App() {
     saveDirtyShoppingItems,
     saveShoppingItemApproval,
     loadMenu,
-    setPlannerMessage: setMessage
+    notifyPlanner: notify
   });
   invalidateStoreReviewRef.current = invalidateStoreReview;
 
@@ -225,7 +239,8 @@ export function App() {
     setCustomShoppingLists([]);
     setOurGroceriesStatus(null);
     setOurGroceriesLists([]);
-    resetPlanner(next === "sandbox" ? "Sandbox mode is active." : "");
+    setToastNotifications([]);
+    resetPlanner();
     resetQfc();
   }
 
@@ -443,8 +458,7 @@ export function App() {
               saveToSource: saveShoppingItemToSource,
               clearItems: clearAggregatedIngredients,
               previewStoreItems,
-              qfcSubmitProgress,
-              message
+              qfcSubmitProgress
             }}
             storeItemReview={(
               <StoreItemReviewPanel
@@ -484,6 +498,7 @@ export function App() {
           />
         ) : null}
       </section>
+      <ToastRegion notifications={toastNotifications} dismiss={dismissToast} />
     </main>
   );
 }

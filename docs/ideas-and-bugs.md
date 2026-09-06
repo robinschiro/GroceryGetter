@@ -8,11 +8,12 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 
 ### Show ingredient-review updates in a temporary toast
 
-- Status: `Idea`
+- Status: `Done`
 - Reported: 2026-09-04
 - Area: Planner ingredient review
 - Description: Make status updates visible when actions occur outside the user's current viewport, such as when a pantry ingredient remains included because it is active in the selected OurGroceries list.
-- Expected: Keep the existing status message at the bottom of the ingredient review for context, and also show new updates in a prominent temporary toast that disappears after a short time and can be dismissed manually.
+- Expected: Show transient planner outcomes in a prominent temporary toast that disappears after a short time and can be dismissed manually. Keep ongoing progress in its contextual progress UI instead of a toast.
+- Notes: Planner status updates now use reusable queued toasts that dismiss automatically or immediately through their close buttons. Success and informational notices remain for five seconds, while errors remain for eight seconds. Persistent operation progress stays in its contextual progress UI.
 
 ### Organize store-item review by aisle
 
