@@ -75,7 +75,12 @@ export function StoreItemReviewPanel({
   review: StoreItemReview | null;
   allowRealQfcCartMutation: boolean;
   addToCart: () => Promise<void>;
-  selectStoreItem: (shoppingItemId: number, productId: string, upc: string) => Promise<void>;
+  selectStoreItem: (
+    shoppingItemId: number,
+    productId: string,
+    upc: string,
+    notifyOnPreferenceSave?: boolean
+  ) => Promise<void>;
   updateCartQuantity: (shoppingItemId: number, cartQuantity: number) => Promise<void>;
   searchStoreItems: (
     shoppingItemId: number,
@@ -123,10 +128,15 @@ export function StoreItemReviewPanel({
     await rememberSelection(match, productId, upc);
   }
 
-  async function rememberSelection(match: StoreItemMatch, productId: string, upc: string) {
+  async function rememberSelection(
+    match: StoreItemMatch,
+    productId: string,
+    upc: string,
+    notifyOnPreferenceSave = false
+  ) {
     setSelectingItemId(match.item.id);
     try {
-      await selectStoreItem(match.item.id, productId, upc);
+      await selectStoreItem(match.item.id, productId, upc, notifyOnPreferenceSave);
     } finally {
       setSelectingItemId(null);
     }
@@ -449,7 +459,8 @@ export function StoreItemReviewPanel({
                           onClick={() => void rememberSelection(
                             match,
                             match.storeItem.productId,
-                            match.storeItem.upc
+                            match.storeItem.upc,
+                            true
                           )}
                         >
                           <BookmarkPlus size={17} aria-hidden="true" />

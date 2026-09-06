@@ -159,8 +159,18 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await declineDialog.dismiss();
   await reviewOnlySelection;
   await expect(page.getByText("Selected for this review", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: /Kept .* as the remembered preference/ }))
+  await expect(page.locator(".toast").filter({ hasText: /Kept .* as the remembered preference/ }))
     .toBeVisible();
+
+  const savePreferenceDialogPromise = page.waitForEvent("dialog");
+  const savePreference = page.getByRole("button", {
+    name: /^Remember selected store item for /
+  }).first().click();
+  const savePreferenceDialog = await savePreferenceDialogPromise;
+  expect(savePreferenceDialog.type()).toBe("confirm");
+  await savePreferenceDialog.accept();
+  await savePreference;
+  await expect(page.locator(".toast").filter({ hasText: "Preference saved." })).toBeVisible();
 
   const confirmDialogPromise = page.waitForEvent("dialog");
   const rememberedSelection = firstCandidate.selectOption({ index: 2 });
@@ -169,7 +179,7 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await confirmDialog.accept();
   await rememberedSelection;
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: /^Remembered Pantry Select/ })).toBeVisible();
+  await expect(page.locator(".toast").filter({ hasText: /^Remembered Pantry Select/ })).toBeVisible();
 
   const quantity = page.getByLabel(/^Cart quantity for /).first();
   await quantity.fill("3");

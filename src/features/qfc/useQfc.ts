@@ -306,7 +306,12 @@ export function useQfc({
     await updateScopedSetting(api, "allowRealQfcCartMutation", next);
   }
 
-  async function selectStoreItem(shoppingItemId: number, productId: string, upc: string) {
+  async function selectStoreItem(
+    shoppingItemId: number,
+    productId: string,
+    upc: string,
+    notifyOnPreferenceSave = false
+  ) {
     if (!storeItemReview) return;
     setStoreItemReviewMessage("");
     try {
@@ -363,11 +368,11 @@ export function useQfc({
           ),
           savedPreference
         ].sort((left, right) => left.ingredientName.localeCompare(right.ingredientName)));
-        setStoreItemReviewMessage(
-          `Remembered ${savedPreference.description} for ${savedPreference.ingredientName}.`
-        );
+        notifyPlanner(notifyOnPreferenceSave
+          ? "Preference saved."
+          : `Remembered ${savedPreference.description} for ${savedPreference.ingredientName}.`);
       } else {
-        setStoreItemReviewMessage(
+        notifyPlanner(
           `Selected ${selectedCandidate.description} for this review. `
           + `Kept ${existingPreference?.description ?? "the existing item"} as the remembered preference.`
         );
