@@ -191,6 +191,11 @@ export type QfcLocation = {
   };
 };
 
+export type StoreItemAisleLocation = {
+  number: string;
+  description: string;
+};
+
 export type StoreItemCandidate = {
   productId: string;
   upc: string;
@@ -203,13 +208,20 @@ export type StoreItemCandidate = {
   promotionalPrice: number | null;
   imageUrl: string;
   isStoreBrand: boolean;
+  aisleLocations: StoreItemAisleLocation[];
 };
 
 export type StoreItemMatch = {
   item: ShoppingListItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable" | "review";
+  selectionSource:
+    | "remembered"
+    | "general"
+    | "search"
+    | "preferred-unavailable"
+    | "preferred-missing"
+    | "review";
   cartQuantity: number;
 };
 

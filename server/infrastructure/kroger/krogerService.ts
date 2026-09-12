@@ -29,6 +29,16 @@ export type KrogerProduct = {
   upc: string;
   description: string;
   brand?: string;
+  aisleLocations?: Array<{
+    bayNumber?: string;
+    number?: string;
+    description?: string;
+    numberOfFacings?: string;
+    sequenceNumber?: string;
+    side?: string;
+    shelfNumber?: string;
+    shelfPositionInBay?: string;
+  }>;
   images?: Array<{
     perspective?: string;
     featured?: boolean;
@@ -68,6 +78,10 @@ export type StoreItemCandidate = {
   promotionalPrice: number | null;
   imageUrl: string;
   isStoreBrand: boolean;
+  aisleLocations: Array<{
+    number: string;
+    description: string;
+  }>;
 };
 
 export type CartSubmissionResult = {
@@ -92,7 +106,13 @@ export type CartSubmissionMatch = {
   item: CartSubmissionItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable" | "review";
+  selectionSource:
+    | "remembered"
+    | "general"
+    | "search"
+    | "preferred-unavailable"
+    | "preferred-missing"
+    | "review";
   cartQuantity: number;
 };
 
@@ -258,12 +278,18 @@ export class FakeKrogerClient implements KrogerClient {
     if (normalized.includes("unmatched") || !normalized) return [];
     const preferredItemIsUnavailable = normalized.includes("preferred unavailable");
     const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+    const primaryAisleLocations = normalized.includes("milk")
+      ? [{ number: "2", description: "Dairy" }]
+      : normalized.includes("tomato")
+        ? [{ number: "10", description: "Produce" }]
+        : [];
     const candidates: KrogerProduct[] = [
       {
         productId: `fake-${slug}-store`,
         upc: `000000${slug.length.toString().padStart(6, "0")}`,
         description: `Kroger ${input.term.trim()}`,
         brand: "Kroger",
+        aisleLocations: primaryAisleLocations,
         items: [{
           size: "12 oz",
           price: { regular: 2.49 },
@@ -278,6 +304,7 @@ export class FakeKrogerClient implements KrogerClient {
         upc: `111111${slug.length.toString().padStart(6, "0")}`,
         description: `Test Kitchen ${input.term.trim()}`,
         brand: "Test Kitchen",
+        aisleLocations: [{ number: "5", description: "Pantry" }],
         items: [{
           size: "10 oz",
           price: { regular: 3.99, promo: 3.49 },
@@ -552,6 +579,12 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   const imageUrl = ["medium", "small", "large", "xlarge", "thumbnail"]
     .map((size) => imageSizes.find((candidate) => candidate.size?.toLowerCase() === size)?.url)
     .find(Boolean) ?? imageSizes.find((candidate) => candidate.url)?.url ?? "";
+  const aisleLocations = (product.aisleLocations ?? [])
+    .map((location) => ({
+      number: location.number?.trim() ?? "",
+      description: location.description?.trim() ?? ""
+    }))
+    .filter((location) => location.number || location.description);
 
   return {
     productId: product.productId,
@@ -564,7 +597,8 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
     regularPrice,
     promotionalPrice,
     imageUrl,
-    isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase()))
+    isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase())),
+    aisleLocations
   };
 }
 
@@ -706,22 +740,6 @@ function deleteStoreItemPreference(dataScope: DataScope, provider: string, ingre
   database.save();
 }
 
-function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandidate {
-  return {
-    productId: preference.storeItemId,
-    upc: preference.upc,
-    description: preference.description,
-    brand: preference.brand,
-    size: preference.size,
-    stockLevel: "",
-    price: null,
-    regularPrice: null,
-    promotionalPrice: null,
-    imageUrl: preference.imageUrl,
-    isStoreBrand: preference.isStoreBrand
-  };
-}
-
 function distinctStoreItems(candidates: StoreItemCandidate[]) {
   return candidates.filter((candidate, index) =>
     candidates.findIndex((other) => other.productId === candidate.productId && other.upc === candidate.upc) === index
@@ -764,9 +782,7 @@ async function matchCartItems(
             candidate.productId === preference.storeItemId || candidate.upc === preference.upc
           )
         : null;
-      const preferredCandidate = preference
-        ? searchedPreferredCandidate ?? preferenceToStoreItem(preference)
-        : null;
+      const preferredCandidate = searchedPreferredCandidate ?? null;
       const candidates = distinctStoreItems(preferredCandidate
         ? [preferredCandidate, ...searchedCandidates]
         : searchedCandidates);
@@ -784,9 +800,10 @@ async function matchCartItems(
             dataScope
           )
         : null;
+      const preferredItemIsMissing = Boolean(preference && !searchedPreferredCandidate);
       const storeItem = availableFallback
         ?? preferredCandidate
-        ?? chooseStoreItemCandidate(candidates, dataScope);
+        ?? chooseStoreItemCandidate(searchedCandidates, dataScope);
       if (!storeItem) {
         skipped.push({ item, reason: "No store item candidates found." });
         continue;
@@ -798,9 +815,11 @@ async function matchCartItems(
         candidates,
         selectionSource: availableFallback
           ? "preferred-unavailable"
-          : preferredCandidate
-            ? "remembered"
-            : "general",
+          : preferredItemIsMissing
+            ? "preferred-missing"
+            : preferredCandidate
+              ? "remembered"
+              : "general",
         cartQuantity: 1
       });
     } catch (error) {

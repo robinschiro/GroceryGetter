@@ -59,6 +59,50 @@ function formatCandidateOption(candidate: StoreItemCandidate) {
   return `${product} · ${formatPrice(candidate)} · ${formatAvailability(candidate.stockLevel)}`;
 }
 
+const unavailableAisleLabel = "Aisle unavailable";
+
+function primaryAisle(candidate: StoreItemCandidate) {
+  const location = candidate.aisleLocations?.[0];
+  if (!location) return null;
+  return {
+    number: location.number,
+    description: location.description,
+    label: location.number
+      ? `Aisle ${location.number}${location.description ? ` · ${location.description}` : ""}`
+      : location.description
+  };
+}
+
+function groupMatchesByAisle(matches: StoreItemMatch[]) {
+  const groups = new Map<string, {
+    aisle: ReturnType<typeof primaryAisle>;
+    matches: StoreItemMatch[];
+  }>();
+  for (const match of matches) {
+    const aisle = primaryAisle(match.storeItem);
+    const key = aisle ? `${aisle.number}\u0000${aisle.description}` : unavailableAisleLabel;
+    const group = groups.get(key) ?? { aisle, matches: [] };
+    group.matches.push(match);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    if (!left.aisle && !right.aisle) return 0;
+    if (!left.aisle) return 1;
+    if (!right.aisle) return -1;
+    if (left.aisle.number && !right.aisle.number) return -1;
+    if (!left.aisle.number && right.aisle.number) return 1;
+    const numberOrder = left.aisle.number.localeCompare(right.aisle.number, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+    return numberOrder || left.aisle.description.localeCompare(right.aisle.description, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+  });
+}
+
 export function StoreItemReviewPanel({
   review,
   allowRealQfcCartMutation,
@@ -111,6 +155,7 @@ export function StoreItemReviewPanel({
   } | null>(null);
   const matches = review?.result.matched ?? [];
   const skipped = review?.result.skipped ?? [];
+  const aisleGroups = groupMatchesByAisle(matches);
 
   useEffect(() => {
     setFindingItemId(null);
@@ -398,9 +443,13 @@ export function StoreItemReviewPanel({
       {review ? (
         <>
           {matches.length ? (
-            <div className="store-item-match-list">
-              {matches.map((match) => (
-                <div className="store-item-match-row" key={match.item.id}>
+            <div className="store-item-aisle-groups">
+              {aisleGroups.map(({ aisle, matches: aisleMatches }) => (
+                <section className="store-item-aisle-group" key={aisle?.label ?? unavailableAisleLabel}>
+                  <h4>{aisle?.label ?? unavailableAisleLabel}</h4>
+                  <div className="store-item-match-list">
+                    {aisleMatches.map((match) => (
+                      <div className="store-item-match-row" key={match.item.id}>
                   <div className="store-item-match-ingredient">
                     <span className="eyebrow">Aggregated ingredient</span>
                     <strong>{match.item.text || [match.item.quantity, match.item.unit, match.item.item].filter(Boolean).join(" ")}</strong>
@@ -415,6 +464,8 @@ export function StoreItemReviewPanel({
                           ? "Selected from custom search"
                           : match.selectionSource === "preferred-unavailable"
                             ? "Available search result"
+                            : match.selectionSource === "preferred-missing"
+                              ? "Current store search result"
                             : match.selectionSource === "review"
                               ? "Selected for this review"
                               : "Selected by general preferences"}
@@ -422,6 +473,11 @@ export function StoreItemReviewPanel({
                     {match.selectionSource === "preferred-unavailable" ? (
                       <span className="store-item-fallback-note">
                         Your preferred item is out of stock, so an available search result is selected for this review.
+                      </span>
+                    ) : null}
+                    {match.selectionSource === "preferred-missing" ? (
+                      <span className="store-item-fallback-note">
+                        Your remembered item was not in the current store results, so another current result is selected for this review.
                       </span>
                     ) : null}
                     <select
@@ -529,7 +585,10 @@ export function StoreItemReviewPanel({
                     </div>
                   </div>
                   {renderRemoveButton(match.item)}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
