@@ -134,10 +134,20 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
 }) => {
   await saveAndAggregateMenu(page);
   await page.getByRole("button", { name: "Review store items" }).click();
+  const aisleHeadings = page.locator(".store-item-aisle-group > h4");
+  await expect(aisleHeadings).toContainText([
+    "Aisle 2 · Dairy",
+    "Aisle 5 · Pantry",
+    "Aisle 10 · Produce",
+    "Aisle unavailable"
+  ]);
   await expect(page.getByRole("heading", { name: "Unmatched ingredients" })).toBeVisible();
   await expect(page.getByText("unmatched item", { exact: true }).first()).toBeVisible();
 
-  const firstCandidate = page.getByLabel(/^Store item for /).first();
+  const firstCandidate = page.getByLabel("Store item for tomato", { exact: true });
+  const tomatoRow = page.locator(".store-item-match-row").filter({ has: firstCandidate });
+  await expect(page.locator(".store-item-aisle-group", { has: firstCandidate }))
+    .toContainText("Aisle 10 · Produce");
   await expect(firstCandidate.locator("option").nth(0)).toHaveText(
     /Kroger .* · \$2\.49 · In stock/
   );
@@ -150,6 +160,8 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await expect(firstCandidate.locator("option").nth(2)).toBeEnabled();
   await firstCandidate.selectOption({ index: 1 });
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".store-item-aisle-group", { has: firstCandidate }))
+    .toContainText("Aisle 5 · Pantry");
 
   const declineDialogPromise = page.waitForEvent("dialog");
   const reviewOnlySelection = firstCandidate.selectOption({ index: 0 });
@@ -163,9 +175,9 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
     .toBeVisible();
 
   const savePreferenceDialogPromise = page.waitForEvent("dialog");
-  const savePreference = page.getByRole("button", {
+  const savePreference = tomatoRow.getByRole("button", {
     name: /^Remember selected store item for /
-  }).first().click();
+  }).click();
   const savePreferenceDialog = await savePreferenceDialogPromise;
   expect(savePreferenceDialog.type()).toBe("confirm");
   await savePreferenceDialog.accept();
@@ -180,14 +192,13 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await rememberedSelection;
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
   await expect(page.locator(".toast").filter({ hasText: /^Remembered Pantry Select/ })).toBeVisible();
+  await expect(page.locator(".store-item-aisle-group", { has: firstCandidate }))
+    .toContainText("Aisle unavailable");
 
   const quantity = page.getByLabel(/^Cart quantity for /).first();
   await quantity.fill("3");
   await expect(quantity).toHaveValue("3");
 
-  const tomatoRow = page.locator(".store-item-match-row").filter({
-    has: page.getByText("tomato", { exact: true })
-  });
   await tomatoRow.getByRole("button", { name: "Show quantity sources for tomato" }).click();
   const quantitySources = tomatoRow.getByRole("region", { name: "Quantity sources for tomato" });
   await expect(quantitySources).toBeVisible();
@@ -223,6 +234,7 @@ test("fake-QFC review explains an available fallback without replacing the prefe
 }) => {
   await saveAndAggregateMenu(page);
   await page.getByRole("button", { name: "Review store items" }).click();
+  await expect(page.getByRole("heading", { name: "Aisle 5 · Pantry", exact: true })).toBeVisible();
 
   const unavailableItem = page.getByLabel("Store item for preferred unavailable item", {
     exact: true

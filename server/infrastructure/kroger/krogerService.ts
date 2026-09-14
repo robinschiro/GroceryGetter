@@ -29,6 +29,16 @@ export type KrogerProduct = {
   upc: string;
   description: string;
   brand?: string;
+  aisleLocations?: Array<{
+    bayNumber?: string;
+    number?: string;
+    description?: string;
+    numberOfFacings?: string;
+    sequenceNumber?: string;
+    side?: string;
+    shelfNumber?: string;
+    shelfPositionInBay?: string;
+  }>;
   images?: Array<{
     perspective?: string;
     featured?: boolean;
@@ -68,6 +78,10 @@ export type StoreItemCandidate = {
   promotionalPrice: number | null;
   imageUrl: string;
   isStoreBrand: boolean;
+  aisleLocations: Array<{
+    number: string;
+    description: string;
+  }>;
 };
 
 export type CartSubmissionResult = {
@@ -92,7 +106,12 @@ export type CartSubmissionMatch = {
   item: CartSubmissionItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
-  selectionSource: "remembered" | "general" | "search" | "preferred-unavailable" | "review";
+  selectionSource:
+    | "remembered"
+    | "general"
+    | "search"
+    | "preferred-unavailable"
+    | "review";
   cartQuantity: number;
 };
 
@@ -131,6 +150,11 @@ export interface KrogerClient {
     locationId: string;
     limit: number;
   }): Promise<KrogerProduct[]>;
+  getProduct(input: {
+    accessToken: string;
+    productId: string;
+    locationId: string;
+  }): Promise<KrogerProduct | null>;
   addToCart(input: {
     accessToken: string;
     items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
@@ -208,6 +232,26 @@ export class KrogerHttpClient implements KrogerClient {
     return response.data ?? [];
   }
 
+  async getProduct(input: { accessToken: string; productId: string; locationId: string }) {
+    const params = new URLSearchParams();
+    if (input.locationId) params.set("filter.locationId", input.locationId);
+    const query = params.size ? `?${params.toString()}` : "";
+    const response = await fetch(
+      `${krogerBaseUrl}/products/${encodeURIComponent(input.productId)}${query}`,
+      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" } }
+    );
+    if (response.status === 404) return null;
+    const text = await response.text();
+    const body = text ? JSON.parse(text) as unknown : {};
+    if (!response.ok) {
+      const message = body && typeof body === "object" && "errors" in body
+        ? JSON.stringify((body as { errors: unknown }).errors)
+        : text || response.statusText;
+      throw new Error(`Kroger API request failed (${response.status}): ${message}`);
+    }
+    return (body as { data?: KrogerProduct }).data ?? null;
+  }
+
   async addToCart(input: {
     accessToken: string;
     items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
@@ -226,6 +270,7 @@ export class KrogerHttpClient implements KrogerClient {
 
 export class FakeKrogerClient implements KrogerClient {
   readonly cartSubmissions: Array<Array<{ upc: string; quantity: number; modality: "PICKUP" }>> = [];
+  readonly productsById = new Map<string, KrogerProduct>();
 
   async exchangeToken(): Promise<KrogerTokenResponse> {
     return {
@@ -258,12 +303,18 @@ export class FakeKrogerClient implements KrogerClient {
     if (normalized.includes("unmatched") || !normalized) return [];
     const preferredItemIsUnavailable = normalized.includes("preferred unavailable");
     const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+    const primaryAisleLocations = normalized.includes("milk")
+      ? [{ number: "2", description: "Dairy" }]
+      : normalized.includes("tomato")
+        ? [{ number: "10", description: "Produce" }]
+        : [];
     const candidates: KrogerProduct[] = [
       {
         productId: `fake-${slug}-store`,
         upc: `000000${slug.length.toString().padStart(6, "0")}`,
         description: `Kroger ${input.term.trim()}`,
         brand: "Kroger",
+        aisleLocations: primaryAisleLocations,
         items: [{
           size: "12 oz",
           price: { regular: 2.49 },
@@ -278,6 +329,7 @@ export class FakeKrogerClient implements KrogerClient {
         upc: `111111${slug.length.toString().padStart(6, "0")}`,
         description: `Test Kitchen ${input.term.trim()}`,
         brand: "Test Kitchen",
+        aisleLocations: [{ number: "5", description: "Pantry" }],
         items: [{
           size: "10 oz",
           price: { regular: 3.99, promo: 3.49 },
@@ -297,7 +349,13 @@ export class FakeKrogerClient implements KrogerClient {
         }]
       }
     ];
+    for (const candidate of candidates) this.productsById.set(candidate.productId, candidate);
     return candidates.slice(0, input.limit);
+  }
+
+  async getProduct(input: { productId: string }) {
+    if (input.productId.includes("missing-remembered")) return null;
+    return this.productsById.get(input.productId) ?? null;
   }
 
   async addToCart(input: {
@@ -552,6 +610,12 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
   const imageUrl = ["medium", "small", "large", "xlarge", "thumbnail"]
     .map((size) => imageSizes.find((candidate) => candidate.size?.toLowerCase() === size)?.url)
     .find(Boolean) ?? imageSizes.find((candidate) => candidate.url)?.url ?? "";
+  const aisleLocations = (product.aisleLocations ?? [])
+    .map((location) => ({
+      number: location.number?.trim() ?? "",
+      description: location.description?.trim() ?? ""
+    }))
+    .filter((location) => location.number || location.description);
 
   return {
     productId: product.productId,
@@ -564,7 +628,8 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
     regularPrice,
     promotionalPrice,
     imageUrl,
-    isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase()))
+    isStoreBrand: storeBrandNames.some((name) => brand.toLowerCase().includes(name.toLowerCase())),
+    aisleLocations
   };
 }
 
@@ -718,7 +783,8 @@ function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandid
     regularPrice: null,
     promotionalPrice: null,
     imageUrl: preference.imageUrl,
-    isStoreBrand: preference.isStoreBrand
+    isStoreBrand: preference.isStoreBrand,
+    aisleLocations: []
   };
 }
 
@@ -757,27 +823,49 @@ async function matchCartItems(
     }
 
     try {
-      const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
       const preference = getStoreItemPreference(dataScope, "kroger", searchTerm);
+      let searchedCandidates: StoreItemCandidate[] = [];
+      try {
+        searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
+      } catch (error) {
+        if (!preference) throw error;
+      }
       const searchedPreferredCandidate = preference
         ? searchedCandidates.find((candidate) =>
             candidate.productId === preference.storeItemId || candidate.upc === preference.upc
           )
         : null;
+      let refreshedPreferredCandidate = searchedPreferredCandidate ?? null;
+      if (preference && !refreshedPreferredCandidate) {
+        try {
+          const accessToken = await getServiceToken();
+          const locationId = getScopedSetting(dataScope, "krogerLocationId");
+          const product = await krogerClient.getProduct({
+            accessToken,
+            productId: preference.storeItemId,
+            locationId
+          });
+          refreshedPreferredCandidate = product ? toStoreItemCandidate(product) : null;
+        } catch {
+          // A failed metadata refresh must not replace a remembered selection.
+        }
+      }
       const preferredCandidate = preference
-        ? searchedPreferredCandidate ?? preferenceToStoreItem(preference)
+        ? refreshedPreferredCandidate ?? preferenceToStoreItem(preference)
         : null;
       const candidates = distinctStoreItems(preferredCandidate
         ? [preferredCandidate, ...searchedCandidates]
         : searchedCandidates);
-      const preferredItemIsUnavailable =
-        searchedPreferredCandidate?.stockLevel === "TEMPORARILY_OUT_OF_STOCK";
-      const availableFallback = preferredItemIsUnavailable
+      const unavailablePreferredCandidate =
+        refreshedPreferredCandidate?.stockLevel === "TEMPORARILY_OUT_OF_STOCK"
+          ? refreshedPreferredCandidate
+          : null;
+      const availableFallback = unavailablePreferredCandidate
         ? chooseStoreItemCandidate(
             searchedCandidates.filter((candidate) =>
               (
-                candidate.productId !== searchedPreferredCandidate.productId
-                || candidate.upc !== searchedPreferredCandidate.upc
+                candidate.productId !== unavailablePreferredCandidate.productId
+                || candidate.upc !== unavailablePreferredCandidate.upc
               )
               && candidate.stockLevel !== "TEMPORARILY_OUT_OF_STOCK"
             ),

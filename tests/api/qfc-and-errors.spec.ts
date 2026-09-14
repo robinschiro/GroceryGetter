@@ -69,6 +69,7 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
   const candidates = await products.json();
   expect(candidates).toHaveLength(3);
   expect(candidates[0]).toMatchObject({
+    aisleLocations: [{ number: "10", description: "Produce" }],
     brand: "Kroger",
     isStoreBrand: true,
     price: 2.49,
@@ -77,12 +78,14 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
     stockLevel: "HIGH"
   });
   expect(candidates[1]).toMatchObject({
+    aisleLocations: [{ number: "5", description: "Pantry" }],
     price: 3.49,
     regularPrice: 3.99,
     promotionalPrice: 3.49,
     stockLevel: "LOW"
   });
   expect(candidates[2]).toMatchObject({
+    aisleLocations: [],
     price: null,
     regularPrice: null,
     promotionalPrice: null,
@@ -91,6 +94,113 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
   expect((await request.get("/api/qfc/store-items?term=fail", {
     headers: productionHeaders
   })).status()).toBe(400);
+});
+
+test("QFC review refreshes an exact remembered product outside the ingredient search results", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const firstPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const firstPreview = await pollJob(request, (await firstPreviewResponse.json()).jobId);
+  const match = firstPreview.result.matched.find(
+    (candidate: { item: { item: string } }) => candidate.item.item === "tomato"
+  );
+  expect(match).toBeTruthy();
+
+  const customSearch = await request.post(
+    `/api/store-item-reviews/${firstPreview.id}/items/${match.item.id}/search`,
+    { headers: productionHeaders, data: { term: "custom tomato" } }
+  );
+  expect(customSearch.status()).toBe(200);
+  const customCandidate = (await customSearch.json()).match.candidates[0];
+  expect((await request.put(
+    `/api/store-item-reviews/${firstPreview.id}/selections/${match.item.id}`,
+    {
+      headers: productionHeaders,
+      data: {
+        productId: customCandidate.productId,
+        upc: customCandidate.upc,
+        rememberPreference: true
+      }
+    }
+  )).status()).toBe(200);
+
+  const secondPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const secondPreview = await pollJob(request, (await secondPreviewResponse.json()).jobId);
+  const refreshedMatch = secondPreview.result.matched.find(
+    (candidate: { item: { id: number } }) => candidate.item.id === match.item.id
+  );
+  expect(refreshedMatch).toMatchObject({
+    selectionSource: "remembered",
+    storeItem: {
+      productId: customCandidate.productId,
+      upc: customCandidate.upc,
+      aisleLocations: [{ number: "10", description: "Produce" }]
+    }
+  });
+  expect(refreshedMatch.candidates).toContainEqual(expect.objectContaining({
+    productId: customCandidate.productId,
+    upc: customCandidate.upc
+  }));
+
+  const preferences = await (await request.get("/api/store-item-preferences", {
+    headers: productionHeaders
+  })).json();
+  expect(preferences).toContainEqual(expect.objectContaining({
+    ingredientKey: "tomato",
+    storeItemId: customCandidate.productId,
+    upc: customCandidate.upc
+  }));
+});
+
+test("QFC review retains remembered product when exact metadata refresh returns no product", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const firstPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const firstPreview = await pollJob(request, (await firstPreviewResponse.json()).jobId);
+  const match = firstPreview.result.matched.find(
+    (candidate: { item: { item: string } }) => candidate.item.item === "tomato"
+  );
+
+  const customSearch = await request.post(
+    `/api/store-item-reviews/${firstPreview.id}/items/${match.item.id}/search`,
+    { headers: productionHeaders, data: { term: "missing remembered tomato" } }
+  );
+  const customCandidate = (await customSearch.json()).match.candidates[0];
+  expect((await request.put(
+    `/api/store-item-reviews/${firstPreview.id}/selections/${match.item.id}`,
+    {
+      headers: productionHeaders,
+      data: {
+        productId: customCandidate.productId,
+        upc: customCandidate.upc,
+        rememberPreference: true
+      }
+    }
+  )).status()).toBe(200);
+
+  const secondPreviewResponse = await request.post(`/api/menus/${menuId}/preview-qfc`, {
+    headers: productionHeaders
+  });
+  const secondPreview = await pollJob(request, (await secondPreviewResponse.json()).jobId);
+  const refreshedMatch = secondPreview.result.matched.find(
+    (candidate: { item: { id: number } }) => candidate.item.id === match.item.id
+  );
+  expect(refreshedMatch).toMatchObject({
+    selectionSource: "remembered",
+    storeItem: {
+      productId: customCandidate.productId,
+      upc: customCandidate.upc,
+      aisleLocations: []
+    }
+  });
+  expect(refreshedMatch.candidates[0]).toMatchObject({
+    productId: customCandidate.productId,
+    upc: customCandidate.upc
+  });
 });
 
 test("QFC review preserves matching, unmatched items, selection memory, quantity, search, remove/restore, polling, fake submit, and failures", async ({ request }) => {
