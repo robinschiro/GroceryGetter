@@ -220,7 +220,6 @@ export type StoreItemMatch = {
     | "general"
     | "search"
     | "preferred-unavailable"
-    | "preferred-missing"
     | "review";
   cartQuantity: number;
 };

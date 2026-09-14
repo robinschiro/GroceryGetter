@@ -464,8 +464,6 @@ export function StoreItemReviewPanel({
                           ? "Selected from custom search"
                           : match.selectionSource === "preferred-unavailable"
                             ? "Available search result"
-                            : match.selectionSource === "preferred-missing"
-                              ? "Current store search result"
                             : match.selectionSource === "review"
                               ? "Selected for this review"
                               : "Selected by general preferences"}
@@ -473,11 +471,6 @@ export function StoreItemReviewPanel({
                     {match.selectionSource === "preferred-unavailable" ? (
                       <span className="store-item-fallback-note">
                         Your preferred item is out of stock, so an available search result is selected for this review.
-                      </span>
-                    ) : null}
-                    {match.selectionSource === "preferred-missing" ? (
-                      <span className="store-item-fallback-note">
-                        Your remembered item was not in the current store results, so another current result is selected for this review.
                       </span>
                     ) : null}
                     <select

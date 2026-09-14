@@ -22,7 +22,7 @@ Suggested statuses: `Idea`, `Open`, `In progress`, `Blocked`, and `Done`.
 - Area: QFC store-item review
 - Description: Organize the items in Store Item Review according to the aisle where each selected store item is located.
 - Expected: Review items are grouped and ordered by aisle so the user can review the list in store-shopping order. Items without aisle information are grouped separately rather than mixed into known aisles.
-- Notes: QFC/Kroger aisle number and description metadata are carried into the store-item review. Matched items are grouped in natural aisle-number order, and items without aisle metadata appear in a final `Aisle unavailable` group. If a remembered product is absent from the current store search, the preference remains saved but the review intentionally selects and labels a current search result instead.
+- Notes: QFC/Kroger aisle number and description metadata are carried into the store-item review. Matched items are grouped in natural aisle-number order, and items without aisle metadata appear in a final `Aisle unavailable` group. Remembered products are refreshed directly by product ID for current aisle and availability data; if that refresh is unavailable, the remembered selection is retained in `Aisle unavailable` rather than replaced by a fuzzy search result.
 
 ### Allow setting pantry status during ingredient review
 

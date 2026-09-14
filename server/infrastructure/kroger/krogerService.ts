@@ -111,7 +111,6 @@ export type CartSubmissionMatch = {
     | "general"
     | "search"
     | "preferred-unavailable"
-    | "preferred-missing"
     | "review";
   cartQuantity: number;
 };
@@ -151,6 +150,11 @@ export interface KrogerClient {
     locationId: string;
     limit: number;
   }): Promise<KrogerProduct[]>;
+  getProduct(input: {
+    accessToken: string;
+    productId: string;
+    locationId: string;
+  }): Promise<KrogerProduct | null>;
   addToCart(input: {
     accessToken: string;
     items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
@@ -228,6 +232,26 @@ export class KrogerHttpClient implements KrogerClient {
     return response.data ?? [];
   }
 
+  async getProduct(input: { accessToken: string; productId: string; locationId: string }) {
+    const params = new URLSearchParams();
+    if (input.locationId) params.set("filter.locationId", input.locationId);
+    const query = params.size ? `?${params.toString()}` : "";
+    const response = await fetch(
+      `${krogerBaseUrl}/products/${encodeURIComponent(input.productId)}${query}`,
+      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" } }
+    );
+    if (response.status === 404) return null;
+    const text = await response.text();
+    const body = text ? JSON.parse(text) as unknown : {};
+    if (!response.ok) {
+      const message = body && typeof body === "object" && "errors" in body
+        ? JSON.stringify((body as { errors: unknown }).errors)
+        : text || response.statusText;
+      throw new Error(`Kroger API request failed (${response.status}): ${message}`);
+    }
+    return (body as { data?: KrogerProduct }).data ?? null;
+  }
+
   async addToCart(input: {
     accessToken: string;
     items: Array<{ upc: string; quantity: number; modality: "PICKUP" }>;
@@ -246,6 +270,7 @@ export class KrogerHttpClient implements KrogerClient {
 
 export class FakeKrogerClient implements KrogerClient {
   readonly cartSubmissions: Array<Array<{ upc: string; quantity: number; modality: "PICKUP" }>> = [];
+  readonly productsById = new Map<string, KrogerProduct>();
 
   async exchangeToken(): Promise<KrogerTokenResponse> {
     return {
@@ -324,7 +349,13 @@ export class FakeKrogerClient implements KrogerClient {
         }]
       }
     ];
+    for (const candidate of candidates) this.productsById.set(candidate.productId, candidate);
     return candidates.slice(0, input.limit);
+  }
+
+  async getProduct(input: { productId: string }) {
+    if (input.productId.includes("missing-remembered")) return null;
+    return this.productsById.get(input.productId) ?? null;
   }
 
   async addToCart(input: {
@@ -740,6 +771,23 @@ function deleteStoreItemPreference(dataScope: DataScope, provider: string, ingre
   database.save();
 }
 
+function preferenceToStoreItem(preference: StoreItemPreference): StoreItemCandidate {
+  return {
+    productId: preference.storeItemId,
+    upc: preference.upc,
+    description: preference.description,
+    brand: preference.brand,
+    size: preference.size,
+    stockLevel: "",
+    price: null,
+    regularPrice: null,
+    promotionalPrice: null,
+    imageUrl: preference.imageUrl,
+    isStoreBrand: preference.isStoreBrand,
+    aisleLocations: []
+  };
+}
+
 function distinctStoreItems(candidates: StoreItemCandidate[]) {
   return candidates.filter((candidate, index) =>
     candidates.findIndex((other) => other.productId === candidate.productId && other.upc === candidate.upc) === index
@@ -775,35 +823,58 @@ async function matchCartItems(
     }
 
     try {
-      const searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
       const preference = getStoreItemPreference(dataScope, "kroger", searchTerm);
+      let searchedCandidates: StoreItemCandidate[] = [];
+      try {
+        searchedCandidates = await searchStoreItems(searchTerm, { limit: 10, dataScope });
+      } catch (error) {
+        if (!preference) throw error;
+      }
       const searchedPreferredCandidate = preference
         ? searchedCandidates.find((candidate) =>
             candidate.productId === preference.storeItemId || candidate.upc === preference.upc
           )
         : null;
-      const preferredCandidate = searchedPreferredCandidate ?? null;
+      let refreshedPreferredCandidate = searchedPreferredCandidate ?? null;
+      if (preference && !refreshedPreferredCandidate) {
+        try {
+          const accessToken = await getServiceToken();
+          const locationId = getScopedSetting(dataScope, "krogerLocationId");
+          const product = await krogerClient.getProduct({
+            accessToken,
+            productId: preference.storeItemId,
+            locationId
+          });
+          refreshedPreferredCandidate = product ? toStoreItemCandidate(product) : null;
+        } catch {
+          // A failed metadata refresh must not replace a remembered selection.
+        }
+      }
+      const preferredCandidate = preference
+        ? refreshedPreferredCandidate ?? preferenceToStoreItem(preference)
+        : null;
       const candidates = distinctStoreItems(preferredCandidate
         ? [preferredCandidate, ...searchedCandidates]
         : searchedCandidates);
-      const preferredItemIsUnavailable =
-        searchedPreferredCandidate?.stockLevel === "TEMPORARILY_OUT_OF_STOCK";
-      const availableFallback = preferredItemIsUnavailable
+      const unavailablePreferredCandidate =
+        refreshedPreferredCandidate?.stockLevel === "TEMPORARILY_OUT_OF_STOCK"
+          ? refreshedPreferredCandidate
+          : null;
+      const availableFallback = unavailablePreferredCandidate
         ? chooseStoreItemCandidate(
             searchedCandidates.filter((candidate) =>
               (
-                candidate.productId !== searchedPreferredCandidate.productId
-                || candidate.upc !== searchedPreferredCandidate.upc
+                candidate.productId !== unavailablePreferredCandidate.productId
+                || candidate.upc !== unavailablePreferredCandidate.upc
               )
               && candidate.stockLevel !== "TEMPORARILY_OUT_OF_STOCK"
             ),
             dataScope
           )
         : null;
-      const preferredItemIsMissing = Boolean(preference && !searchedPreferredCandidate);
       const storeItem = availableFallback
         ?? preferredCandidate
-        ?? chooseStoreItemCandidate(searchedCandidates, dataScope);
+        ?? chooseStoreItemCandidate(candidates, dataScope);
       if (!storeItem) {
         skipped.push({ item, reason: "No store item candidates found." });
         continue;
@@ -815,11 +886,9 @@ async function matchCartItems(
         candidates,
         selectionSource: availableFallback
           ? "preferred-unavailable"
-          : preferredItemIsMissing
-            ? "preferred-missing"
-            : preferredCandidate
-              ? "remembered"
-              : "general",
+          : preferredCandidate
+            ? "remembered"
+            : "general",
         cartQuantity: 1
       });
     } catch (error) {
