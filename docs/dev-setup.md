@@ -172,16 +172,24 @@ docker compose down
 For containerized development with Vite and API live reload, use the separate development Compose file:
 
 ```powershell
-docker compose -f compose.dev.yaml up --build
+docker compose -f compose.dev.yaml up --build --watch
 ```
 
-The source tree is mounted read-only. Separate named volumes hold each container's dependencies, and only the API container receives a writable `data/` mount. Vite is available on LAN port `5173`; the API is also available locally at `http://127.0.0.1:5174` for debugging. Stop it with:
+Compose Watch synchronizes source changes into the containers' Linux filesystems, avoiding slow Windows-to-WSL bind-mounted source access and polling. Dependency changes rebuild the development images automatically. Only the API container receives a writable `data/` bind mount. Vite is available on LAN port `5173`; the API is also available locally at `http://127.0.0.1:5174` for debugging. Stop it with:
 
 ```powershell
 docker compose -f compose.dev.yaml down
 ```
 
 Both Docker workflows use the existing `data/grocery-getter.sqlite`. Stop all native Grocery Getter processes before starting Docker, and stop Docker before returning to `scripts\dev.ps1` or `scripts\start-lan.ps1`.
+
+To benchmark the built production containers, run:
+
+```powershell
+npm run test:perf:docker:production
+```
+
+This starts an isolated production Compose project on `http://127.0.0.1:5183`, benchmarks it with the same Playwright performance suite, and tears it down afterward. The benchmark uses a temporary copy of `data/grocery-getter.sqlite`, so it does not write to the live database. Set `PERF_DOCKER_PORT` to use a different host port.
 
 ## Notes for Codex desktop
 

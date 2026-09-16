@@ -10,7 +10,7 @@ services:
       GROCERY_GETTER_DB_PATH: /app/data/grocery-getter.sqlite
     volumes:
       - type: bind
-        source: ./data
+        source: ${GROCERY_GETTER_DATA_DIR:-./data}
         target: /app/data
     restart: unless-stopped
     healthcheck:
@@ -33,7 +33,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "5173:5173"
+      - "${GROCERY_GETTER_WEB_PORT:-5173}:5173"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:5173/api/health"]

@@ -6,18 +6,10 @@ services:
       target: development
     command: ["npm", "run", "dev:api"]
     environment:
-      CHOKIDAR_USEPOLLING: "true"
       HOST: 0.0.0.0
       PORT: 5174
       GROCERY_GETTER_DB_PATH: /app/data/grocery-getter.sqlite
     volumes:
-      - type: bind
-        source: .
-        target: /app
-        read_only: true
-      - type: volume
-        source: api_node_modules
-        target: /app/node_modules
       - type: bind
         source: ./data
         target: /app/data
@@ -33,6 +25,28 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    develop:
+      watch:
+        - action: sync
+          path: ./server
+          target: /app/server
+          initial_sync: true
+        - action: sync
+          path: ./shared
+          target: /app/shared
+          initial_sync: true
+        - action: sync
+          path: ./tsconfig.json
+          target: /app/tsconfig.json
+          initial_sync: true
+        - action: sync
+          path: ./tsconfig.server.json
+          target: /app/tsconfig.server.json
+          initial_sync: true
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json
 
   web:
     image: grocery-getter-web:development
@@ -42,21 +56,34 @@ services:
     command: ["npm", "run", "dev:web:docker"]
     environment:
       GROCERY_GETTER_API_URL: http://api:5174
-      GROCERY_GETTER_VITE_POLLING: "1"
     depends_on:
       api:
         condition: service_healthy
-    volumes:
-      - type: bind
-        source: .
-        target: /app
-        read_only: true
-      - type: volume
-        source: web_node_modules
-        target: /app/node_modules
     ports:
       - "5173:5173"
-
-volumes:
-  api_node_modules:
-  web_node_modules:
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+          initial_sync: true
+        - action: sync
+          path: ./shared
+          target: /app/shared
+          initial_sync: true
+        - action: sync
+          path: ./index.html
+          target: /app/index.html
+          initial_sync: true
+        - action: sync
+          path: ./vite.config.js
+          target: /app/vite.config.js
+          initial_sync: true
+        - action: sync
+          path: ./tsconfig.json
+          target: /app/tsconfig.json
+          initial_sync: true
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json

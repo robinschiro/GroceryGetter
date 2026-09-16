@@ -14,6 +14,7 @@
     "test:api": "node scripts/playwright.mjs test --project=api",
     "test:e2e": "node scripts/playwright.mjs test --project=chromium",
     "test:perf": "node scripts/run-perf.mjs",
+    "test:perf:docker:production": "node scripts/run-docker-production-perf.mjs",
     "test:mobile": "node scripts/playwright.mjs test --project=mobile-smoke",
     "test:characterization": "node scripts/playwright.mjs test",
     "test:headed": "node scripts/playwright.mjs test --project=chromium --headed",
