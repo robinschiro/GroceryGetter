@@ -46,8 +46,9 @@ const app = createApp({
 });
 
 const port = Number(process.env.PORT ?? 5174);
-const server = app.listen(port, "127.0.0.1", () => {
-  console.log(`Grocery Getter API running on http://127.0.0.1:${port}`);
+const host = process.env.HOST?.trim() || "127.0.0.1";
+const server = app.listen(port, host, () => {
+  console.log(`Grocery Getter API running on http://${host}:${port}`);
 });
 
 function shutdown() {

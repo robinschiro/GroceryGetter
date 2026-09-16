@@ -1,5 +1,6 @@
 node_modules/
 dist/
+server-dist/
 .cache/
 .codex-manual-cache/
 .npm-cache/

@@ -53,6 +53,10 @@ export function createApp({
     next();
   });
 
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   if (testMode) {
     app.post("/api/test/reset", async (req, res, next) => {
       try {

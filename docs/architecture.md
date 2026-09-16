@@ -6,6 +6,8 @@
 
 `server/index.ts` resolves configuration, creates and initializes the database, selects a production or fake Kroger client, constructs the Express app, listens, and handles shutdown. `server/app.ts` installs shared middleware and composes feature routers.
 
+The Docker production runtime keeps the browser and API in separate containers. Nginx serves the built frontend on port `5173` and proxies `/api` to the private Express container on port `5174`. Only the API container mounts the host `data/` directory.
+
 ## Ownership
 
 ```text
@@ -35,6 +37,8 @@ Normal startup resolves to `data/grocery-getter.sqlite`. Treat that file, `.env`
 Characterization setup creates `.cache/tests/characterization.sqlite`, refuses the resolved production path in test mode, resets only that disposable database, and constructs QFC with `FakeKrogerClient`. The fake client returns deterministic locations/products and records cart submissions in memory; it cannot make Kroger requests or mutate a real QFC cart.
 
 `GROCERY_GETTER_DB_PATH` selects a database file. `GROCERY_GETTER_TEST_MODE=1` enables the test reset endpoint and refuses the production database path.
+
+`HOST` selects the API bind address. Native startup defaults to `127.0.0.1`; Docker sets it to `0.0.0.0` inside the API container.
 
 ## Local verification
 

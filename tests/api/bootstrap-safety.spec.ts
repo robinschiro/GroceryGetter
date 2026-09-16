@@ -7,6 +7,13 @@ test.beforeEach(async ({ request }) => {
   await resetDatabase(request);
 });
 
+test("health endpoint reports that the API is ready", async ({ request }) => {
+  const response = await request.get("/api/health", { headers: productionHeaders });
+
+  expect(response.status()).toBe(200);
+  await expect(response.json()).resolves.toEqual({ status: "ok" });
+});
+
 test("test startup refuses the production database and test controls expose only the intended method", async ({
   request
 }) => {

@@ -5,6 +5,8 @@ This app has two local development servers:
 - Vite web app on port `5173`
 - Express API on port `5174`
 
+The existing native scripts remain the default development workflow. Docker is an additional option; do not run the native and Docker workflows at the same time because they use the same ports and database file.
+
 See [architecture.md](architecture.md) for module ownership, dependency rules, disposable-test guarantees, and the full verification commands.
 
 For normal local development, open the app at:
@@ -125,6 +127,61 @@ Start LAN development with:
 ```
 
 Leave the PowerShell window open while using the app. If `scripts\start-lan.ps1` reports that ports `5173` or `5174` are already in use, stop the existing Grocery Getter server before starting a new one.
+
+## Docker
+
+Install Docker Desktop on Windows from an Administrator PowerShell if it is not already installed:
+
+```powershell
+winget install --exact --id Docker.DockerDesktop
+```
+
+Windows build `26200` currently has a [Docker Desktop startup regression](https://github.com/docker/desktop-feedback/issues/554) involving inaccessible AF_UNIX socket files. On affected computers, install Docker Desktop `4.69.0` and leave automatic Docker Desktop updates disabled until the regression is fixed:
+
+```powershell
+winget install --exact --id Docker.DockerDesktop --version 4.69.0
+```
+
+Docker Desktop uses the WSL 2 backend. Its installer may require an administrator prompt, Windows restart, or first-run setup. After Docker Desktop is running, verify both commands:
+
+```powershell
+docker version
+docker compose version
+```
+
+Before the first containerized run, make a backup of the existing database:
+
+```powershell
+Copy-Item .\data\grocery-getter.sqlite .\data\grocery-getter.before-docker.sqlite
+```
+
+The backup remains ignored by Git. Production uses an Nginx frontend container and a private Express API container:
+
+```powershell
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+```
+
+Open `http://localhost:5173/` locally or use the computer's LAN IP from another device. Only port `5173` is published in production. Stop the stack with:
+
+```powershell
+docker compose down
+```
+
+For containerized development with Vite and API live reload, use the separate development Compose file:
+
+```powershell
+docker compose -f compose.dev.yaml up --build
+```
+
+The source tree is mounted read-only. Separate named volumes hold each container's dependencies, and only the API container receives a writable `data/` mount. Vite is available on LAN port `5173`; the API is also available locally at `http://127.0.0.1:5174` for debugging. Stop it with:
+
+```powershell
+docker compose -f compose.dev.yaml down
+```
+
+Both Docker workflows use the existing `data/grocery-getter.sqlite`. Stop all native Grocery Getter processes before starting Docker, and stop Docker before returning to `scripts\dev.ps1` or `scripts\start-lan.ps1`.
 
 ## Notes for Codex desktop
 

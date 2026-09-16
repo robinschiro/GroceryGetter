@@ -1,0 +1,43 @@
+services:
+  api:
+    image: grocery-getter-api:production
+    build:
+      context: .
+      target: api-production
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5174
+      GROCERY_GETTER_DB_PATH: /app/data/grocery-getter.sqlite
+    volumes:
+      - type: bind
+        source: ./data
+        target: /app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5174/api/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: grocery-getter-web:production
+    build:
+      context: .
+      target: web-production
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:5173/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

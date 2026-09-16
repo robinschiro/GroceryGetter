@@ -1,0 +1,62 @@
+services:
+  api:
+    image: grocery-getter-api:development
+    build:
+      context: .
+      target: development
+    command: ["npm", "run", "dev:api"]
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      HOST: 0.0.0.0
+      PORT: 5174
+      GROCERY_GETTER_DB_PATH: /app/data/grocery-getter.sqlite
+    volumes:
+      - type: bind
+        source: .
+        target: /app
+        read_only: true
+      - type: volume
+        source: api_node_modules
+        target: /app/node_modules
+      - type: bind
+        source: ./data
+        target: /app/data
+    ports:
+      - "127.0.0.1:5174:5174"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5174/api/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: grocery-getter-web:development
+    build:
+      context: .
+      target: development
+    command: ["npm", "run", "dev:web:docker"]
+    environment:
+      GROCERY_GETTER_API_URL: http://api:5174
+      GROCERY_GETTER_VITE_POLLING: "1"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: .
+        target: /app
+        read_only: true
+      - type: volume
+        source: web_node_modules
+        target: /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  api_node_modules:
+  web_node_modules:
