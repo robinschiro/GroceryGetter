@@ -17,4 +17,3 @@ imports/dropbox-recipes/download
 imports/dropbox-recipes/parsed-recipes.json
 test-results
 playwright-report
-.codex-git-command.json
