@@ -1,0 +1,150 @@
+{
+  "timestamp": "2026-09-16T15:39:13.713Z",
+  "label": "native-development",
+  "baseUrl": "http://127.0.0.1:5173",
+  "gitCommit": "e8d4b2eb6a8a56aff2d1dcf555fd28eccb1539e8",
+  "warmupCount": 1,
+  "sampleCount": 3,
+  "routes": [
+    {
+      "name": "planner",
+      "path": "/planner",
+      "heading": "Menu Builder",
+      "samples": [
+        {
+          "iteration": 1,
+          "readyMs": 874.5,
+          "domContentLoadedMs": 119.9,
+          "loadMs": 129.9,
+          "apiRequestCount": 10,
+          "slowestApiMs": 99.9
+        },
+        {
+          "iteration": 2,
+          "readyMs": 872.1,
+          "domContentLoadedMs": 105,
+          "loadMs": 109.9,
+          "apiRequestCount": 10,
+          "slowestApiMs": 92.3
+        },
+        {
+          "iteration": 3,
+          "readyMs": 857.8,
+          "domContentLoadedMs": 103.8,
+          "loadMs": 107.7,
+          "apiRequestCount": 10,
+          "slowestApiMs": 81.4
+        }
+      ],
+      "medianReadyMs": 872.1,
+      "p95ReadyMs": 874.5,
+      "minReadyMs": 857.8,
+      "maxReadyMs": 874.5
+    },
+    {
+      "name": "recipes",
+      "path": "/recipes/manage",
+      "heading": "Recipes",
+      "samples": [
+        {
+          "iteration": 1,
+          "readyMs": 585.6,
+          "domContentLoadedMs": 79.3,
+          "loadMs": 98.9,
+          "apiRequestCount": 10,
+          "slowestApiMs": 80.3
+        },
+        {
+          "iteration": 2,
+          "readyMs": 582.8,
+          "domContentLoadedMs": 106.2,
+          "loadMs": 112.3,
+          "apiRequestCount": 10,
+          "slowestApiMs": 80.9
+        },
+        {
+          "iteration": 3,
+          "readyMs": 589.1,
+          "domContentLoadedMs": 99.3,
+          "loadMs": 104.8,
+          "apiRequestCount": 10,
+          "slowestApiMs": 81.6
+        }
+      ],
+      "medianReadyMs": 585.6,
+      "p95ReadyMs": 589.1,
+      "minReadyMs": 582.8,
+      "maxReadyMs": 589.1
+    },
+    {
+      "name": "shopping-lists",
+      "path": "/shopping-lists/manage",
+      "heading": "Shopping Lists",
+      "samples": [
+        {
+          "iteration": 1,
+          "readyMs": 582.1,
+          "domContentLoadedMs": 100,
+          "loadMs": 104.2,
+          "apiRequestCount": 10,
+          "slowestApiMs": 84.2
+        },
+        {
+          "iteration": 2,
+          "readyMs": 589.2,
+          "domContentLoadedMs": 99.9,
+          "loadMs": 104,
+          "apiRequestCount": 10,
+          "slowestApiMs": 87.7
+        },
+        {
+          "iteration": 3,
+          "readyMs": 590.1,
+          "domContentLoadedMs": 104.9,
+          "loadMs": 109.9,
+          "apiRequestCount": 10,
+          "slowestApiMs": 79.9
+        }
+      ],
+      "medianReadyMs": 589.2,
+      "p95ReadyMs": 590.1,
+      "minReadyMs": 582.1,
+      "maxReadyMs": 590.1
+    },
+    {
+      "name": "ingredients",
+      "path": "/ingredients",
+      "heading": "Ingredients",
+      "samples": [
+        {
+          "iteration": 1,
+          "readyMs": 844.7,
+          "domContentLoadedMs": 103.7,
+          "loadMs": 108.2,
+          "apiRequestCount": 11,
+          "slowestApiMs": 108.5
+        },
+        {
+          "iteration": 2,
+          "readyMs": 816.3,
+          "domContentLoadedMs": 100.3,
+          "loadMs": 105.8,
+          "apiRequestCount": 11,
+          "slowestApiMs": 103
+        },
+        {
+          "iteration": 3,
+          "readyMs": 860.9,
+          "domContentLoadedMs": 99.7,
+          "loadMs": 105.3,
+          "apiRequestCount": 11,
+          "slowestApiMs": 118.8
+        }
+      ],
+      "medianReadyMs": 844.7,
+      "p95ReadyMs": 860.9,
+      "minReadyMs": 816.3,
+      "maxReadyMs": 860.9
+    }
+  ]
+}
