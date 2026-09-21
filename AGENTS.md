@@ -42,6 +42,7 @@
 ## User Shorthands
 - If the user sends exactly `c`, treat it as: review the current git diff, summarize the intended commit, then create a git commit with an appropriate message.
 - If the user sends exactly `cp`, treat it as: do everything for `c`, then push the resulting commit to the current branch. If the current chat thread does not already have a concise, relevant name, rename it to a title of five words or fewer that describes the changes made.
+- If the user sends exactly `rid`, treat it as: start the `GroceryGetter Docker Watch` scheduled task. Do not launch Compose directly. If the task is already running, do not start another instance. Verify both development containers and their health endpoints, then report success or the blocking error.
 - If the user sends exactly `rsd`, treat it as: run the Dropbox recipe sync dry run for `imports/dropbox-recipes/parsed-recipes.json`. First validate the JSON with `scripts/import-recipes.ts --validate-only`, then run `scripts/import-recipes.ts --sync` without `--commit` against the local API. Report new, changed, unchanged, name-conflict, and missing-source recipes. Do not create, update, or delete recipes.
 - Before committing, run the relevant verification for the touched files when practical.
 - Never include unrelated work in the commit. If unrelated changes are present, leave them unstaged and mention them.
