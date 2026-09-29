@@ -15,6 +15,9 @@ export function MenuBuilder({
   mealCount,
   setMealCount,
   activeMenu,
+  submittedMenuReadOnly,
+  enableSubmittedMenuEditing,
+  finishSubmittedMenuEditing,
   generateMenu,
   saveMenu,
   updateMenuItem,
@@ -32,6 +35,9 @@ export function MenuBuilder({
   mealCount: number | "";
   setMealCount: (value: number | "") => void;
   activeMenu: Menu | null;
+  submittedMenuReadOnly: boolean;
+  enableSubmittedMenuEditing: () => void;
+  finishSubmittedMenuEditing: () => void;
   generateMenu: () => Promise<void>;
   saveMenu: () => Promise<void>;
   updateMenuItem: (
@@ -79,6 +85,18 @@ export function MenuBuilder({
 
       {activeMenu ? (
         <div className="menu-table">
+          {activeMenu.status === "submitted" ? (
+            <div className="submitted-menu-state">
+              <span>{activeMenu.name} · Submitted menu {submittedMenuReadOnly ? "· Read only" : "· Editing"}</span>
+              <button
+                className="secondary"
+                type="button"
+                onClick={submittedMenuReadOnly ? enableSubmittedMenuEditing : finishSubmittedMenuEditing}
+              >
+                {submittedMenuReadOnly ? "Edit menu" : "Done editing"}
+              </button>
+            </div>
+          ) : null}
           {Array.from({ length: activeMenu.mealCount }, (_, index) => index + 1).map((mealNumber) => (
             <div className="meal-block" key={mealNumber}>
               <div className="meal-heading">
@@ -87,7 +105,7 @@ export function MenuBuilder({
                   className="icon-button danger"
                   type="button"
                   onClick={() => void removeMeal(mealNumber)}
-                  disabled={activeMenu.mealCount === 1}
+                  disabled={submittedMenuReadOnly || activeMenu.mealCount === 1}
                   aria-label={`Remove meal ${mealNumber}`}
                   title={activeMenu.mealCount === 1 ? "A menu must include at least one meal" : `Remove meal ${mealNumber}`}
                 >
@@ -105,6 +123,7 @@ export function MenuBuilder({
                       <select
                         id={`meal-${mealNumber}-${category.value}`}
                         value={item?.recipeId ?? ""}
+                        disabled={submittedMenuReadOnly}
                         onChange={(event) =>
                           item &&
                           void updateMenuItem(
@@ -128,7 +147,7 @@ export function MenuBuilder({
                         className="icon-button secondary planner-edit-button"
                         type="button"
                         onClick={() => item?.recipeId && editRecipe(item.recipeId)}
-                        disabled={!item?.recipeId}
+                        disabled={submittedMenuReadOnly || !item?.recipeId}
                         aria-label={item?.recipeName ? `Edit ${item.recipeName}` : `No ${category.label.toLowerCase()} selected`}
                         title={item?.recipeName ? `Edit ${item.recipeName}` : `Select a ${category.label.toLowerCase()} to edit`}
                       >
@@ -145,7 +164,7 @@ export function MenuBuilder({
               className="secondary"
               type="button"
               onClick={() => void addMeal()}
-              disabled={activeMenu.mealCount >= 14}
+              disabled={submittedMenuReadOnly || activeMenu.mealCount >= 14}
             >
               <Plus size={17} />
               Add meal
@@ -165,6 +184,7 @@ export function MenuBuilder({
                       <input
                         type="checkbox"
                         checked={activeMenu.customShoppingListIds.includes(list.id)}
+                        disabled={submittedMenuReadOnly}
                         onChange={(event) =>
                           void updateCustomShoppingListSelection(list.id, event.target.checked)
                         }
@@ -175,6 +195,7 @@ export function MenuBuilder({
                       className="icon-button secondary planner-edit-button"
                       type="button"
                       onClick={() => editCustomShoppingList(list.id)}
+                      disabled={submittedMenuReadOnly}
                       aria-label={`Edit ${list.name}`}
                       title={`Edit ${list.name}`}
                     >
@@ -198,6 +219,7 @@ export function MenuBuilder({
               List
               <select
                 value={activeMenu.ourGroceriesList?.id ?? ""}
+                disabled={submittedMenuReadOnly}
                 onChange={(event) => {
                   const list = ourGroceriesLists.find((candidate) => candidate.id === event.target.value) ?? null;
                   void updateOurGroceriesListSelection(list);
@@ -222,7 +244,7 @@ export function MenuBuilder({
                 Save menu
               </button>
             ) : (
-              <button onClick={() => void aggregateIngredients()}>
+              <button disabled={submittedMenuReadOnly} onClick={() => void aggregateIngredients()}>
                 <Settings size={17} />
                 Aggregate ingredients
               </button>

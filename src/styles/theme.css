@@ -203,6 +203,18 @@
   border-color: #33443d;
 }
 
+:root[data-theme="dark"] .submitted-menu-state {
+  background: #263630;
+  border-color: #465a4f;
+  color: #eef4f0;
+}
+
+:root[data-theme="dark"] .submitted-menu-state button.secondary {
+  background: #365447;
+  border: 1px solid #6c977e;
+  color: #eef4f0;
+}
+
 :root[data-theme="dark"] .recipe-management-item:hover,
 :root[data-theme="dark"] .shopping-list-management-item:hover {
   background: #24332d;

@@ -17,6 +17,57 @@ async function saveAndAggregateMenu(page: import("playwright/test").Page) {
   await expect(page.getByRole("button", { name: "Review store items" })).toBeVisible();
 }
 
+test("submitted menu loads read only until Edit menu is selected", async ({ page, request }) => {
+  await page.goto("/planner");
+  await page.getByLabel("Meals").fill("2");
+  await page.getByRole("button", { name: "Generate" }).click();
+  await expect(page.getByText("Meal 2", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save menu" }).click();
+  await expect(page.getByRole("button", { name: "Aggregate ingredients" })).toBeVisible();
+
+  const saved = await (await request.get("/api/menus/latest")).json();
+  await page.route(/\/api\/menus\/(?:latest|\d+)$/, async (route) => {
+    const response = await route.fetch();
+    const menu = await response.json();
+    await route.fulfill({ response, json: { ...menu, status: "submitted" } });
+  });
+  await page.reload();
+
+  const entree = page.getByLabel("Entree", { exact: true }).first();
+  await expect(page.getByText("Read only")).toBeVisible();
+  await expect(entree).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Remove meal 1" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Add meal" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Aggregate ingredients" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: /^Weekly Staples/ })).toBeDisabled();
+  await expect((await (await request.get(`/api/menus/${saved.id}`)).json()).items).toEqual(saved.items);
+
+  await page.getByRole("button", { name: "Edit menu" }).click();
+  await expect(entree).toBeEnabled();
+  const original = await entree.inputValue();
+  const alternative = await entree.locator("option").evaluateAll((options, selected) =>
+    options.map((option) => (option as HTMLOptionElement).value).find((value) => value !== selected),
+    original
+  );
+  if (!alternative) throw new Error("The test needs a second entree recipe.");
+  await entree.selectOption(alternative);
+  await expect(entree).toHaveValue(alternative);
+  await expect(entree).toBeEnabled();
+
+  await page.getByRole("button", { name: "Done editing" }).click();
+  await expect(entree).toBeDisabled();
+  await page.reload();
+  await expect(entree).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Edit menu" })).toBeVisible();
+  const updated = await (await request.get(`/api/menus/${saved.id}`)).json();
+  expect(updated.items.find((item: { mealNumber: number; slot: string }) =>
+    item.mealNumber === 1 && item.slot === "entree").recipeId).toBe(Number(alternative));
+
+  await page.getByRole("button", { name: "Generate" }).click();
+  await expect(page.getByRole("button", { name: "Save menu" })).toBeVisible();
+  await expect(page.getByLabel("Entree", { exact: true }).first()).toBeEnabled();
+});
+
 test("planner and aggregated-list journeys preserve menu editing, persistence, provenance, source saves, approval, clearing, and regeneration", async ({
   page
 }) => {
@@ -227,6 +278,8 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   const submit = page.getByRole("button", { name: /Add \d+ reviewed store items? to QFC/ });
   await submit.click();
   await expect(page.getByRole("status").filter({ hasText: /added to the QFC cart/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit menu" })).toBeVisible();
+  await expect(page.getByLabel("Entree", { exact: true }).first()).toBeDisabled();
 });
 
 test("fake-QFC review explains an available fallback without replacing the preferred item", async ({

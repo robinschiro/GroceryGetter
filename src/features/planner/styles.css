@@ -12,6 +12,18 @@
   gap: 12px;
 }
 
+.submitted-menu-state {
+  align-items: center;
+  background: #eef2ef;
+  border: 1px solid #d8dfdb;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
 .meal-block {
   border-top: 1px solid #d8dfdb;
   display: grid;

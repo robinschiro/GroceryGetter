@@ -44,6 +44,9 @@ export function usePlanner({
   notify: (message: string, variant?: ToastVariant) => void;
 }) {
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
+  const [editingSubmittedMenuId, setEditingSubmittedMenuId] = useState<number | null>(null);
+  const submittedMenuReadOnly = activeMenu?.status === "submitted"
+    && activeMenu.id !== editingSubmittedMenuId;
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [dirtyShoppingItemIds, setDirtyShoppingItemIds] = useState<Set<number>>(() => new Set());
   const [sourceMetadataDirtyItemIds, setSourceMetadataDirtyItemIds] = useState<Set<number>>(() => new Set());
@@ -60,12 +63,14 @@ export function usePlanner({
 
   function reset() {
     setActiveMenu(null);
+    setEditingSubmittedMenuId(null);
     invalidateGeneratedList();
     setMealCount(2);
   }
 
   async function loadLatestMenu() {
     const latestMenu = await getLatestMenu(api);
+    setEditingSubmittedMenuId(null);
     if (!latestMenu || latestMenu.id === null) {
       setActiveMenu(null);
       setShoppingList([]);
@@ -79,7 +84,18 @@ export function usePlanner({
   }
 
   async function loadMenu(id: number) {
+    setEditingSubmittedMenuId(null);
     setActiveMenu(await getMenu(api, id));
+  }
+
+  function enableSubmittedMenuEditing() {
+    if (activeMenu?.status === "submitted" && activeMenu.id !== null) {
+      setEditingSubmittedMenuId(activeMenu.id);
+    }
+  }
+
+  function finishSubmittedMenuEditing() {
+    setEditingSubmittedMenuId(null);
   }
 
   async function generateMenu() {
@@ -89,6 +105,7 @@ export function usePlanner({
     }
 
     try {
+      setEditingSubmittedMenuId(null);
       setActiveMenu(await previewMenu(api, mealCount));
       invalidateGeneratedList();
     } catch (err) {
@@ -119,6 +136,7 @@ export function usePlanner({
     slot: RecipeCategory,
     recipeId: number | null
   ) {
+    if (submittedMenuReadOnly) return;
     if (menuItemId === null) {
       const recipe = recipeId === null ? null : recipes.find((item) => item.id === recipeId);
       if (!activeMenu || (recipeId !== null && !recipe)) return;
@@ -136,13 +154,13 @@ export function usePlanner({
 
     await updateMenuItemRequest(api, menuItemId, recipeId);
     if (activeMenu?.id != null) {
-      await loadMenu(activeMenu.id);
+      setActiveMenu(await getMenu(api, activeMenu.id));
       invalidateGeneratedList();
     }
   }
 
   async function addMeal() {
-    if (!activeMenu || activeMenu.mealCount >= 14) return;
+    if (!activeMenu || submittedMenuReadOnly || activeMenu.mealCount >= 14) return;
 
     const nextMealNumber = activeMenu.mealCount + 1;
     const newItems = recipeCategories.map(({ value: slot }) => {
@@ -177,7 +195,7 @@ export function usePlanner({
   }
 
   async function removeMeal(mealNumber: number) {
-    if (!activeMenu || activeMenu.mealCount <= 1) return;
+    if (!activeMenu || submittedMenuReadOnly || activeMenu.mealCount <= 1) return;
 
     try {
       const nextMenu = activeMenu.id === null
@@ -200,7 +218,7 @@ export function usePlanner({
   }
 
   async function updateCustomShoppingListSelection(listId: number, included: boolean) {
-    if (!activeMenu) return;
+    if (!activeMenu || submittedMenuReadOnly) return;
     const nextIds = included
       ? Array.from(new Set([...activeMenu.customShoppingListIds, listId]))
       : activeMenu.customShoppingListIds.filter((id) => id !== listId);
@@ -214,7 +232,7 @@ export function usePlanner({
   }
 
   async function updateOurGroceriesListSelection(list: OurGroceriesListSummary | null) {
-    if (!activeMenu) return;
+    if (!activeMenu || submittedMenuReadOnly) return;
 
     setActiveMenu({ ...activeMenu, ourGroceriesList: list });
     invalidateGeneratedList();
@@ -226,7 +244,7 @@ export function usePlanner({
   }
 
   async function aggregateIngredients() {
-    if (!activeMenu) return;
+    if (!activeMenu || submittedMenuReadOnly) return;
     if (activeMenu.id === null) {
       notify("Save the menu before aggregating ingredients.", "error");
       return;
@@ -359,6 +377,8 @@ export function usePlanner({
     aggregateIngredients,
     clearAggregatedIngredients,
     dirtyShoppingItemIds,
+    enableSubmittedMenuEditing,
+    finishSubmittedMenuEditing,
     generateMenu,
     loadLatestMenu,
     loadMenu,
@@ -374,6 +394,7 @@ export function usePlanner({
     setMealCount,
     setShoppingList,
     shoppingList,
+    submittedMenuReadOnly,
     sourceMetadataDirtyItemIds,
     updateCustomShoppingListSelection,
     updateOurGroceriesListSelection,
