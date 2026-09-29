@@ -39,8 +39,8 @@ export function createQfcWorkflowService({
 }) {
   function requirePreviewJob(jobId: string, dataScope: DataScope) {
     jobStore.prune();
-    const job = jobStore.getScoped(jobId, dataScope)
-      ?? qfcRepository.getReviewByJobId(jobId, dataScope);
+    const job = qfcRepository.getReviewByJobId(jobId, dataScope)
+      ?? jobStore.getScoped(jobId, dataScope);
     if (!job || job.kind !== "preview" || job.status !== "complete" || !job.result) {
       throw new QfcWorkflowError(
         409,
@@ -339,8 +339,8 @@ export function createQfcWorkflowService({
 
   function getJob(jobId: string, dataScope: DataScope) {
     jobStore.prune();
-    const job = jobStore.getScoped(jobId, dataScope)
-      ?? qfcRepository.getReviewByJobId(jobId, dataScope);
+    const job = qfcRepository.getReviewByJobId(jobId, dataScope)
+      ?? jobStore.getScoped(jobId, dataScope);
     if (!job) {
       throw new QfcWorkflowError(404, "QFC submission job was not found.");
     }

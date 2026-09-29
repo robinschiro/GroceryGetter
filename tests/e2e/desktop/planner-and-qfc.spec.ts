@@ -286,6 +286,46 @@ test("QFC review selections survive a page reload", async ({ page }) => {
   await expect(page.getByRole("button", { name: removedLabel ?? "" })).toHaveCount(0);
 });
 
+test("marking one ingredient as pantry preserves the other store item selections", async ({ page }) => {
+  await saveAndAggregateMenu(page);
+  await page.getByRole("button", { name: "Review store items" }).click();
+
+  const tomato = page.getByLabel("Store item for tomato", { exact: true });
+  await expect(tomato).toBeVisible();
+  await tomato.selectOption({ index: 1 });
+  const selectedProduct = await tomato.inputValue();
+  const tomatoQuantity = page.locator(".store-item-match-row")
+    .filter({ has: tomato }).getByLabel(/^Cart quantity for /);
+  await tomatoQuantity.fill("3");
+  await expect(tomatoQuantity).toHaveValue("3");
+
+  const milk = page.getByRole("button", { name: "Cross off milk" });
+  await milk.getByRole("checkbox", { name: "Pantry status for milk" }).check();
+  await expect(page.getByLabel("Store item for milk", { exact: true })).toHaveCount(0);
+  await expect(tomato).toHaveValue(selectedProduct);
+  await expect(tomatoQuantity).toHaveValue("3");
+  await tomatoQuantity.fill("4");
+  await expect(tomatoQuantity).toHaveValue("4");
+
+  await page.reload();
+  await expect(page.getByLabel("Store item for milk", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Store item for tomato", { exact: true }))
+    .toHaveValue(selectedProduct);
+  await expect(page.locator(".store-item-match-row")
+    .filter({ has: page.getByLabel("Store item for tomato", { exact: true }) })
+    .getByLabel(/^Cart quantity for /)).toHaveValue("4");
+
+  await page.getByRole("button", { name: /unchecked ingredient/ }).click();
+  await page.getByRole("checkbox", { name: "Pantry status for milk" }).uncheck();
+  await expect(page.getByLabel("Store item for milk", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Store item for tomato", { exact: true }))
+    .toHaveValue(selectedProduct);
+  await page.reload();
+  await expect(page.getByLabel("Store item for milk", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Store item for tomato", { exact: true }))
+    .toHaveValue(selectedProduct);
+});
+
 test("Ingredients manages pantry status with search, filters, persistence, and scope isolation", async ({
   page
 }) => {

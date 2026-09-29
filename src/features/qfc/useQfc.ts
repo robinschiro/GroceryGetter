@@ -84,6 +84,28 @@ export function useQfc({
     setStoreItemReviewMessage("");
   }
 
+  async function syncPantryReview(item: ShoppingListItem) {
+    if (!menuId) return;
+    const job = await getMenuStoreItemReview(api, menuId);
+    if (!job?.result) {
+      invalidateStoreReview();
+      return;
+    }
+    if (item.approved) {
+      const result = await searchStoreItemsForReviewRequest(
+        api,
+        job.id,
+        item.id,
+        item.item || item.text
+      );
+      job.result.items = result.items;
+      job.result.matched = result.matched;
+      job.result.skipped = result.skipped;
+    }
+    setStoreItemReview({ jobId: job.id, result: job.result });
+    setStoreItemReviewMessage("");
+  }
+
   function reset() {
     invalidateStoreReview();
     setQfcSubmitProgress(null);
@@ -483,6 +505,7 @@ export function useQfc({
     searchingStoreItemIds,
     searchStoreItemsForReview,
     selectStoreItem,
+    syncPantryReview,
     storeItemPreferences,
     storeItemReview,
     storeItemReviewMessage,

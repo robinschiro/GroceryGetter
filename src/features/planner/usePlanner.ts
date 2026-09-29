@@ -33,12 +33,14 @@ export function usePlanner({
   recipes,
   onSourcesChanged,
   onStoreReviewInvalidated,
+  onStoreReviewItemChanged,
   notify
 }: {
   api: ApiRequest;
   recipes: Recipe[];
   onSourcesChanged: () => Promise<void>;
   onStoreReviewInvalidated: () => void;
+  onStoreReviewItemChanged: (item: ShoppingListItem) => Promise<void>;
   notify: (message: string, variant?: ToastVariant) => void;
 }) {
   const [activeMenu, setActiveMenu] = useState<Menu | null>(null);
@@ -282,7 +284,13 @@ export function usePlanner({
         item.id === itemId ? result.item : item
       ));
       if (Boolean(result.item.approved) !== Boolean(previousItem.approved)) {
-        onStoreReviewInvalidated();
+        try {
+          await onStoreReviewItemChanged(result.item);
+        } catch (error) {
+          notify(error instanceof Error
+            ? `Pantry status was saved, but the store item review could not be updated: ${error.message}`
+            : "Pantry status was saved, but the store item review could not be updated.", "error");
+        }
       }
 
       const hasActiveOurGroceriesItem = result.item.sourceTargets.some(

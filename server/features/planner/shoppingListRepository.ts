@@ -1,5 +1,5 @@
 import type { GroceryDatabase } from "../../infrastructure/database/database.js";
-import type { ShoppingListItem } from "../../../shared/contracts/index.js";
+import type { QfcSubmitJob, ShoppingListItem } from "../../../shared/contracts/index.js";
 
 export type AggregateSource = {
   sourceType: "recipe" | "custom" | "ourGroceries";
@@ -231,7 +231,29 @@ export function createShoppingListWorkflowRepository(database: GroceryDatabase) 
           [approved ? 1 : 0, automaticExclusionReason, itemId, menuId]
         );
         if (previous && Boolean(previous.approved) !== approved) {
-          invalidateStoreItemReview(menuId);
+          database.run(
+            "UPDATE menus SET qfc_review_revision = qfc_review_revision + 1 WHERE id = ?",
+            [menuId]
+          );
+          const review = database.queryOne<{ resultJson: string }>(
+            "SELECT result_json AS resultJson FROM store_item_reviews WHERE menu_id = ?",
+            [menuId]
+          );
+          if (review) {
+            const result = JSON.parse(review.resultJson) as NonNullable<QfcSubmitJob["result"]>;
+            if (!approved) {
+              result.items = result.items.filter((item) => item.id !== itemId);
+              result.matched = (result.matched ?? []).filter((match) => match.item.id !== itemId);
+              result.skipped = (result.skipped ?? []).filter((skip) => skip.item.id !== itemId);
+            }
+            database.run(
+              `UPDATE store_item_reviews
+              SET review_revision = (SELECT qfc_review_revision FROM menus WHERE id = ?),
+                result_json = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE menu_id = ?`,
+              [menuId, JSON.stringify(result), menuId]
+            );
+          }
         }
       });
     },

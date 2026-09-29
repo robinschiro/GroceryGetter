@@ -26,7 +26,8 @@ import type {
   DataScope,
   OurGroceriesListSummary,
   OurGroceriesStatus,
-  Recipe
+  Recipe,
+  ShoppingListItem
 } from "../../shared/contracts/index.js";
 import { createApiClient } from "../shared/apiClient.js";
 import { listRecipes } from "../features/recipes/api.js";
@@ -98,6 +99,7 @@ export function App() {
   const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
   const nextToastId = useRef(0);
   const invalidateStoreReviewRef = useRef<() => void>(() => undefined);
+  const syncPantryReviewRef = useRef<(item: ShoppingListItem) => Promise<void>>(async () => undefined);
   const notify = useCallback((message: string, variant: ToastVariant = "success") => {
     nextToastId.current += 1;
     const notification = { id: nextToastId.current, message, variant };
@@ -139,6 +141,7 @@ export function App() {
       await Promise.all([loadRecipes(), loadCustomShoppingLists()]);
     },
     onStoreReviewInvalidated: () => invalidateStoreReviewRef.current(),
+    onStoreReviewItemChanged: (item) => syncPantryReviewRef.current(item),
     notify
   });
   const {
@@ -160,6 +163,7 @@ export function App() {
     selectStoreItem,
     storeItemReview,
     storeItemReviewMessage,
+    syncPantryReview,
     updateRealQfcCartPermission,
     updateShoppingItemApproval,
     updateStoreBrandPreference,
@@ -177,6 +181,7 @@ export function App() {
     notifyPlanner: notify
   });
   invalidateStoreReviewRef.current = invalidateStoreReview;
+  syncPantryReviewRef.current = syncPantryReview;
 
   async function loadRecipes() {
     setRecipes(await listRecipes(api));
