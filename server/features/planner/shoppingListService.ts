@@ -4,6 +4,7 @@ import type { OurGroceriesService } from "../../infrastructure/ourGroceries/ourG
 import {
   formatQuantity,
   normalizeAggregateItem,
+  parseOurGroceriesItem,
   parseQuantity
 } from "./shoppingListDomain.js";
 import type {
@@ -47,7 +48,7 @@ export function createShoppingListWorkflowService(
             .map((item, sortOrder) => ({
               remoteItemId: item.id,
               text: item.name,
-              item: item.name,
+              ...parseOurGroceriesItem(item.name),
               sortOrder
             }))
         : [];
@@ -62,7 +63,7 @@ export function createShoppingListWorkflowService(
         customShoppingListItemId: null,
         ourGroceriesItemId: item.remoteItemId,
         text: item.text,
-        quantity: "",
+        quantity: item.quantity,
         unit: "",
         item: item.item,
         sourceName: `OurGroceries: ${menu.ourGroceriesList?.name ?? "List"}`

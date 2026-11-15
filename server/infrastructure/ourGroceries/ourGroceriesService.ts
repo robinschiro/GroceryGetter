@@ -307,8 +307,8 @@ export function createFakeOurGroceriesClient(): OurGroceriesRemoteClient {
       if (!connected) throw new Error("Connect an OurGroceries account first.");
       if (!lists.some((list) => list.id === listId)) throw new Error("OurGroceries list was not found.");
       return [
-        { id: `${listId}-tomato`, name: "tomato", crossedOff: false },
-        { id: `${listId}-coffee`, name: "coffee", crossedOff: false },
+        { id: `${listId}-tomato`, name: "tomato (2)", crossedOff: false },
+        { id: `${listId}-coffee`, name: "coffee (2)", crossedOff: false },
         { id: `${listId}-done`, name: "already bought", crossedOff: true }
       ];
     }

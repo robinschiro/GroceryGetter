@@ -1,3 +1,12 @@
+export function parseOurGroceriesItem(text: string) {
+  const trimmed = text.trim();
+  const match = /^(.*?)\s*\(\s*(\d+(?:\.\d+)?)\s*\)$/.exec(trimmed);
+  if (match?.[1].trim() && Number.isFinite(Number(match[2])) && Number(match[2]) > 0) {
+    return { item: match[1].trim(), quantity: match[2] };
+  }
+  return { item: trimmed, quantity: "" };
+}
+
 export function parseQuantity(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

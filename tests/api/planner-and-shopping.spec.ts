@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "playwright/test";
 import { parseOurGroceriesItems } from "../../server/infrastructure/ourGroceries/ourGroceriesService.js";
+import { parseOurGroceriesItem } from "../../server/features/planner/shoppingListDomain.js";
 import {
   productionHeaders,
   resetDatabase,
@@ -112,12 +113,39 @@ test("OurGroceries response parsing marks items with crossedOffAt as crossed off
   ]);
 });
 
-test("OurGroceries active items aggregate with remote provenance and remain read-only", async ({ request }) => {
+test("OurGroceries quantity suffix parsing preserves descriptive and invalid parentheses", () => {
+  for (const [text, item, quantity] of [
+    ["bananas (2)", "bananas", "2"],
+    ["bananas(3)", "bananas", "3"],
+    ["  bananas ( 2 )  ", "bananas", "2"],
+    ["bananas (2.5)", "bananas", "2.5"],
+    ["milk (lactose free) (2)", "milk (lactose free)", "2"],
+    ["bananas", "bananas", ""],
+    ["milk (lactose free)", "milk (lactose free)", ""],
+    ["bananas (2 bunches)", "bananas (2 bunches)", ""],
+    ["bananas (2) ripe", "bananas (2) ripe", ""],
+    ["bananas (0)", "bananas (0)", ""],
+    ["bananas (-2)", "bananas (-2)", ""],
+    ["bananas ()", "bananas ()", ""],
+    ["(2)", "(2)", ""]
+  ]) {
+    expect(parseOurGroceriesItem(text), text).toEqual({ item, quantity });
+  }
+});
+
+test("OurGroceries active items aggregate quantities with remote provenance and remain read-only", async ({ request }) => {
   const lists = await (await request.get("/api/ourgroceries/lists", {
     headers: productionHeaders
   })).json() as Array<{ id: string; name: string; webUrl: string }>;
   const costco = lists.find((list) => list.name === "Costco")!;
   const { id } = await createMenu(request, 1);
+  expect((await request.post(`/api/menus/${id}/aggregate`, {
+    headers: productionHeaders
+  })).status()).toBe(201);
+  const baselineItems = await (await request.get(`/api/menus/${id}/shopping-list`, {
+    headers: productionHeaders
+  })).json();
+  const baselineTomato = baselineItems.find((item: { item: string }) => item.item === "tomato");
   expect((await request.put(`/api/menus/${id}/ourgroceries-list`, {
     headers: productionHeaders,
     data: { listId: costco.id }
@@ -132,12 +160,12 @@ test("OurGroceries active items aggregate with remote provenance and remain read
   expect(items.some((item: { item: string }) => item.item === "already bought")).toBeFalsy();
 
   const coffee = items.find((item: { item: string }) => item.item === "coffee");
-  expect(coffee).toMatchObject({ text: "coffee", quantity: "", unit: "", canPersistToSource: 0 });
+  expect(coffee).toMatchObject({ text: "coffee", quantity: "2", unit: "", canPersistToSource: 0 });
   expect(coffee.sourceTargets).toEqual([
     { type: "ourGroceries", id: costco.id, name: "Costco", webUrl: costco.webUrl }
   ]);
   expect(coffee.sourceDetails).toEqual([
-    expect.objectContaining({ type: "ourGroceries", id: costco.id, text: "coffee", webUrl: costco.webUrl })
+    expect.objectContaining({ type: "ourGroceries", id: costco.id, text: "coffee (2)", quantity: "2", webUrl: costco.webUrl })
   ]);
   expect((await request.patch(`/api/menus/${id}/shopping-list/items/${coffee.id}/source`, {
     headers: productionHeaders,
@@ -145,6 +173,11 @@ test("OurGroceries active items aggregate with remote provenance and remain read
   })).status()).toBe(409);
 
   const tomato = items.find((item: { item: string }) => item.item === "tomato");
+  expect(items.filter((item: { item: string }) => item.item.startsWith("tomato"))).toHaveLength(1);
+  expect(tomato.quantity).toBe(String(Number(baselineTomato.quantity) + 2));
+  expect(tomato.sourceDetails).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "ourGroceries", text: "tomato (2)", quantity: "2", unit: "" })
+  ]));
   expect(tomato.sourceTargets).toEqual(expect.arrayContaining([
     expect.objectContaining({ type: "ourGroceries", id: costco.id, webUrl: costco.webUrl }),
     expect.objectContaining({ type: "recipe" })

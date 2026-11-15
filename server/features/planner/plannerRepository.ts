@@ -6,7 +6,7 @@ import type {
   RecipeCategory,
   ShoppingListItem
 } from "../../../shared/contracts/index.js";
-import { normalizeAggregateItem } from "./shoppingListDomain.js";
+import { normalizeAggregateItem, parseOurGroceriesItem } from "./shoppingListDomain.js";
 
 export type PlannerRecipe = {
   id: number;
@@ -482,7 +482,7 @@ export function createPlannerRepository(database: GroceryDatabase) {
               name: source.name,
               webUrl: source.webUrl,
               text: source.text,
-              quantity: "",
+              quantity: parseOurGroceriesItem(source.text).quantity,
               unit: ""
             }))
         ];
