@@ -225,6 +225,14 @@ app.get("/api/menus/:id/store-item-review", (req, res) => {
   }
 });
 
+app.post("/api/menus/:id/store-item-review/refresh-metadata", async (req, res) => {
+  try {
+    res.json(await qfcWorkflow.refreshMenuReviewMetadata(Number(req.params.id), requestScope(res)));
+  } catch (error) {
+    sendWorkflowError(res, error);
+  }
+});
+
 app.post("/api/menus/:id/preview-qfc", (req, res) => {
   try {
     const job = qfcWorkflow.startPreview(Number(req.params.id), requestScope(res));
@@ -256,6 +264,18 @@ app.put("/api/store-item-reviews/:jobId/quantities/:shoppingItemId", (req, res) 
       requestScope(res),
       Number(req.params.shoppingItemId),
       Number(req.body.cartQuantity)
+    ));
+  } catch (error) {
+    sendWorkflowError(res, error);
+  }
+});
+
+app.put("/api/store-item-reviews/:jobId/quantity-units/:shoppingItemId", (req, res) => {
+  try {
+    res.json(qfcWorkflow.verifyQuantityUnit(
+      req.params.jobId, requestScope(res), Number(req.params.shoppingItemId),
+      String(req.body.productId ?? ""), String(req.body.upc ?? ""),
+      String(req.body.unit ?? ""), req.body.verifiedOnQfc === true
     ));
   } catch (error) {
     sendWorkflowError(res, error);

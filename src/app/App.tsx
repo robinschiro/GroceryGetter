@@ -170,7 +170,8 @@ export function App() {
     updateRealQfcCartPermission,
     updateShoppingItemApproval,
     updateStoreBrandPreference,
-    updateStoreItemQuantity
+    updateStoreItemQuantity,
+    verifyQuantityUnit
   } = useQfc({
     api,
     menuId: activeMenu?.id ?? null,
@@ -478,6 +479,7 @@ export function App() {
                 addToCart={addReviewedStoreItemsToQfc}
                 selectStoreItem={selectStoreItem}
                 updateCartQuantity={updateStoreItemQuantity}
+                verifyQuantityUnit={verifyQuantityUnit}
                 searchStoreItems={searchStoreItemsForReview}
                 removeStoreItem={removeStoreItemFromReview}
                 openSource={(source) => {

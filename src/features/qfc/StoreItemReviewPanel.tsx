@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
   ChevronRight,
@@ -21,6 +21,7 @@ import type {
   StoreItemCandidate,
   StoreItemMatch
 } from "../../../shared/contracts/index.js";
+import { cartOrderingUnit, storeItemUnits } from "../../../shared/storeItemUnits.js";
 import { recipeEditRoute, shoppingListEditRoute } from "../../shared/router.js";
 import { QfcSubmitProgressBar } from "../../shared/QfcSubmitProgressBar.js";
 import type { StoreItemReviewSearchResult } from "./api.js";
@@ -31,14 +32,16 @@ export type StoreItemReview = {
 };
 
 function formatPrice(candidate: StoreItemCandidate) {
+  const { priceUnit } = storeItemUnits(candidate);
+  const suffix = priceUnit ? `/${priceUnit}` : "";
   if (candidate.promotionalPrice !== null) {
-    const promotional = `$${candidate.promotionalPrice.toFixed(2)} promo`;
+    const promotional = `$${candidate.promotionalPrice.toFixed(2)}${suffix} promo`;
     return candidate.regularPrice !== null && candidate.regularPrice !== candidate.promotionalPrice
-      ? `${promotional} (reg. $${candidate.regularPrice.toFixed(2)})`
+      ? `${promotional} (reg. $${candidate.regularPrice.toFixed(2)}${suffix})`
       : promotional;
   }
 
-  return candidate.regularPrice === null ? "Price unavailable" : `$${candidate.regularPrice.toFixed(2)}`;
+  return candidate.regularPrice === null ? "Price unavailable" : `$${candidate.regularPrice.toFixed(2)}${suffix}`;
 }
 
 function formatAvailability(stockLevel: string) {
@@ -55,7 +58,7 @@ function formatAvailability(stockLevel: string) {
 }
 
 function formatCandidateOption(candidate: StoreItemCandidate) {
-  const product = [candidate.description, candidate.brand, candidate.size].filter(Boolean).join(" — ");
+  const product = [candidate.description, candidate.brand, storeItemUnits(candidate).sizeLabel].filter(Boolean).join(" — ");
   return `${product} · ${formatPrice(candidate)} · ${formatAvailability(candidate.stockLevel)}`;
 }
 
@@ -103,12 +106,55 @@ function groupMatchesByAisle(matches: StoreItemMatch[]) {
   });
 }
 
+function QuantityUnitCheck({ match, verify }: {
+  match: StoreItemMatch;
+  verify: (shoppingItemId: number, productId: string, upc: string, unit: string) => Promise<void>;
+}) {
+  const details = useRef<HTMLDetailsElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const unit = cartOrderingUnit(match);
+  const label = unit === "each" ? "ct" : unit;
+  return <details className="store-item-unit-check" ref={details}>
+    <summary aria-label={`Ordering unit for ${match.storeItem.description}: ${label || "Set unit"}`}
+      title={match.quantityUnitVerification?.verifiedAt ? "Previously verified on QFC. Click to change." : "Set the unit shown on QFC"}>
+      {saving ? "Saving…" : label || "Set unit"}
+    </summary>
+    <div className="store-item-unit-editor">
+      <a href={`https://www.qfc.com/p/product/${encodeURIComponent(match.storeItem.productId)}`}
+        target="_blank" rel="noopener noreferrer">Check on QFC ↗</a>
+      <label>
+        Unit shown on QFC
+        <select aria-label={`Unit shown on QFC for ${match.storeItem.description}`}
+          value={unit ?? ""} disabled={saving} onChange={(event) => {
+            const selected = event.target.value;
+            if (!selected) return;
+            setSaving(true); setError("");
+            void verify(match.item.id, match.storeItem.productId, match.storeItem.upc, selected)
+              .then(() => { if (details.current) details.current.open = false; })
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Unable to save unit."))
+              .finally(() => setSaving(false));
+          }}>
+          <option value="">Choose unit</option>
+          <option value="each">Count (ct/each)</option>
+          <option value="lb">Pounds (lb)</option>
+          <option value="oz">Ounces (oz)</option>
+          <option value="kg">Kilograms (kg)</option>
+          <option value="g">Grams (g)</option>
+        </select>
+      </label>
+      {error ? <p role="alert">{error}</p> : null}
+    </div>
+  </details>;
+}
+
 export function StoreItemReviewPanel({
   review,
   allowRealQfcCartMutation,
   addToCart,
   selectStoreItem,
   updateCartQuantity,
+  verifyQuantityUnit,
   searchStoreItems,
   removeStoreItem,
   openSource,
@@ -126,6 +172,7 @@ export function StoreItemReviewPanel({
     notifyOnPreferenceSave?: boolean
   ) => Promise<void>;
   updateCartQuantity: (shoppingItemId: number, cartQuantity: number) => Promise<void>;
+  verifyQuantityUnit: (shoppingItemId: number, productId: string, upc: string, unit: string) => Promise<void>;
   searchStoreItems: (
     shoppingItemId: number,
     term: string
@@ -154,6 +201,7 @@ export function StoreItemReviewPanel({
     text: string;
   } | null>(null);
   const matches = review?.result.matched ?? [];
+  const unresolvedUnits = matches.filter((match) => !cartOrderingUnit(match));
   const skipped = review?.result.skipped ?? [];
   const aisleGroups = groupMatchesByAisle(matches);
 
@@ -217,14 +265,14 @@ export function StoreItemReviewPanel({
     return Math.max(1, currentQuantity + change);
   }
 
-  function renderQuantityDetails(match: StoreItemMatch) {
+  function renderQuantityDetails(match: StoreItemMatch, part: "button" | "panel" = "button") {
     const itemName = match.item.item || match.item.text;
     const detailsId = `store-item-quantity-details-${match.item.id}`;
     const isOpen = Boolean(quantityDetailsOpen[match.item.id]);
 
     return (
       <>
-        <button
+        {part === "button" ? <button
           className="secondary icon-button store-item-quantity-info-button"
           type="button"
           aria-label={`${isOpen ? "Hide" : "Show"} quantity sources for ${itemName}`}
@@ -237,8 +285,8 @@ export function StoreItemReviewPanel({
           }))}
         >
           <Info size={18} aria-hidden="true" />
-        </button>
-        {isOpen ? (
+        </button> : null}
+        {part === "panel" && isOpen ? (
           <div
             className="store-item-quantity-details"
             id={detailsId}
@@ -550,8 +598,14 @@ export function StoreItemReviewPanel({
                             <Plus size={18} />
                           </button>
                         </div>
+                        {match.quantityUnitVerification || match.storeItem.soldBy?.trim().toUpperCase() !== "UNIT" ? (
+                          <QuantityUnitCheck
+                            key={`${review?.jobId}:${match.item.id}:${match.storeItem.productId}:${match.storeItem.upc}`}
+                            match={match} verify={verifyQuantityUnit} />
+                        ) : <span className="store-item-unit-label">ct</span>}
                         {renderQuantityDetails(match)}
                       </div>
+                      {renderQuantityDetails(match, "panel")}
                     </div>
                   </div>
                   <div className="store-item-selected-details">
@@ -569,11 +623,10 @@ export function StoreItemReviewPanel({
                     )}
                     <div>
                       <strong>{match.storeItem.description}</strong>
-                      <span>{[match.storeItem.brand, match.storeItem.size].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
+                      <span>{[match.storeItem.brand, storeItemUnits(match.storeItem).sizeLabel].filter(Boolean).join(" · ") || "Package details unavailable"}</span>
                       <span>
                         {formatPrice(match.storeItem)}
                         {` · ${formatAvailability(match.storeItem.stockLevel)}`}
-                        {` · Qty ${match.cartQuantity}`}
                       </span>
                     </div>
                   </div>
@@ -607,6 +660,9 @@ export function StoreItemReviewPanel({
             </div>
           ) : null}
 
+          {unresolvedUnits.length ? <p role="alert">
+            Set units for {unresolvedUnits.length} item{unresolvedUnits.length === 1 ? "" : "s"} to continue.
+          </p> : null}
           <div className="panel-actions store-item-review-actions">
             <button
               aria-busy={qfcSubmitProgress?.phase === "adding"}
@@ -616,6 +672,10 @@ export function StoreItemReviewPanel({
                 || !matches.length
                 || Boolean(qfcSubmitProgress)
                 || updatingQuantityItemId !== null
+                || selectingItemId !== null
+                || searchingItemId !== null
+                || removingItemId !== null
+                || unresolvedUnits.length > 0
               }
               title={allowRealQfcCartMutation ? undefined : "Enable real cart changes in QFC preferences"}
             >

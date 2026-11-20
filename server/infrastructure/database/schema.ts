@@ -1,4 +1,5 @@
 import type { GroceryDatabase } from "./database.js";
+import { normalizeCartOrderingUnit } from "../../../shared/storeItemUnits.js";
 
 function columnExists(database: GroceryDatabase, tableName: string, columnName: string) {
   const { queryAll } = database;
@@ -455,4 +456,47 @@ export async function initializeSchema(database: GroceryDatabase) {
     ON CONFLICT(data_scope, key) DO NOTHING`
   );
   saveDb();
+
+  if (!tableExists(database, "store_item_metadata")) {
+    transaction(() => {
+      exec(`CREATE TABLE store_item_metadata (
+        data_scope TEXT NOT NULL CHECK (data_scope IN ('production', 'sandbox')),
+        provider TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        ordering_unit TEXT NOT NULL CHECK (ordering_unit IN ('each', 'lb', 'oz', 'kg', 'g')),
+        verified_at TEXT NOT NULL,
+        PRIMARY KEY (data_scope, provider, product_id)
+      )`);
+      // Run once. Newest saved review wins when older reviews disagree.
+      const reviews = queryAll<{ dataScope: string; resultJson: string; updatedAt: string }>(
+        `SELECT data_scope AS dataScope, result_json AS resultJson, updated_at AS updatedAt
+         FROM store_item_reviews ORDER BY updated_at DESC, menu_id DESC`
+      );
+      for (const review of reviews) {
+        let result;
+        try { result = JSON.parse(review.resultJson); } catch { continue; }
+        if (!Array.isArray(result?.matched)) continue;
+        for (const match of result.matched) {
+          const verified = match?.quantityUnitVerification;
+          const product = match?.storeItem;
+          const unit = normalizeCartOrderingUnit(verified?.unit);
+          if (!product?.productId || typeof product.productId !== "string"
+            || verified?.productId !== product.productId || verified.upc !== product.upc
+            || !unit) continue;
+          run(
+            `INSERT INTO store_item_metadata (data_scope, provider, product_id, ordering_unit, verified_at)
+             VALUES (?, 'kroger', ?, ?, ?) ON CONFLICT(data_scope, provider, product_id) DO NOTHING`,
+            [review.dataScope, product.productId, unit, review.updatedAt]
+          );
+        }
+      }
+    });
+  }
+  if (queryOne<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM store_item_metadata WHERE ordering_unit IN ('bunch', 'package')"
+  )!.count > 0) {
+    transaction(() => {
+      run("UPDATE store_item_metadata SET ordering_unit = 'each' WHERE ordering_unit IN ('bunch', 'package')");
+    });
+  }
 }

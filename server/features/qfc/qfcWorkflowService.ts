@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { QfcService } from "../../infrastructure/kroger/krogerService.js";
 import type { DataScope } from "../../types.js";
 import type { Menu, ShoppingListItem } from "../../../shared/contracts/index.js";
+import { cartOrderingUnit, normalizeCartOrderingUnit } from "../../../shared/storeItemUnits.js";
+import type { CartOrderingUnit } from "../../../shared/contracts/index.js";
 import { QfcJobStore, type QfcSubmitJob } from "./qfcJobStore.js";
 import type { createQfcRepository } from "./qfcRepository.js";
 
@@ -60,8 +62,8 @@ export function createQfcWorkflowService({
     return job as CompletePreviewJob;
   }
 
-  function persistActiveReview(job: CompletePreviewJob) {
-    if (!qfcRepository.saveReview(job)) {
+  function persistActiveReview(job: CompletePreviewJob, verifiedUnit?: { productId: string; unit: CartOrderingUnit }) {
+    if (!qfcRepository.saveReview(job, verifiedUnit)) {
       throw new QfcWorkflowError(
         409,
         "This store item review was replaced or invalidated. Preview the store items again."
@@ -147,6 +149,7 @@ export function createQfcWorkflowService({
 
     const ingredientName = match.item.item.trim() || match.item.text.trim();
     match.storeItem = storeItem;
+    delete match.quantityUnitVerification;
     match.selectionSource = rememberPreference ? "remembered" : "review";
     const preference = rememberPreference
       ? qfcService.saveStoreItemPreference(
@@ -176,6 +179,23 @@ export function createQfcWorkflowService({
     }
     match.cartQuantity = cartQuantity;
     persistActiveReview(previewJob);
+    return { match };
+  }
+
+  function verifyQuantityUnit(jobId: string, dataScope: DataScope, shoppingItemId: number,
+    productId: string, upc: string, unit: string, verifiedOnQfc: boolean) {
+    const previewJob = requirePreviewJob(jobId, dataScope);
+    const match = previewJob.result.matched?.find((candidate) => candidate.item.id === shoppingItemId);
+    if (!match) throw new QfcWorkflowError(404, "The ingredient was not found in this store item review.");
+    if (match.storeItem.productId !== productId || match.storeItem.upc !== upc) {
+      throw new QfcWorkflowError(409, "The selected store item changed. Check its quantity unit on QFC again.");
+    }
+    const orderingUnit = normalizeCartOrderingUnit(unit);
+    if (!verifiedOnQfc || !orderingUnit) {
+      throw new QfcWorkflowError(400, "Check the ordering unit on QFC, then confirm the unit shown there.");
+    }
+    match.quantityUnitVerification = { productId, upc, unit: orderingUnit };
+    persistActiveReview(previewJob, { productId, unit: orderingUnit });
     return { match };
   }
 
@@ -223,6 +243,7 @@ export function createQfcWorkflowService({
     }
     if (candidates.length) {
       if (match) {
+        delete match.quantityUnitVerification;
         match.candidates = candidates;
         match.storeItem = candidates[0];
         match.selectionSource = "search";
@@ -284,6 +305,12 @@ export function createQfcWorkflowService({
         403,
         "Real QFC cart changes are disabled in this data mode. Enable them explicitly in QFC preferences."
       );
+    }
+
+    const unresolved = (previewJob.result.matched ?? []).filter((match) => !cartOrderingUnit(match));
+    if (unresolved.length) {
+      throw new QfcWorkflowError(409,
+        `Verify the ordering unit on QFC or remove these items before adding to cart: ${unresolved.map((match) => match.storeItem.description).join(", ")}.`);
     }
 
     const job: QfcSubmitJob = {
@@ -366,14 +393,62 @@ export function createQfcWorkflowService({
     return qfcRepository.getReviewByMenuId(menuId, dataScope);
   }
 
+  async function refreshMenuReviewMetadata(menuId: number, dataScope: DataScope) {
+    const review = getMenuReview(menuId, dataScope);
+    if (!review) return null;
+    const missing = new Map<string, string>();
+    for (const match of review.result.matched ?? []) {
+      for (const candidate of [match.storeItem, ...match.candidates]) {
+        if (candidate.soldBy === undefined) missing.set(candidate.productId, candidate.upc);
+      }
+    }
+    if (!missing.size) return review;
+
+    const metadata = new Map<string, { upc: string; soldBy: string }>();
+    const pending = [...missing];
+    // Bound parallel requests and reuse each exact product lookup across rows.
+    const worker = async () => {
+      while (pending.length) {
+        const [productId, upc] = pending.shift()!;
+        try {
+          const product = await qfcService.getStoreItem(productId, dataScope);
+          if (product?.productId === productId && product.upc === upc) {
+            metadata.set(productId, { upc, soldBy: product.soldBy ?? "" });
+          }
+        } catch {
+          // Keep the saved selection usable when the catalog is unavailable.
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
+
+    // Re-read after network IO: quantity/selection/removal edits may have happened.
+    // Merge metadata only into the still-active review, never an old snapshot.
+    const current = requirePreviewJob(review.id, dataScope);
+    let changed = false;
+    for (const match of current.result.matched ?? []) {
+      for (const candidate of [match.storeItem, ...match.candidates]) {
+        const product = metadata.get(candidate.productId);
+        if (candidate.soldBy === undefined && product?.upc === candidate.upc) {
+          candidate.soldBy = product.soldBy;
+          changed = true;
+        }
+      }
+    }
+    if (changed) persistActiveReview(current);
+    return current;
+  }
+
   return {
     getJob,
     getMenuReview,
+    refreshMenuReviewMetadata,
     removeReviewItem,
     searchReviewItems,
     selectStoreItem,
     startAddToCart,
     startPreview,
-    updateQuantity
+    updateQuantity,
+    verifyQuantityUnit
   };
 }

@@ -123,6 +123,15 @@ export function updateStoreItemQuantity(
   );
 }
 
+export function verifyStoreItemQuantityUnit(
+  api: ApiRequest, jobId: string, shoppingItemId: number,
+  productId: string, upc: string, unit: string
+) {
+  return api<{ match: StoreItemMatch }>(`/api/store-item-reviews/${jobId}/quantity-units/${shoppingItemId}`, {
+    method: "PUT", body: JSON.stringify({ productId, upc, unit, verifiedOnQfc: true })
+  });
+}
+
 export function searchStoreItemsForReview(
   api: ApiRequest,
   jobId: string,

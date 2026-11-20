@@ -202,6 +202,8 @@ export type StoreItemCandidate = {
   description: string;
   brand: string;
   size: string;
+  /** Kroger sales metadata; WEIGHT does not establish the cart ordering unit. */
+  soldBy?: string;
   stockLevel: string;
   price: number | null;
   regularPrice: number | null;
@@ -211,7 +213,17 @@ export type StoreItemCandidate = {
   aisleLocations: StoreItemAisleLocation[];
 };
 
+export type CartOrderingUnit = "each" | "lb" | "oz" | "kg" | "g";
+
+export type QuantityUnitVerification = {
+  verifiedAt?: string;
+  productId: string;
+  upc: string;
+  unit: CartOrderingUnit;
+};
+
 export type StoreItemMatch = {
+  quantityUnitVerification?: QuantityUnitVerification;
   item: ShoppingListItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];

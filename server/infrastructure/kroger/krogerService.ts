@@ -1,6 +1,9 @@
 import type { GroceryDatabase } from "../database/database.js";
 import { randomUUID } from "node:crypto";
 import type { DataScope } from "../../types.js";
+import type { QuantityUnitVerification } from "../../../shared/contracts/index.js";
+import { cartOrderingUnit } from "../../../shared/storeItemUnits.js";
+import { createStoreItemMetadataRepository } from "../../features/qfc/storeItemMetadataRepository.js";
 
 export type CartSubmissionItem = {
   id: number;
@@ -50,6 +53,7 @@ export type KrogerProduct = {
   items?: Array<{
     itemId?: string;
     size?: string;
+    soldBy?: string;
     price?: {
       regular?: number;
       promo?: number;
@@ -72,6 +76,8 @@ export type StoreItemCandidate = {
   description: string;
   brand: string;
   size: string;
+  /** Kroger sales metadata; WEIGHT does not establish the cart ordering unit. */
+  soldBy?: string;
   stockLevel: string;
   price: number | null;
   regularPrice: number | null;
@@ -103,6 +109,7 @@ export type CartSubmissionProgress = {
 export type CartSubmissionProgressHandler = (progress: CartSubmissionProgress) => void;
 
 export type CartSubmissionMatch = {
+  quantityUnitVerification?: QuantityUnitVerification;
   item: CartSubmissionItem;
   storeItem: StoreItemCandidate;
   candidates: StoreItemCandidate[];
@@ -238,7 +245,7 @@ export class KrogerHttpClient implements KrogerClient {
     const query = params.size ? `?${params.toString()}` : "";
     const response = await fetch(
       `${krogerBaseUrl}/products/${encodeURIComponent(input.productId)}${query}`,
-      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" } }
+      { headers: { Authorization: `Bearer ${input.accessToken}`, Accept: "application/json" }, signal: AbortSignal.timeout(10_000) }
     );
     if (response.status === 404) return null;
     const text = await response.text();
@@ -317,6 +324,7 @@ export class FakeKrogerClient implements KrogerClient {
         aisleLocations: primaryAisleLocations,
         items: [{
           size: "12 oz",
+          soldBy: "UNIT",
           price: { regular: 2.49 },
           inventory: {
             stockLevel: preferredItemIsUnavailable ? "TEMPORARILY_OUT_OF_STOCK" : "HIGH"
@@ -331,7 +339,8 @@ export class FakeKrogerClient implements KrogerClient {
         brand: "Test Kitchen",
         aisleLocations: [{ number: "5", description: "Pantry" }],
         items: [{
-          size: "10 oz",
+          size: "1 lb",
+          soldBy: "WEIGHT",
           price: { regular: 3.99, promo: 3.49 },
           inventory: { stockLevel: "LOW" },
           fulfillment: { curbside: true }
@@ -623,6 +632,7 @@ function toStoreItemCandidate(product: KrogerProduct): StoreItemCandidate {
     description: product.description,
     brand,
     size: primaryItem?.size ?? "",
+    soldBy: primaryItem?.soldBy ?? "",
     stockLevel: primaryItem?.inventory?.stockLevel ?? "",
     price,
     regularPrice,
@@ -647,6 +657,16 @@ async function searchStoreItems(
     limit: options?.limit ?? 10
   });
   return products.map(toStoreItemCandidate);
+}
+
+async function getStoreItem(productId: string, dataScope: DataScope) {
+  const accessToken = await getServiceToken();
+  const product = await krogerClient.getProduct({
+    accessToken,
+    productId,
+    locationId: getScopedSetting(dataScope, "krogerLocationId")
+  });
+  return product ? toStoreItemCandidate(product) : null;
 }
 
 function prefersStoreBrands(dataScope: DataScope) {
@@ -880,7 +900,7 @@ async function matchCartItems(
         continue;
       }
 
-      matched.push({
+      const match: CartSubmissionMatch = {
         item,
         storeItem,
         candidates,
@@ -890,7 +910,9 @@ async function matchCartItems(
             ? "remembered"
             : "general",
         cartQuantity: 1
-      });
+      };
+      createStoreItemMetadataRepository(database).apply(dataScope, match);
+      matched.push(match);
     } catch (error) {
       skipped.push({
         item,
@@ -910,6 +932,9 @@ async function matchCartItems(
 }
 
 async function addMatchedItemsToCart(matches: CartSubmissionMatch[]) {
+  if (matches.some((match) => !cartOrderingUnit(match))) {
+    throw new Error("Verify the ordering unit on QFC for every selected item before adding to cart.");
+  }
   const accessToken = await getCustomerAccessToken();
   const items = matches.map((match) => ({
     upc: match.storeItem.upc,
@@ -1020,6 +1045,7 @@ async function addQfcMatchesToCart(
     getQfcApiStatus,
     getScopedSetting,
     getStoreItemPreferences,
+    getStoreItem,
     previewQfcCart,
     refreshCustomerToken,
     saveQfcApiSettings,

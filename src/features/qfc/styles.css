@@ -73,8 +73,56 @@
 
 .store-item-quantity {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
   justify-self: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.store-item-unit-check {
+  position: relative;
+  align-self: center;
+  font-size: 0.82rem;
+}
+
+.store-item-unit-check summary {
+  cursor: pointer;
+  color: #24543a;
+  text-decoration: underline dotted;
+  padding: 6px 2px;
+}
+
+.store-item-unit-editor {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  width: min(250px, calc(100vw - 80px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8dfdb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 14px #0002;
+}
+
+.store-item-unit-editor label {
+  display: grid;
+  gap: 5px;
+}
+
+.store-item-unit-label {
+  align-self: center;
+}
+
+:root[data-theme="dark"] .store-item-unit-editor {
+  background: #202a25;
+}
+
+:root[data-theme="dark"] .store-item-unit-check summary {
+  color: #b3cfc0;
 }
 
 .store-item-aisle-groups {
@@ -94,15 +142,29 @@
 }
 
 .store-item-quantity-controls {
+  position: relative;
   align-items: start;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 160px) max-content 44px;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .store-item-unit-check {
+    position: static;
+  }
+
+  .store-item-unit-editor {
+    left: 0;
+    right: auto;
+    width: min(250px, 100%);
+  }
 }
 
 .store-item-number-control {
   display: grid;
-  grid-template-columns: 44px 72px 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.64fr) minmax(0, 1fr);
+  min-width: 0;
 }
 
 .store-item-number-control input {
@@ -111,7 +173,8 @@
   min-height: 44px;
   padding: 6px 8px;
   text-align: center;
-  width: 72px;
+  width: 100%;
+  min-width: 0;
 }
 
 .store-item-number-control input::-webkit-inner-spin-button,
@@ -126,7 +189,7 @@
   border-radius: 6px 0 0 6px;
   min-height: 44px;
   padding: 0;
-  width: 44px;
+  width: 100%;
 }
 
 .store-item-number-control button:last-child {
@@ -150,9 +213,9 @@
   border: 1px solid #d8dfdb;
   border-radius: 6px;
   display: grid;
-  flex: 1 0 100%;
   gap: 7px;
-  min-width: min(100%, 240px);
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 10px;
 }
 

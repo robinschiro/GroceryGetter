@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "playwright/test";
+import { cartOrderingUnit, storeItemUnits } from "../../shared/storeItemUnits.js";
 import {
   pollJob,
   productionHeaders,
@@ -8,6 +9,15 @@ import {
 
 test.beforeEach(async ({ request }) => {
   await resetDatabase(request);
+});
+
+test("ordering units stay separate from pricing weight, including saved reviews without sales metadata", () => {
+  expect(storeItemUnits({ size: "1 lb", soldBy: "WEIGHT" }))
+    .toEqual({ priceUnit: "lb", sizeLabel: "Pricing size: 1 lb" });
+  expect(storeItemUnits({ size: "12 oz", soldBy: "UNIT" }))
+    .toEqual({ priceUnit: null, sizeLabel: "Package size: 12 oz" });
+  expect(storeItemUnits({ size: "1 lb" }))
+    .toEqual({ priceUnit: null, sizeLabel: "Catalog size: 1 lb" });
 });
 
 async function aggregatedMenu(request: APIRequestContext) {
@@ -30,6 +40,63 @@ async function aggregatedMenu(request: APIRequestContext) {
   })).status()).toBe(201);
   return menuId;
 }
+
+async function verifyFakeReviewUnits(request: APIRequestContext, jobId: string) {
+  const review = await (await request.get(`/api/qfc/submit-jobs/${jobId}`, { headers: productionHeaders })).json();
+  for (const match of review.result.matched) {
+    if (cartOrderingUnit(match)) continue;
+    expect((await request.put(`/api/store-item-reviews/${jobId}/quantity-units/${match.item.id}`, {
+      headers: productionHeaders,
+      data: { productId: match.storeItem.productId, upc: match.storeItem.upc, unit: "lb", verifiedOnQfc: true }
+    })).status()).toBe(200);
+  }
+}
+
+test("ambiguous quantities are blocked until verified for the exact selected product", async ({ request }) => {
+  const menuId = await aggregatedMenu(request);
+  const preview = await request.post(`/api/menus/${menuId}/preview-qfc`, { headers: productionHeaders });
+  const review = await pollJob(request, (await preview.json()).jobId);
+  const match = review.result.matched.find((candidate: { storeItem: { soldBy: string } }) => candidate.storeItem.soldBy === "WEIGHT");
+  expect(match).toBeTruthy();
+  const submit = () => request.post(`/api/qfc/submit-jobs/${review.id}/add-to-cart`, { headers: productionHeaders });
+  expect((await submit()).status()).toBe(409);
+  const endpoint = `/api/store-item-reviews/${review.id}/quantity-units/${match.item.id}`;
+  const data = { productId: match.storeItem.productId, upc: match.storeItem.upc, unit: "each", verifiedOnQfc: true };
+  expect((await request.put(endpoint, { headers: productionHeaders, data: { ...data, verifiedOnQfc: false } })).status()).toBe(400);
+  expect((await request.put(endpoint, { headers: productionHeaders, data: { ...data, productId: "stale-selection" } })).status()).toBe(409);
+  expect((await request.put(endpoint, { headers: productionHeaders, data: { ...data, unit: "guess" } })).status()).toBe(400);
+  expect((await request.put(endpoint, { headers: sandboxHeaders, data })).status()).toBe(409);
+  const verified = await request.put(endpoint, { headers: productionHeaders, data });
+  expect(verified.status()).toBe(200);
+  expect((await verified.json()).match.cartQuantity).toBe(match.cartQuantity);
+  let saved = await (await request.get(`/api/menus/${menuId}/store-item-review`, { headers: productionHeaders })).json();
+  expect(saved.result.matched.find((m: { item: { id: number } }) => m.item.id === match.item.id).quantityUnitVerification).toMatchObject({
+    productId: data.productId, upc: data.upc, unit: "each"
+  });
+  await verifyFakeReviewUnits(request, review.id);
+  // Searching and reselecting the verified product reuses its saved unit.
+  await request.post(`/api/store-item-reviews/${review.id}/items/${match.item.id}/search`, {
+    headers: productionHeaders, data: { term: "preferred unavailable item" }
+  });
+  await request.put(`/api/store-item-reviews/${review.id}/selections/${match.item.id}`, {
+    headers: productionHeaders, data: { productId: data.productId, upc: data.upc }
+  });
+  saved = await (await request.get(`/api/menus/${menuId}/store-item-review`, { headers: productionHeaders })).json();
+  expect(saved.result.matched.find((m: { item: { id: number } }) => m.item.id === match.item.id).quantityUnitVerification.unit).toBe("each");
+  const futureMenuId = await aggregatedMenu(request);
+  const future = await request.post(`/api/menus/${futureMenuId}/preview-qfc`, { headers: productionHeaders });
+  const futureReview = await pollJob(request, (await future.json()).jobId);
+  expect(futureReview.result.matched.find((m: { storeItem: { productId: string } }) =>
+    m.storeItem.productId === data.productId).quantityUnitVerification.unit).toBe("each");
+  // Choose an ambiguous alternate and ensure the API blocks it too.
+  const alternate = match.candidates[2];
+  await request.put(`/api/store-item-reviews/${review.id}/selections/${match.item.id}`, {
+    headers: productionHeaders, data: { productId: alternate.productId, upc: alternate.upc }
+  });
+  expect((await submit()).status()).toBe(409);
+  await verifyFakeReviewUnits(request, review.id);
+  expect((await submit()).status()).toBe(202);
+});
 
 test("settings and fake Kroger searches preserve scope restrictions and deterministic failures", async ({ request }) => {
   const productionSettings = await (await request.get("/api/settings", {
@@ -68,9 +135,19 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
   expect(products.status()).toBe(200);
   const candidates = await products.json();
   expect(candidates).toHaveLength(3);
+  expect(cartOrderingUnit({ storeItem: candidates[0] })).toBe("each");
+  expect(cartOrderingUnit({ storeItem: { ...candidates[0], size: "1 ct" } })).toBe("each");
+  expect(cartOrderingUnit({ storeItem: { ...candidates[0], size: "8 ct / 30 oz" } })).toBe("each");
+  const weighted = { ...candidates[1], averageWeightPerUnit: "0.24 [lb_av]" };
+  expect(cartOrderingUnit({ storeItem: weighted })).toBeNull();
+  expect(cartOrderingUnit({ storeItem: candidates[2] })).toBeNull();
+  expect(cartOrderingUnit({ storeItem: weighted, quantityUnitVerification: {
+    productId: "other-product", upc: weighted.upc, unit: "each"
+  } })).toBeNull();
   expect(candidates[0]).toMatchObject({
     aisleLocations: [{ number: "10", description: "Produce" }],
     brand: "Kroger",
+    soldBy: "UNIT",
     isStoreBrand: true,
     price: 2.49,
     regularPrice: 2.49,
@@ -79,6 +156,7 @@ test("settings and fake Kroger searches preserve scope restrictions and determin
   });
   expect(candidates[1]).toMatchObject({
     aisleLocations: [{ number: "5", description: "Pantry" }],
+    soldBy: "WEIGHT",
     price: 3.49,
     regularPrice: 3.99,
     promotionalPrice: 3.49,
@@ -296,6 +374,7 @@ test("QFC review preserves matching, unmatched items, selection memory, quantity
     headers: sandboxHeaders
   });
   expect([403, 409]).toContain(blocked.status());
+  await verifyFakeReviewUnits(request, previewJob.id);
   const submitResponse = await request.post(`/api/qfc/submit-jobs/${previewJob.id}/add-to-cart`, {
     headers: productionHeaders
   });

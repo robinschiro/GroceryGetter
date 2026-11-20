@@ -25,6 +25,8 @@ This app has a Kroger API adapter boundary for service-to-service APIs, customer
 - `GET /api/menus/:id/store-item-review`
 - `PUT /api/store-item-reviews/:jobId/selections/:shoppingItemId`
 - `PUT /api/store-item-reviews/:jobId/quantities/:shoppingItemId`
+- `PUT /api/store-item-reviews/:jobId/quantity-units/:shoppingItemId`
+- `POST /api/menus/:id/store-item-review/refresh-metadata`
 - `POST /api/store-item-reviews/:jobId/items/:shoppingItemId/search`
 - `DELETE /api/store-item-reviews/:jobId/items/:shoppingItemId`
 - `POST /api/qfc/oauth/start`
@@ -110,6 +112,8 @@ Current cart submission behavior:
 - Shows the selected store item's Kroger image when the API provides one.
 - Requires explicit confirmation from the review step before mutating the cart.
 - Defaults to one cart unit per approved grocery row and allows the quantity to be changed during review.
+- Shows Count (ct/each) for unit-sold products, including packages and bunches. Ambiguous products require an explicit ordering-unit check on QFC; unresolved items are blocked from submission by both the UI and API.
+- Remembers verified units in `store_item_metadata`, keyed by data scope, provider, and product ID, and reuses them across ingredients and menus. Existing review verifications are imported on first table creation.
 - Uses `PICKUP` as the cart modality.
 - Reports matched, skipped, and submitted counts.
 - Returns stub-mode messages instead of mutating the cart when Kroger credentials or customer OAuth are missing.

@@ -203,13 +203,18 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
     /Kroger .* · \$2\.49 · In stock/
   );
   await expect(firstCandidate.locator("option").nth(1)).toHaveText(
-    /Test Kitchen .* · \$3\.49 promo \(reg\. \$3\.99\) · Low stock/
+    /Test Kitchen .* · \$3\.49\/lb promo \(reg\. \$3\.99\/lb\) · Low stock/
   );
   await expect(firstCandidate.locator("option").nth(2)).toHaveText(
     /Pantry Select .* · Price unavailable · Out of stock/
   );
   await expect(firstCandidate.locator("option").nth(2)).toBeEnabled();
+  await expect(tomatoRow.locator(".store-item-unit-label")).toHaveText("ct");
+  await expect(tomatoRow).toContainText("Package size: 12 oz");
   await firstCandidate.selectOption({ index: 1 });
+  await expect(tomatoRow.locator(".store-item-unit-check summary")).toHaveText("Set unit");
+  await expect(tomatoRow.locator(".store-item-unit-editor")).toBeHidden();
+  await expect(tomatoRow).toContainText("Pricing size: 1 lb");
   await expect(page.getByText("Remembered store item", { exact: true }).first()).toBeVisible();
   await expect(page.locator(".store-item-aisle-group", { has: firstCandidate }))
     .toContainText("Aisle 5 · Pantry");
@@ -276,10 +281,96 @@ test("fake-QFC review preserves matching, unmatched recovery, candidates, memory
   await expect(page.getByRole("status").filter({ hasText: /Added tomato back/ })).toBeVisible();
 
   const submit = page.getByRole("button", { name: /Add \d+ reviewed store items? to QFC/ });
+  await expect(submit).toBeDisabled();
+  for (const check of await page.locator(".store-item-unit-check").all()) {
+    await check.locator("summary").click();
+    await check.getByRole("combobox").selectOption("lb");
+    await expect(check.locator("summary")).toHaveText("lb");
+    await expect(check.locator(".store-item-unit-editor")).toBeHidden();
+  }
+  await expect(submit).toBeEnabled();
   await submit.click();
   await expect(page.getByRole("status").filter({ hasText: /added to the QFC cart/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit menu" })).toBeVisible();
   await expect(page.getByLabel("Entree", { exact: true }).first()).toBeDisabled();
+});
+
+test("ordering units require an explicit QFC check and survive reload without changing quantities", async ({ page }) => {
+  await saveAndAggregateMenu(page);
+  await page.getByRole("button", { name: "Review store items" }).click();
+  const select = page.getByLabel("Store item for tomato", { exact: true });
+  const row = page.locator(".store-item-match-row").filter({ has: select });
+  await select.selectOption({ index: 1 });
+  const quantity = row.getByLabel(/^Cart quantity for /);
+  await quantity.fill("5");
+  const check = row.locator(".store-item-unit-check");
+  await expect(check.locator("summary")).toHaveText("Set unit");
+  await expect(check.getByRole("combobox")).toBeHidden();
+  await check.locator("summary").click();
+  await expect(check.getByRole("link", { name: "Check on QFC" })).toBeVisible();
+  await expect(check.getByRole("combobox").locator("option")).toHaveText([
+    "Choose unit", "Count (ct/each)", "Pounds (lb)", "Ounces (oz)", "Kilograms (kg)", "Grams (g)"
+  ]);
+  await check.getByRole("combobox").selectOption("each");
+  await expect(check.locator("summary")).toHaveText("ct");
+  await expect(check.getByRole("combobox")).toBeHidden();
+  await expect(quantity).toHaveValue("5");
+  await page.reload();
+  await expect(check.locator("summary")).toHaveText("ct");
+  await expect(check.getByRole("combobox")).toBeHidden();
+  await row.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: ".cache/tests/ordering-unit-review.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await check.scrollIntoViewIfNeeded();
+  for (const width of [1280, 390, 360, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const controls of await page.locator(".store-item-quantity-controls").all()) {
+      const number = await controls.locator(".store-item-number-control").boundingBox();
+      const info = await controls.locator(".store-item-quantity-info-button").boundingBox();
+      expect(number).not.toBeNull();
+      expect(info).not.toBeNull();
+      expect(Math.abs(number!.y - info!.y)).toBeLessThan(1);
+      expect(info!.x + info!.width).toBeLessThanOrEqual(width);
+      const before = await controls.locator(".store-item-number-control button").evaluateAll((buttons) =>
+        buttons.map((button) => ({ x: button.getBoundingClientRect().x, width: button.getBoundingClientRect().width })));
+      await controls.locator(".store-item-quantity-info-button").click();
+      const expanded = await controls.locator(".store-item-number-control button").evaluateAll((buttons) =>
+        buttons.map((button) => ({ x: button.getBoundingClientRect().x, width: button.getBoundingClientRect().width })));
+      expect(expanded).toEqual(before);
+      await controls.locator(".store-item-quantity-info-button").click();
+      const closed = await controls.locator(".store-item-number-control button").evaluateAll((buttons) =>
+        buttons.map((button) => ({ x: button.getBoundingClientRect().x, width: button.getBoundingClientRect().width })));
+      expect(closed).toEqual(before);
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await row.getByRole("button", { name: "Show quantity sources for tomato" }).click();
+  await expect(row.getByRole("region", { name: "Quantity sources for tomato" })).toBeVisible();
+  await row.getByRole("button", { name: "Hide quantity sources for tomato" }).click();
+  expect(await check.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.left >= 0 && bounds.right <= window.innerWidth;
+  })).toBe(true);
+  await page.screenshot({ path: ".cache/tests/ordering-unit-review-mobile.png" });
+  await check.locator("summary").click();
+  expect(await check.locator(".store-item-unit-editor").evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.left >= 0 && bounds.right <= window.innerWidth;
+  })).toBe(true);
+  await page.screenshot({ path: ".cache/tests/ordering-unit-editor-mobile.png" });
+  await check.locator("summary").click();
+  page.on("dialog", (dialog) => void dialog.dismiss());
+  await select.selectOption({ index: 2 });
+  await expect(check.locator("summary")).toHaveText("Set unit");
+  await expect(check.getByRole("combobox")).toBeHidden();
+  await expect(quantity).toHaveValue("5");
+  await select.selectOption({ index: 1 });
+  await expect(check.locator("summary")).toHaveText("ct");
+  await expect(check.locator("summary")).toHaveAttribute("title", /Previously verified on QFC/);
+  await expect(quantity).toHaveValue("5");
+  await page.getByRole("button", { name: "Review store items" }).click();
+  await expect(check.locator("summary")).toHaveText("ct");
+  await expect(check.getByRole("combobox")).toBeHidden();
 });
 
 test("fake-QFC review explains an available fallback without replacing the preferred item", async ({
@@ -346,6 +437,7 @@ test("marking one ingredient as pantry preserves the other store item selections
   const tomato = page.getByLabel("Store item for tomato", { exact: true });
   await expect(tomato).toBeVisible();
   await tomato.selectOption({ index: 1 });
+  await expect(tomato.locator("option:checked")).toContainText("Test Kitchen tomato");
   const selectedProduct = await tomato.inputValue();
   const tomatoQuantity = page.locator(".store-item-match-row")
     .filter({ has: tomato }).getByLabel(/^Cart quantity for /);

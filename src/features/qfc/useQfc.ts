@@ -18,6 +18,7 @@ import {
   startAddToCart,
   startStoreItemPreview,
   updateScopedSetting,
+  verifyStoreItemQuantityUnit,
   updateStoreItemQuantity as updateStoreItemQuantityRequest
 } from "./api.js";
 import type { StoreItemReview } from "./StoreItemReviewPanel.js";
@@ -431,6 +432,19 @@ export function useQfc({
     }
   }
 
+  async function verifyQuantityUnit(shoppingItemId: number, productId: string, upc: string, unit: string) {
+    if (!storeItemReview) return;
+    const jobId = storeItemReview.jobId;
+    const result = await verifyStoreItemQuantityUnit(api, jobId, shoppingItemId, productId, upc, unit);
+    setStoreItemReview((current) => current?.jobId === jobId ? {
+      ...current,
+      result: { ...current.result, matched: current.result.matched?.map((match) =>
+        match.storeItem.productId === productId
+          ? { ...match, quantityUnitVerification: { ...result.match.quantityUnitVerification!, upc: match.storeItem.upc } }
+          : match) }
+    } : current);
+  }
+
   async function searchStoreItemsForReview(shoppingItemId: number, term: string) {
     if (!storeItemReview) {
       throw new Error("Preview store items before searching for more choices.");
@@ -512,6 +526,7 @@ export function useQfc({
     updateRealQfcCartPermission,
     updateShoppingItemApproval,
     updateStoreBrandPreference,
-    updateStoreItemQuantity
+    updateStoreItemQuantity,
+    verifyQuantityUnit
   };
 }

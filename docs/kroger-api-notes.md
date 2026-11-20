@@ -81,6 +81,58 @@ Selections made in the review are persisted in `store_item_preferences`, keyed b
 
 ## Cart
 
+### Ordering units and pricing size
+
+Store Item Review keeps cart ordering units separate from catalog size. The adapter
+preserves `items[].soldBy`; `UNIT` indicates count, but `WEIGHT` does not reliably
+identify the shopper's ordering unit. There are no product-specific overrides.
+Weight-sold or legacy products without verified ordering metadata show
+`Set unit`; do not infer their ordering unit from package size or ingredient
+units. Prices show `/lb` only when weight-sales metadata and a `1 lb` catalog size
+establish that basis. Quantities are still sent unchanged; no weight conversion occurs.
+
+Cart safety: `UNIT` products use Count (ct/each), whether an individual item,
+package, bag, or bunch. Package size remains part of the product details.
+Other products require the shopper to check the
+quantity control on QFC and confirm its ordering unit in the review. The
+`store_item_metadata` table remembers the confirmed `ordering_unit` and `verified_at`,
+keyed by `data_scope`, `provider`, and `product_id`. UPC is not part of the key and
+does not invalidate a remembered unit. Review responses include a
+`quantityUnitVerification` snapshot for the current selected product; changing a
+selection or searching reuses the new product's metadata when available. Average weight is not
+proof of an ordering unit. There are no product-specific automatic confirmations.
+The UI disables submission with unresolved units, and both the workflow and cart
+transport reject unresolved items before a cart write. Quantity unit confirmation
+does not convert the number or change how Kroger interprets it. Quantities remain
+positive whole numbers, including for verified weight units.
+
+The card shows its unit beside the quantity. Clicking `Set unit` (or an existing
+verified unit) opens a compact editor with a QFC product link and a `Unit shown on
+QFC` dropdown. Selecting that unit saves the verification and closes the editor;
+there is no separate checkbox or confirmation button.
+
+`PUT /api/store-item-reviews/:jobId/quantity-units/:shoppingItemId` accepts
+`productId`, `upc`, `unit` (`each`, `lb`, `oz`, `kg`, or `g`),
+and `verifiedOnQfc: true`. Stale product confirmations are rejected. Verification
+is saved atomically with the review into `store_item_metadata`. Reads, selections,
+searches, previews, and submission checks apply the current product metadata so a
+correction replaces stale review snapshots without changing cart quantities.
+The compact unit's tooltip identifies saved verification and it remains editable.
+There are no hardcoded product mappings.
+
+Legacy `package` and `bunch` units normalize to `each` when read or submitted.
+Startup migrates those saved metadata values without changing quantities or
+verification timestamps. The UI offers a single Count (ct/each) option.
+
+On first table creation, existing valid review verifications are imported once.
+The newest review by `updated_at` (then menu ID) wins conflicting product units.
+Review JSON is preserved. Later restarts never re-import older units over corrections.
+
+`POST /api/menus/:id/store-item-review/refresh-metadata` explicitly refreshes missing
+sales metadata in an existing review by exact product ID and matching UPC. It
+preserves selections, quantities, candidate lists, removals, and preferences. Catalog
+failures leave saved data intact; opening a review does not trigger a refresh.
+
 Use Cart API only after customer auth is complete.
 
 - Public Cart API rate limit from catalog docs: 5,000 calls per day.

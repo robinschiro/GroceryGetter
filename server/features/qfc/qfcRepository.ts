@@ -1,6 +1,8 @@
 import type { GroceryDatabase } from "../../infrastructure/database/database.js";
 import type { DataScope } from "../../types.js";
 import type { QfcSubmitJob } from "./qfcJobStore.js";
+import type { CartOrderingUnit } from "../../../shared/contracts/index.js";
+import { createStoreItemMetadataRepository } from "./storeItemMetadataRepository.js";
 
 type PersistedReviewRow = {
   menuId: number;
@@ -19,10 +21,12 @@ type CompletePreviewJob = QfcSubmitJob & {
 };
 
 export function createQfcRepository(database: GroceryDatabase) {
+  const metadata = createStoreItemMetadataRepository(database);
   function deserializeReview(row: PersistedReviewRow | null): CompletePreviewJob | null {
     if (!row) return null;
     try {
       const result = JSON.parse(row.resultJson) as NonNullable<QfcSubmitJob["result"]>;
+      for (const match of result.matched ?? []) metadata.apply(row.dataScope, match);
       return {
         id: row.jobId,
         kind: "preview",
@@ -61,7 +65,7 @@ export function createQfcRepository(database: GroceryDatabase) {
     });
   }
 
-  function saveReview(job: CompletePreviewJob) {
+  function saveReview(job: CompletePreviewJob, verifiedUnit?: { productId: string; unit: CartOrderingUnit }) {
     const reviewRevision = job.reviewRevision;
     if (!Number.isInteger(reviewRevision)) return false;
     const currentRevision = database.queryOne<{ reviewRevision: number }>(
@@ -71,29 +75,32 @@ export function createQfcRepository(database: GroceryDatabase) {
     )?.reviewRevision;
     if (currentRevision !== reviewRevision) return false;
 
-    database.run(
-      `INSERT INTO store_item_reviews
-        (menu_id, data_scope, job_id, review_revision, result_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(menu_id) DO UPDATE SET
-        data_scope = excluded.data_scope,
-        job_id = excluded.job_id,
-        review_revision = excluded.review_revision,
-        result_json = excluded.result_json,
-        created_at = excluded.created_at,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE excluded.review_revision = store_item_reviews.review_revision`,
-      [
-        Number(job.menuId),
-        job.dataScope,
-        job.id,
-        reviewRevision,
-        JSON.stringify(job.result),
-        job.createdAt
-      ]
-    );
-    database.save();
-    return getReviewByJobId(job.id, job.dataScope)?.reviewRevision === reviewRevision;
+    return database.transaction(() => {
+      if (verifiedUnit) metadata.save(job.dataScope, "kroger", verifiedUnit.productId, verifiedUnit.unit);
+      for (const match of job.result.matched ?? []) metadata.apply(job.dataScope, match);
+      database.run(
+        `INSERT INTO store_item_reviews
+          (menu_id, data_scope, job_id, review_revision, result_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(menu_id) DO UPDATE SET
+          data_scope = excluded.data_scope,
+          job_id = excluded.job_id,
+          review_revision = excluded.review_revision,
+          result_json = excluded.result_json,
+          created_at = excluded.created_at,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE excluded.review_revision = store_item_reviews.review_revision`,
+        [
+          Number(job.menuId),
+          job.dataScope,
+          job.id,
+          reviewRevision,
+          JSON.stringify(job.result),
+          job.createdAt
+        ]
+      );
+      return getReviewByJobId(job.id, job.dataScope)?.reviewRevision === reviewRevision;
+    });
   }
 
   function getReviewByJobId(jobId: string, dataScope: DataScope) {
